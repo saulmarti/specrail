@@ -444,6 +444,7 @@ Commands are internal and optional. Normal use is conversational; they exist for
 
 ```bash
 specrail doctor
+specrail update
 specrail list
 specrail status TASK-0001
 specrail readiness TASK-0001 --json
@@ -467,8 +468,22 @@ After final approval, a worktree task offers the explicit delivery choices **Fus
 ## Update
 
 ```bash
-npm install -g @saulmarti/specrail@beta
-specrail install
+specrail update
+```
+
+`specrail update` keeps the current release channel automatically: beta installations stay on `beta`, while stable installations use `latest`. It updates the global npm package and then refreshes the managed Codex skills, launchers, configuration, and global instructions from the newly installed package.
+
+Switch channels explicitly when needed:
+
+```bash
+specrail update --latest
+specrail update --beta
+```
+
+Preview the update without network or filesystem changes:
+
+```bash
+specrail update --dry-run --json
 ```
 
 The installer preserves existing `.ai/` projects and creates one-time `.ai-flow.bak` backups before changing Codex configuration or global instructions.

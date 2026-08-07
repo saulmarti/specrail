@@ -37,6 +37,7 @@ import { recommendHarness } from './lib/policy.js';
 import { acceptanceCoverage } from './lib/acceptance.js';
 import { setBlastRadius, scopeGuardStatus } from './lib/scope-guard.js';
 import { proposeAmendment, listAmendments, approveAmendment, rejectAmendment } from './lib/amendments.js';
+import { inferUpdateChannel, updateSpecRail, type UpdateChannel } from './lib/update.js';
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PACKAGE_META = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')) as { version?: string };
 const VERSION = PACKAGE_META.version || '0.0.0';
@@ -86,6 +87,17 @@ async function main() {
         case 'install':
             await import(new URL('../../scripts/install.mjs', import.meta.url).href);
             break;
+        case 'update': {
+            if (flags.beta && flags.latest) throw new Error('Use only one update channel: --beta or --latest');
+            const channel: UpdateChannel = flags.beta ? 'beta' : flags.latest ? 'latest' : inferUpdateChannel(VERSION);
+            if (!json) console.log(`Updating SpecRail ${VERSION} from the ${channel} channel...`);
+            const result = updateSpecRail({ currentVersion: VERSION, channel, dryRun: Boolean(flags['dry-run']) });
+            if (json) output(result, true);
+            else if (result.status === 'planned') console.log(`Update plan: ${result.target}; then refresh the managed Codex installation.`);
+            else if (result.changed) console.log(`SpecRail updated ${result.fromVersion} → ${result.toVersion} (${result.channel}); managed Codex assets refreshed.`);
+            else console.log(`SpecRail ${result.toVersion} is current on ${result.channel}; managed Codex assets refreshed.`);
+            break;
+        }
         case 'init':
             root = rootFrom(flags);
             output(initProject(root, { name: flags.name }), json);
@@ -495,7 +507,7 @@ async function main() {
   replay create|status|start|complete|compare|event|scenarios|cleanup
   harness recommend TASK
   plugin validate, doctor [--fix [--apply safe]]
-  install`);
+  install, update [--beta|--latest] [--dry-run]`);
     }
 }
 main().catch((error: any) => { console.error(`specrail: ${error.message}`); process.exitCode = 1; });
