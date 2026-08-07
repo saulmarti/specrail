@@ -9,10 +9,11 @@ const root=process.cwd();
 const text=(name)=>readFileSync(path.join(root,name),'utf8');
 const pkg=JSON.parse(text('package.json'));
 const plugin=JSON.parse(text('plugin.json'));
+const lock=JSON.parse(text('package-lock.json'));
 
 test('public beta metadata matches the maintainer and release channel',()=>{
   assert.equal(pkg.name,'@saulmarti/specrail');
-  assert.equal(pkg.version,'0.8.0-beta.2');
+  assert.match(pkg.version,/^\d+\.\d+\.\d+-beta\.\d+$/);
   assert.deepEqual(pkg.author,{name:'Saúl Martí',email:'me@saulmarti.dev'});
   assert.equal(pkg.repository.url,'git+https://github.com/saulmarti/specrail.git');
   assert.equal(pkg.bugs.url,'https://github.com/saulmarti/specrail/issues');
@@ -21,6 +22,8 @@ test('public beta metadata matches the maintainer and release channel',()=>{
   assert.equal(pkg.publishConfig.tag,'beta');
   assert.equal(pkg.publishConfig.access,'public');
   assert.equal(plugin.version,pkg.version);
+  assert.equal(lock.version,pkg.version);
+  assert.equal(lock.packages[''].version,pkg.version);
 });
 
 test('public roadmap and agent rules are canonical and packaged',()=>{

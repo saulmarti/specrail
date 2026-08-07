@@ -7,7 +7,7 @@
 - intended repository: `https://github.com/saulmarti/specrail`
 - public author: Saúl Martí `<me@saulmarti.dev>`
 - license: MIT
-- current beta candidate: `0.8.0-beta.2`
+- current release version: read from `package.json` (do not hardcode it in this document)
 - initial dist-tag: `beta`
 
 Never send an npm password, OTP, recovery code, cookie, or long-lived access token to an agent.
@@ -85,12 +85,25 @@ After the package and GitHub repository exist:
 
 The included `.github/workflows/release.yml` runs on a published GitHub Release. Do not enable it until the npm trusted publisher is configured.
 
+## Version synchronization
+
+`package.json` is the canonical release version. Never update `plugin.json` or `package-lock.json` manually.
+
+The npm `version` lifecycle runs `npm run version:sync`, which copies the new `package.json` version into `plugin.json` and both package-lock version fields before npm creates the version commit/tag. `npm run check`, `npm run release:check`, and `prepublishOnly` all execute `version:check`, so a drifted release is rejected before packing or publishing.
+
+If a version command was interrupted after changing `package.json`, repair the metadata with:
+
+```bash
+npm run version:sync
+npm run version:check
+```
+
 ## Release checklist
 
 - [ ] `ROADMAP.md` status and scope are current.
 - [ ] `CHANGELOG.md` contains the release.
 - [ ] `AGENTS.md`, README, docs, and CLI help match behavior.
-- [ ] package and plugin versions match.
+- [ ] `npm run version:check` confirms `package.json`, `package-lock.json`, and `plugin.json` match.
 - [ ] repository metadata is exact and public.
 - [ ] `npm ci` succeeds.
 - [ ] `npm run check` succeeds.
