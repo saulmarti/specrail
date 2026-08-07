@@ -1,0 +1,19 @@
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { approvedAmendments } from './amendments.js';
+import { listEvidence } from './evidence.js';
+import { findTask, getSection, loadTask, saveTask, setSection } from './task.js';
+import type { TaskDocument } from './types.js';
+
+export interface AcceptanceCriterion { id:string; text:string; source:'base'|'amendment'; amendmentId?:string; required:true; }
+export interface AcceptanceCoverageRow extends AcceptanceCriterion { evidence:Array<{id:string;kind:string;label:string;sha256:string}>; proven:boolean; }
+function criterionLine(line:string){const stripped=line.trim().replace(/^(?:[-*]|\d+[.)])\s+/, '');const match=stripped.match(/^(AC-[A-Z0-9-]+)\s*:\s*(.+)$/i);return match?{id:match[1]!.toUpperCase(),text:match[2]!.trim()}:{id:null,text:stripped};}
+function baseCriteria(task:TaskDocument):AcceptanceCriterion[]{return getSection(task.body,'Acceptance Criteria').split(/\r?\n/).map(x=>x.trim()).filter(x=>/^(?:[-*]|\d+[.)])\s+/.test(x)).map(criterionLine).filter(x=>x.text).map((item,index)=>({id:item.id||`AC-${String(index+1).padStart(3,'0')}`,text:item.text,source:'base' as const,required:true as const}));}
+export function ensureAcceptanceCriteriaIds(task:TaskDocument):TaskDocument{const criteria=baseCriteria(task);if(!criteria.length)return task;const unique=new Set<string>();for(const item of criteria){if(unique.has(item.id))throw new Error(`Duplicate acceptance criterion id: ${item.id}`);unique.add(item.id);}task.body=setSection(task.body,'Acceptance Criteria',criteria.map(item=>`- ${item.id}: ${item.text}`).join('\n'));return task;}
+export function acceptanceCriteria(root:string,id:string):AcceptanceCriterion[]{const task=loadTask(findTask(root,id));const base=baseCriteria(task);const additions=approvedAmendments(root,task.meta.id).flatMap(amendment=>amendment.acceptanceCriteria.map(item=>({id:item.id,text:item.text,source:'amendment' as const,amendmentId:amendment.id,required:true as const})));return [...base,...additions];}
+function evidenceFile(root:string,id:string,recordPath:string){return path.resolve(path.resolve(root),'.ai','evidence',id,recordPath);}
+function validEvidence(root:string,id:string,item:{path:string;sha256:string}){const file=evidenceFile(root,id,item.path);if(!existsSync(file))return false;const actual=createHash('sha256').update(readFileSync(file)).digest('hex');return actual===item.sha256;}
+const NON_FINAL_IMPLEMENTATION_PROOFS=new Set(['frontend-before','frontend-mobile-before','frontend-proposal','frontend-mobile-proposal','ui-design-brief','ui-proposal-review']);
+export function acceptanceCoverage(root:string,id:string){const task=loadTask(findTask(root,id)),criteria=acceptanceCriteria(root,id),evidence=listEvidence(root,id),known=new Set(criteria.map(item=>item.id));const invalidReferences:string[]=[];for(const item of evidence){const proves=Array.isArray(item.attributes?.proves)?item.attributes!.proves!.map(String):[];for(const criterionId of proves)if(!known.has(criterionId))invalidReferences.push(`${item.id}:${criterionId}`);}
+  const rows:AcceptanceCoverageRow[]=criteria.map(criterion=>{const proofs=evidence.filter(item=>Array.isArray(item.attributes?.proves)&&item.attributes!.proves!.map(String).includes(criterion.id)&&validEvidence(root,id,item)&&(!task.meta.route.implementation||!NON_FINAL_IMPLEMENTATION_PROOFS.has(item.kind))).map(item=>({id:item.id,kind:item.kind,label:item.label,sha256:item.sha256}));return{...criterion,evidence:proofs,proven:proofs.length>0};});const uncovered=rows.filter(row=>!row.proven).map(row=>row.id);return{schemaVersion:1,taskId:id,complete:criteria.length>0&&uncovered.length===0&&invalidReferences.length===0,criteria:rows,uncovered,invalidReferences,coverage:criteria.length?Math.round(((criteria.length-uncovered.length)/criteria.length)*100):0,generatedAt:new Date().toISOString()};}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Technical Reviewer"
+  short_description: "Review code, architecture, data, and risk"
+  default_prompt: "Independently review the current AI Flow task."

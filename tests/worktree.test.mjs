@@ -1,0 +1,118 @@
+// @ts-nocheck
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { createWorktree, checkpointWorktree, removeWorktree } from '../dist/src/lib/worktree.js';
+function git(cwd, args) { return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim(); }
+test('creates, checkpoints, and removes an isolated task worktree', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'ai-flow-git-'));
+    git(root, ['init', '-b', 'main']);
+    git(root, ['config', 'user.email', 'test@example.test']);
+    git(root, ['config', 'user.name', 'Test']);
+    writeFileSync(path.join(root, 'README.md'), 'seed\n');
+    git(root, ['add', '.']);
+    git(root, ['commit', '-m', 'seed']);
+    const wt = createWorktree(root, 'TASK-0001', 'feature');
+    assert.ok(existsSync(wt.path));
+    assert.equal(wt.branch, 'ai-flow/task-0001-feature');
+    writeFileSync(path.join(wt.path, 'feature.txt'), 'done\n');
+    const cp = checkpointWorktree(wt.path, 'TASK-0001 checkpoint');
+    assert.equal(cp.changed, true);
+    assert.match(cp.commit, /^[a-f0-9]{7,40}$/);
+    const result = removeWorktree(root, wt.path, wt.branch);
+    assert.equal(result.removed, true);
+    assert.equal(existsSync(wt.path), false);
+});
+import { initProject } from '../dist/src/lib/project.js';
+import { readyProjectContext, setDefaultBlastRadius } from './helpers.mjs';
+import { createTask, findTask, loadTask, saveTask, setSection } from '../dist/src/lib/task.js';
+import { approveSpecification, approveFinal, completePhase, startExecution, completeDelivery } from '../dist/src/lib/workflow.js';
+import { addEvidence } from '../dist/src/lib/evidence.js';
+import { recordTaskLearning } from '../dist/src/lib/learning.js';
+import { interactionForTask } from '../dist/src/lib/interactions.js';
+function prepareBackendTask(root) {
+    initProject(root, { name: 'Delivery project' });
+    readyProjectContext(root);
+    const task = createTask(root, { title: 'Deliver health endpoint', type: 'feature', surfaces: ['backend'] });
+    let loaded = loadTask(findTask(root, task.meta.id));
+    for (const [heading, text] of Object.entries({ Need: 'Expose health.', 'Product Value': 'Reliable monitoring.', Scope: 'GET /health.', 'Out of Scope': 'Dependency checks.', 'Acceptance Criteria': '- Returns 200' }))
+        loaded.body = setSection(loaded.body, heading, text);
+    loaded.meta.status = 'refining';
+    loaded.meta.phase = 'product-specifier';
+    loaded.meta.route.final_customer = false;
+    saveTask(loaded);
+    setDefaultBlastRadius(root,task.meta.id);
+    completePhase(root, task.meta.id);
+    approveSpecification(root, task.meta.id);
+    startExecution(root, task.meta.id);
+    return task.meta.id;
+}
+function finishBackendEvidence(root, id) {
+    completePhase(root, id);
+    const reviewDir = path.join(root, '.ai', 'evidence', id, 'review');
+    mkdirSync(reviewDir, { recursive: true });
+    const review = path.join(reviewDir, 'review.md');
+    writeFileSync(review, '# Review\n\nNo blockers.\n');
+    addEvidence(root, id, { kind: 'technical-review-report', path: review, source: 'technical-review', label: 'Review', tool: 'Codex' });
+    completePhase(root, id);
+    const qaDir = path.join(root, '.ai', 'evidence', id, 'qa');
+    mkdirSync(qaDir, { recursive: true });
+    const demo = path.join(qaDir, 'response.txt'), tests = path.join(qaDir, 'tests.txt'), qa = path.join(qaDir, 'qa.md');
+    writeFileSync(demo, 'HTTP/1.1 200 OK\n');
+    writeFileSync(tests, 'pass\n');
+    writeFileSync(qa, '# QA\n\nPassed.\n');
+    addEvidence(root, id, { kind: 'backend-demo', path: demo, source: 'executed-command', label: 'Response', tool: 'terminal', command: 'curl /health', exitCode: 0 });
+    addEvidence(root, id, { kind: 'test-log', path: tests, source: 'executed-command', label: 'Tests', tool: 'terminal', command: 'npm test', exitCode: 0 });
+    addEvidence(root, id, { kind: 'qa-report', path: qa, source: 'qa-validation', label: 'QA', tool: 'Codex', attributes:{proves:['AC-001']} });
+    completePhase(root, id);
+    recordTaskLearning(root, id, 'Health is delivered through the public endpoint.');
+}
+test('final approval requires explicit delivery when implementation lives in a worktree', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'ai-flow-delivery-'));
+    git(root, ['init', '-b', 'main']);
+    git(root, ['config', 'user.email', 'test@example.test']);
+    git(root, ['config', 'user.name', 'Test']);
+    writeFileSync(path.join(root, 'README.md'), 'seed\n');
+    git(root, ['add', '.']);
+    git(root, ['commit', '-m', 'seed']);
+    const id = prepareBackendTask(root);
+    const wt = createWorktree(root, id, 'health');
+    let task = loadTask(findTask(root, id));
+    task.meta.worktree_path = wt.path;
+    task.meta.worktree_branch = wt.branch;
+    task.meta.worktree_base = wt.baseBranch;
+    task.meta.delivery_status = 'pending';
+    saveTask(task);
+    writeFileSync(path.join(wt.path, 'health.txt'), 'ok\n');
+    checkpointWorktree(wt.path, `${id} implementation`);
+    finishBackendEvidence(root, id);
+    const approved = approveFinal(root, id);
+    assert.equal(approved.meta.status, 'awaiting_delivery');
+    assert.equal(approved.meta.phase, 'delivery');
+    const interaction = interactionForTask(root, id, 'delivery');
+    assert.equal(interaction.tool, 'request_user_input');
+    assert.equal(interaction.questions[0].options[0].label, 'Fusionar localmente');
+    const delivered = completeDelivery(root, id, 'merge-local');
+    assert.equal(delivered.meta.status, 'done');
+    assert.equal(delivered.meta.delivery_status, 'completed');
+    assert.equal(readFileSync(path.join(root, 'health.txt'), 'utf8'), 'ok\n');
+    assert.equal(existsSync(wt.path), false);
+});
+test('creating a worktree does not mutate repository-local Git excludes', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'ai-flow-git-exclude-'));
+    git(root, ['init', '-b', 'main']);
+    git(root, ['config', 'user.email', 'test@example.test']);
+    git(root, ['config', 'user.name', 'Test']);
+    writeFileSync(path.join(root, 'README.md'), 'seed\n');
+    git(root, ['add', '.']);
+    git(root, ['commit', '-m', 'seed']);
+    const exclude = path.join(root, '.git', 'info', 'exclude');
+    writeFileSync(exclude, '# user-owned excludes\n');
+    const wt = createWorktree(root, 'TASK-0099', 'exclude safety');
+    assert.equal(readFileSync(exclude, 'utf8'), '# user-owned excludes\n');
+    removeWorktree(root, wt.path, wt.branch);
+});
+//# sourceMappingURL=worktree.test.js.map

@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Flow"
+  short_description: "Automatic spec-first software workflow"
+  default_prompt: "Apply AI Flow automatically to the current repository request."

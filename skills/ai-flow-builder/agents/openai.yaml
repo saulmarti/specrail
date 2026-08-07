@@ -1,0 +1,4 @@
+interface:
+  display_name: "Builder"
+  short_description: "Implement an approved task with tests"
+  default_prompt: "Implement the current approved AI Flow task."

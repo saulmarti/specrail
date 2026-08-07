@@ -1,0 +1,4 @@
+interface:
+  display_name: "QA Engineer"
+  short_description: "Validate real behavior and capture evidence"
+  default_prompt: "Validate the current AI Flow task against its approved specification."

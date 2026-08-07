@@ -1,0 +1,4 @@
+interface:
+  display_name: "Final Customer"
+  short_description: "Judge usability and product value strictly"
+  default_prompt: "Use the completed feature as a strict final customer."

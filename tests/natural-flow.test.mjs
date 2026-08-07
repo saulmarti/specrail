@@ -1,0 +1,65 @@
+// @ts-nocheck
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { intakeTask } from '../dist/src/lib/automation.js';
+import { findTask, loadTask, setSection, saveTask, listTasks } from '../dist/src/lib/task.js';
+import { completePhase } from '../dist/src/lib/workflow.js';
+import { interactionForTask } from '../dist/src/lib/interactions.js';
+import { readyProjectContext, createFakeCodeGraph, setDefaultBlastRadius } from './helpers.mjs';
+const repo = () => mkdtempSync(path.join(tmpdir(), 'ai-flow-natural-'));
+test('a natural repository request initializes AI Flow and starts one reusable task automatically', () => {
+    const root = repo();
+    const fake = createFakeCodeGraph();
+    const first = intakeTask(root, { title: 'Redesign homepage', need: 'Redesign the homepage to make the main actions clearer.', type: 'feature', surfaces: ['frontend'] }, { codegraph: { command: fake.command, minIntervalMs: 0 } });
+    assert.equal(first.created, true);
+    assert.equal(first.task.meta.status, 'refining');
+    assert.equal(first.task.meta.phase, 'product-specifier');
+    const again = intakeTask(root, { title: 'Redesign homepage', need: 'Continue the homepage redesign.', type: 'feature', surfaces: ['frontend'] }, { codegraph: { command: fake.command, minIntervalMs: 0 } });
+    assert.equal(again.created, false);
+    assert.equal(again.task.meta.id, first.task.meta.id);
+    assert.equal(listTasks(root).length, 1);
+});
+test('approval and product questions are emitted as native request_user_input payloads', () => {
+    const root = repo();
+    const fake = createFakeCodeGraph();
+    const { task } = intakeTask(root, { title: 'Add favorites', need: 'Let users save favorites.', type: 'feature', surfaces: ['frontend', 'backend'] }, { codegraph: { command: fake.command, minIntervalMs: 0 } });
+    readyProjectContext(root);
+    let loaded = loadTask(findTask(root, task.meta.id));
+    loaded.body = setSection(loaded.body, 'Need', 'Let signed-in users save favorites.');
+    loaded.body = setSection(loaded.body, 'Product Value', 'Return quickly to relevant content.');
+    loaded.body = setSection(loaded.body, 'Scope', 'Save and remove favorites.');
+    loaded.body = setSection(loaded.body, 'UI Target', '- Route: `/favorites`\n- Target: `main#favorites`\n- Capture: focused section');
+    loaded.body = setSection(loaded.body, 'Out of Scope', 'Sharing favorites.');
+    loaded.body = setSection(loaded.body, 'Acceptance Criteria', '- Save a favorite\n- Remove a favorite');
+    saveTask(loaded);
+    setDefaultBlastRadius(root,task.meta.id);
+    const q = interactionForTask(root, task.meta.id, 'product-question', { id: 'Q-001', text: 'Where should favorites be stored?', category: 'product', options: ['User account', 'Only this device'], recommendation: 'User account' });
+    assert.equal(q.tool, 'request_user_input');
+    assert.equal(q.questions[0].options.length, 2);
+    assert.equal(q.questions[0].isOther, true);
+    loaded = loadTask(findTask(root, task.meta.id));
+    loaded.meta.route.design = false;
+    saveTask(loaded);
+    completePhase(root, task.meta.id);
+    const approval = interactionForTask(root, task.meta.id, 'spec-approval');
+    assert.equal(approval.tool, 'request_user_input');
+    assert.match(approval.questions[0].question, /Add favorites/);
+    assert.deepEqual(approval.questions[0].options.map(x => x.label), ['Aprobar especificación', 'Solicitar refinamiento', 'Rechazar tarea']);
+});
+test('natural intake from a nested directory initializes and reuses the Git repository root', () => {
+    const root = repo();
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    const nested = path.join(root, 'src', 'components');
+    mkdirSync(nested, { recursive: true });
+    const fake = createFakeCodeGraph();
+    const first = intakeTask(nested, { title: 'Ajustar card principal', need: 'Make the card clearer.', type: 'task', surfaces: ['frontend'] }, { codegraph: { command: fake.command, minIntervalMs: 0 } });
+    assert.ok(first.task.path.startsWith(path.join(root, '.ai', 'tasks')));
+    assert.equal(existsSync(path.join(nested, '.ai')), false);
+    const again = intakeTask(nested, { title: 'Ajustar card principal', need: 'Continue.', type: 'task', surfaces: ['frontend'] }, { codegraph: { command: fake.command, minIntervalMs: 0 } });
+    assert.equal(again.task.meta.id, first.task.meta.id);
+});
+//# sourceMappingURL=natural-flow.test.js.map

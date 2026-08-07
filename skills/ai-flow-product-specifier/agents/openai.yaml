@@ -1,0 +1,4 @@
+interface:
+  display_name: "Product Specifier"
+  short_description: "Refine requests into approvable specifications"
+  default_prompt: "Refine the current AI Flow task into a decision-complete specification."

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 3,
+  "capability": "visualize",
+  "preferredCapabilityName": "Visualize",
+  "availability": "available",
+  "exactToolName": "visualize.render",
+  "discovery": "host-tool-list",
+  "kind": "ui-spec-review",
+  "gate": "spec-approval",
+  "title": "TASK-0001 \u2014 Homepage spotlight",
+  "purpose": "Compare canonical before and proposal evidence without inventing UI.",
+  "payload": {
+    "taskId": "TASK-0001",
+    "gate": "spec-approval"
+  },
+  "sources": [
+    {
+      "kind": "review-bundle",
+      "path": ".ai/reviews/TASK-0001-spec-review.md",
+      "mediaType": "text/markdown",
+      "sha256": null
+    }
+  ],
+  "constraints": {
+    "readOnly": true,
+    "maxInstances": 1,
+    "mustNotModifyProject": true,
+    "mustNotAnswerForUser": true,
+    "sourceOfTruth": "markdown"
+  },
+  "evaluatorMode": "fresh-context",
+  "fallback": "markdown-and-attachments",
+  "recordRequired": true,
+  "planDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sourceDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "createdAt": "2026-08-06T00:00:00.000Z",
+  "experience": {
+    "mode": "interactive",
+    "pattern": "before-proposal-comparator",
+    "views": [
+      "Before",
+      "Proposal"
+    ],
+    "controls": [
+      "view toggle",
+      "viewport selector"
+    ],
+    "defaultView": "Before"
+  }
+}

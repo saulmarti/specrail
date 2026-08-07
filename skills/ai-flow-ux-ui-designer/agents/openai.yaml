@@ -1,0 +1,4 @@
+interface:
+  display_name: "UX/UI Designer"
+  short_description: "Taste-guided Image Gen proposals from the real UI"
+  default_prompt: "Apply Taste Skill, inspect the exact running-product target, and create a review-ready Image Gen proposal."
