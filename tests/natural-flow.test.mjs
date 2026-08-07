@@ -1,7 +1,7 @@
 // @ts-nocheck
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, existsSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -57,7 +57,9 @@ test('natural intake from a nested directory initializes and reuses the Git repo
     mkdirSync(nested, { recursive: true });
     const fake = createFakeCodeGraph();
     const first = intakeTask(nested, { title: 'Ajustar card principal', need: 'Make the card clearer.', type: 'task', surfaces: ['frontend'] }, { codegraph: { command: fake.command, minIntervalMs: 0 } });
-    assert.ok(first.task.path.startsWith(path.join(root, '.ai', 'tasks')));
+    const canonicalTaskPath = realpathSync(first.task.path);
+    const canonicalTasksRoot = realpathSync(path.join(root, '.ai', 'tasks'));
+    assert.ok(canonicalTaskPath.startsWith(canonicalTasksRoot + path.sep));
     assert.equal(existsSync(path.join(nested, '.ai')), false);
     const again = intakeTask(nested, { title: 'Ajustar card principal', need: 'Continue.', type: 'task', surfaces: ['frontend'] }, { codegraph: { command: fake.command, minIntervalMs: 0 } });
     assert.equal(again.task.meta.id, first.task.meta.id);

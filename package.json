@@ -44,13 +44,13 @@
     "prepublishOnly": "npm run check",
     "version": "node scripts/sync-version.mjs",
     "release:check": "npm run check && npm pack --dry-run",
-    "release:major": "npm version major && npm publish --access public --tag latest",
-    "release:minor": "npm version minor && npm publish --access public --tag latest",
-    "release:patch": "npm version patch && npm publish --access public --tag latest",
-    "release:beta:major": "npm version premajor --preid=beta && npm publish --access public --tag beta",
-    "release:beta:minor": "npm version preminor --preid=beta && npm publish --access public --tag beta",
-    "release:beta:patch": "npm version prepatch --preid=beta && npm publish --access public --tag beta",
-    "release:beta": "npm version prerelease --preid=beta && npm publish --access public --tag beta"
+    "release:major": "npm run release:check && npm version major && npm publish --access public --tag latest",
+    "release:minor": "npm run release:check && npm version minor && npm publish --access public --tag latest",
+    "release:patch": "npm run release:check && npm version patch && npm publish --access public --tag latest",
+    "release:beta:major": "npm run release:check && npm version premajor --preid=beta && npm publish --access public --tag beta",
+    "release:beta:minor": "npm run release:check && npm version preminor --preid=beta && npm publish --access public --tag beta",
+    "release:beta:patch": "npm run release:check && npm version prepatch --preid=beta && npm publish --access public --tag beta",
+    "release:beta": "npm run release:check && npm version prerelease --preid=beta && npm publish --access public --tag beta"
   },
   "engines": {
     "node": ">=22.0.0"

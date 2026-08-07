@@ -15,6 +15,8 @@ This release is an adversarial hardening pass over the `0.8.0-beta.1` delivery-g
 - malformed/unbalanced active-agent trace intervals;
 - invalid Replay variants being restarted or completed again;
 - legacy approvals becoming unusable after hardening without a safe migration path.
+- macOS temporary-path aliases (`/var` vs `/private/var`) making repository-root regression checks flaky;
+- Replay `variant-started` timestamps racing immediate trace events by a few milliseconds.
 
 ## Required validation
 
@@ -23,7 +25,7 @@ The release is complete only when all repository tests, TypeScript/CLI checks, p
 ## Repository verification
 
 - `npm run check`: PASS.
-- Full regression suite: 155 tests, 155 passed, 0 failed.
+- Full regression suite: 156 tests, 156 passed, 0 failed.
 - TypeScript strict build and `node --check dist/src/cli.js`: PASS.
 
 
@@ -49,4 +51,4 @@ A generated npm tarball was installed into an empty prefix and HOME:
 
 ## ZIP verification
 
-A source ZIP was extracted into a clean directory and the complete regression suite passed there: 155 tests, 155 passed, 0 failed.
+A source ZIP was extracted into a clean directory and the complete regression suite passed there: 156 tests, 156 passed, 0 failed.

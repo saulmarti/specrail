@@ -6,6 +6,8 @@
 - Added adversarial regression coverage for approval tampering, protected-file renames, governed `.ai/project` drift, external provenance symlinks, and malformed Replay active-agent intervals.
 - Changed the canonical npm package name to **`@saulmarti/specrail`** because the unscoped `specrail` package belongs to another project; the executable remains `specrail` and `ai-flow` remains a compatibility alias.
 - Updated the public roadmap with planned Requirement Source Ledger, adversarial Specification Critic, first-class NFR coverage, change/failure classification, contract compatibility + Impact Radius, Repository Blueprint domain vocabulary, and content-aware managed updates.
+- Removed two cross-platform release-test flakes: repository-root assertions now canonicalize macOS `/var`/`/private/var` paths, and Replay anchors the initial `variant-started` trace event exactly to `startedAt`.
+- Hardened release scripts so `release:check` runs before `npm version`, avoiding unnecessary version/tag bumps when the current tree is not publishable.
 
 ## 0.8.0-beta.1 — 2026-08-07
 
