@@ -32,4 +32,4 @@ Use `request_user_input` for material user decisions. Never print option lists o
 
 The page-top or full-page screenshot is supplementary only; the primary capture must focus the approved target. Use the official Taste Skill workflow and Image Gen, preferably by editing the focused before screenshot. Reject and regenerate visible overflow, clipped or malformed text, overlap, unreadable text, scope drift, or generic visual treatment.
 
-Before Visualize, inspect the actual host tool list or capability list, invoke only the exact discovered tool, record its tool call reference, and use Markdown plus canonical images when the capability is unavailable.
+When the Codex skill catalog exposes `visualize`, explicitly use `$visualize` with the signed comparison plan and canonical before/proposal sources. Do not ask the user to type `/visualize`, do not call the plugin's internal renderer, and do not claim success from a generated file alone. Include the native Visualize content reference in the visible review, record the `$visualize` invocation/content reference, and use Markdown plus canonical images when the skill is unavailable.

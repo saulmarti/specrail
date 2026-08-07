@@ -8,7 +8,7 @@ const load=name=>JSON.parse(readFileSync(path.join(process.cwd(),'evals','visual
 test('visualization plan evals reject fake availability and accept the signed capability contract',()=>{
  assert.deepEqual(validateVisualizationPlan(load('valid-ui-spec.json')),[]);
  const failures=validateVisualizationPlan(load('invalid-fake-provider.json')).join(' ');
- assert.match(failures,/exact discovered tool/i);
+ assert.match(failures,/exact Visualize skill name|skill name/i);
 });
 test('visualization quality evals reject unreadable, unfaithful, overflowing output',()=>{
  assert.deepEqual(validateVisualizationQuality(load('valid-quality.json'),'fresh-context'),[]);

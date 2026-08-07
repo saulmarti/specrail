@@ -11,7 +11,7 @@ export const ACTIVATION_BODY=[
   '',
   'For every delivery request, open and follow `$HOME/.agents/skills/ai-flow/SKILL.md`, using the absolute launcher `$HOME/.local/bin/specrail`. That skill is the complete workflow contract. Never imitate CLI state changes or bypass a failed deterministic gate.',
   '',
-  'Before any approval, open or render the Review Cockpit attachment when supported, then show the returned presentation Markdown and all inline attachments in chat. Never implement before explicit specification approval and never mark implementation Done before final approval and deterministic delivery.'
+  'Before approval, use one stable session token for gate-capable commands. After phase complete, inspect its returned next interaction. Never invent or paraphrase request_user_input: forward the exact interaction returned by SpecRail. Cockpit generation is not host presentation; never claim local HTML is visible without a concrete host result. When available and planned, use $visualize as the native Review Cockpit renderer; never ask the user for /visualize or call plugin-cache render.py. Its exact native `visualize` content reference must be visibly emitted before it counts as presented; a generated HTML file or arbitrary invocation label is insufficient. Otherwise use the fallback. Show the complete returned presentation Markdown (the full Review Bundle) without summarizing or omitting any section, plus required supported evidence, before forwarding gate questions. Never implement before specification approval or finish before final approval and delivery.'
 ].join('\n');
 
 function backupOnce(file:string):void{if(existsSync(file)&&!existsSync(`${file}.ai-flow.bak`))cpSync(file,`${file}.ai-flow.bak`);}

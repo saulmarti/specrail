@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { initProject } from '../dist/src/lib/project.js';
@@ -40,29 +41,61 @@ test('spec approval includes a complete chat presentation before native input', 
     assert.equal(interaction.presentation.requiredBeforeInput, true);
     assert.equal(interaction.presentation.kind, 'specification-review');
     assert.match(interaction.presentation.markdown, /TASK-0001 — Ajustar tamaño del h3/);
-    assert.match(interaction.presentation.markdown, /## Necesidad/);
+    assert.match(interaction.presentation.markdown, /Specification review bundle/);
+    assert.match(interaction.presentation.markdown, /## Need/);
     assert.match(interaction.presentation.markdown, /Reducir el tamaño visual/);
-    assert.match(interaction.presentation.markdown, /## Criterios de aceptación/);
+    assert.match(interaction.presentation.markdown, /## Acceptance Criteria/);
     assert.match(interaction.presentation.markdown, /no hay overflow horizontal/);
+    assert.match(interaction.presentation.markdown, /## Effective specification/);
+    assert.match(interaction.presentation.markdown, /## Acceptance Coverage Matrix/);
+    assert.match(interaction.presentation.markdown, /## Scope Guard \/ Blast Radius/);
+    assert.match(interaction.presentation.markdown, /## Delivery trace/);
     assert.doesNotMatch(interaction.presentation.markdown, /Workflow Log/);
+    const bundleText = readFileSync(interaction.presentation.attachments.find(item => item.kind === 'review-bundle').path, 'utf8').trim();
+    assert.ok(interaction.presentation.markdown.includes(bundleText), 'presentation.markdown must contain the complete authoritative Review Bundle');
     assert.equal(interaction.presentation.attachments.length, 7);
     assert.ok(interaction.presentation.attachments.every(item => path.isAbsolute(item.path)));
     assert.deepEqual(interaction.presentation.attachments.map(x => x.kind), ['review-cockpit', 'review-bundle', 'task-markdown', 'frontend-before', 'ui-design-brief', 'frontend-proposal', 'ui-proposal-review']);
 });
+
+test('final approval presentation also embeds the complete final Review Bundle', () => {
+    const root = repo(), id = prepareFrontendSpec(root);
+    let task = loadTask(findTask(root, id));
+    task.body = setSection(task.body, 'QA', '- QA executed the approved public mission and recorded the observed result.');
+    task.body = setSection(task.body, 'Final Customer', '- Final customer validated the user-visible outcome.');
+    task.body = setSection(task.body, 'Handoff', 'Implementation and evidence are ready for delivery review.');
+    task.meta.status = 'awaiting_final_approval';
+    task.meta.phase = 'final-approval';
+    task.meta.waiting_for = 'user';
+    saveTask(task);
+    const interaction = interactionForTask(root, id, 'final-approval', { sessionId: 'chat-final-review' });
+    const bundle = interaction.presentation.attachments.find(item => item.kind === 'review-bundle');
+    const bundleText = readFileSync(bundle.path, 'utf8').trim();
+    assert.ok(interaction.presentation.markdown.includes(bundleText));
+    assert.match(interaction.presentation.markdown, /Final review bundle/);
+    assert.match(interaction.presentation.markdown, /## Delivery diff summary/);
+    assert.match(interaction.presentation.markdown, /## QA/);
+    assert.match(interaction.presentation.markdown, /## Final Customer/);
+    assert.equal(interaction.presentation.visualization.skillInvocation, '$visualize');
+});
+
 test('next action carries the same review presentation so a new chat can render it', () => {
     const root = repo(), id = prepareFrontendSpec(root);
     const next = nextAction(root, id);
     assert.equal(next.action, 'approve-or-refine-specification');
     assert.equal(next.interaction.presentation.requiredBeforeInput, true);
-    assert.match(next.interaction.presentation.markdown, /## Alcance/);
+    assert.match(next.interaction.presentation.markdown, /## Scope/);
     assert.equal(next.interaction.presentation.attachments.length, 7);
 });
-test('orchestrator contract requires rendering and attaching evidence before asking', () => {
+test('orchestrator contract requires the exact SpecRail gate, full Review Bundle, evidence, and Visualize before asking', () => {
     const skill = readFileSync(path.join(process.cwd(), 'skills/ai-flow/SKILL.md'), 'utf8');
-    assert.match(skill, /render.*presentation\.markdown.*chat/i);
-    assert.match(skill, /attach.*presentation\.attachments/i);
-    assert.match(skill, /before.*request_user_input/i);
-    assert.match(skill, /do not ask for approval/i);
+    assert.match(skill, /never construct or paraphrase your own `request_user_input`/i);
+    assert.match(skill, /exact `next\.interaction` \/ `interaction` returned by SpecRail/i);
+    assert.match(skill, /complete `interaction\.presentation\.markdown`/i);
+    assert.match(skill, /complete authoritative Review Bundle/i);
+    assert.match(skill, /attach every host-supported required item/i);
+    assert.match(skill, /native `visualize` content reference must be visible before the gate questions/i);
+    assert.match(skill, /Do not ask for approval/i);
 });
 test('approval prompts explicitly refer to the preview already shown above', () => {
     const root = repo(), id = prepareFrontendSpec(root);
@@ -77,7 +110,45 @@ test('approval prompts explicitly refer to the preview already shown above', () 
 test('managed activation delegates presentation details to the global skill while preserving the approval invariant', () => {
     const managed = readFileSync(path.join(process.cwd(), 'src/lib/managed-installation.ts'), 'utf8');
     assert.match(managed, /follow .*ai-flow\/SKILL\.md/i);
-    assert.match(managed, /Before any approval, open or render the Review Cockpit attachment.*show the returned presentation Markdown.*inline attachments in chat/i);
-    assert.match(managed, /Never implement before explicit specification approval/i);
+    assert.match(managed, /Before approval, use one stable session token/i);
+    assert.match(managed, /Cockpit generation is not host presentation/i);
+    assert.match(managed, /never claim local HTML is visible without a concrete host result/i);
+    assert.match(managed, /Never invent or paraphrase request_user_input/i);
+    assert.match(managed, /exact interaction returned by SpecRail/i);
+    assert.match(managed, /complete returned presentation Markdown .*full Review Bundle/i);
+    assert.match(managed, /native .*content reference must be visibly emitted/i);
+    assert.match(managed, /Never implement before specification approval/i);
+});
+
+test('phase complete returns the newly reached approval gate with its full presentation and stable-session Visualize plan', () => {
+    const root = repo();
+    initProject(root, { name: 'Phase Gate' });
+    readyProjectContext(root);
+    const task = createTask(root, { title: 'Backend gate handoff', type: 'task', surfaces: ['backend'] });
+    startRefinement(root, task.meta.id);
+    let loaded = loadTask(findTask(root, task.meta.id));
+    loaded.body = setSection(loaded.body, 'Need', 'Expose one observable backend health response for monitoring.');
+    loaded.body = setSection(loaded.body, 'Product Value', 'Let operators verify service availability without inspecting internals.');
+    loaded.body = setSection(loaded.body, 'Users', 'Operators and automated monitoring clients.');
+    loaded.body = setSection(loaded.body, 'Scope', 'Add one read-only health response.');
+    loaded.body = setSection(loaded.body, 'Out of Scope', 'No authentication or persistence changes.');
+    loaded.body = setSection(loaded.body, 'Acceptance Criteria', '- AC-001: GET /health returns HTTP 200 with JSON status ok.');
+    loaded.meta.route.design = false;
+    loaded.meta.route.architecture = false;
+    loaded.meta.route.database = false;
+    saveTask(loaded);
+    setDefaultBlastRadius(root, task.meta.id);
+    const cli = path.join(process.cwd(), 'dist', 'src', 'cli.js');
+    const run = spawnSync(process.execPath, [cli, 'phase', 'complete', task.meta.id, '--root', root, '--session', 'chat-phase-gate'], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    const result = JSON.parse(run.stdout);
+    assert.equal(result.phase, 'spec-approval');
+    assert.equal(result.next.action, 'approve-or-refine-specification');
+    assert.equal(result.next.interaction.tool, 'request_user_input');
+    assert.equal(result.next.interaction.presentation.requiredBeforeInput, true);
+    assert.match(result.next.interaction.presentation.markdown, /Specification review bundle/);
+    assert.match(result.next.interaction.presentation.markdown, /## Acceptance Coverage Matrix/);
+    assert.equal(result.next.interaction.presentation.visualization.skillInvocation, '$visualize');
+    assert.equal(result.next.interaction.presentation.visualization.recordRequired, true);
 });
 //# sourceMappingURL=presentation.test.js.map

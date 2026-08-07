@@ -48,12 +48,14 @@ function plan(input: PlanInput): VisualizationPlan | null {
   };
   const sourceDigest = computeVisualizationSourceDigest(input.root, sources, payload);
   const base = {
-    schemaVersion: 3 as const,
+    schemaVersion: 4 as const,
     capability: 'visualize' as const,
     preferredCapabilityName: 'Visualize' as const,
+    preferredSkillName: 'visualize' as const,
+    skillInvocation: '$visualize' as const,
     availability: capability.availability,
-    exactToolName: capability.exactToolName,
-    discovery: 'host-tool-list' as const,
+    exactSkillName: capability.exactSkillName,
+    discovery: 'codex-skill-catalog' as const,
     kind: input.kind,
     gate: input.gate,
     title: input.title,
@@ -177,11 +179,11 @@ export function workflowVisualization(root: string, config: ProjectConfig, task:
 export function validateVisualizationPlan(planValue: VisualizationPlan | null): string[] {
   if (!planValue) return [];
   const errors: string[] = [];
-  if (planValue.schemaVersion !== 3) errors.push('Visualization plan schemaVersion must be 3');
-  if (planValue.capability !== 'visualize' || planValue.preferredCapabilityName !== 'Visualize') errors.push('Visualization plan must request the Visualize capability without claiming a provider');
-  if (planValue.discovery !== 'host-tool-list') errors.push('Visualization capability must be discovered from the actual host tool/plugin list');
-  if (planValue.availability === 'available' && !planValue.exactToolName) errors.push('Available visualization plan must include the exact discovered tool name');
-  if (planValue.availability !== 'available' && planValue.exactToolName) errors.push('Unavailable or unknown visualization plan cannot claim an exact tool name');
+  if (planValue.schemaVersion !== 4) errors.push('Visualization plan schemaVersion must be 4');
+  if (planValue.capability !== 'visualize' || planValue.preferredCapabilityName !== 'Visualize' || planValue.preferredSkillName !== 'visualize' || planValue.skillInvocation !== '$visualize') errors.push('Visualization plan must target the installed Codex Visualize skill via $visualize');
+  if (planValue.discovery !== 'codex-skill-catalog') errors.push('Visualization capability must be discovered from the current Codex skill catalog');
+  if (planValue.availability === 'available' && planValue.exactSkillName !== 'visualize') errors.push('Available visualization plan must include the exact Visualize skill name');
+  if (planValue.availability !== 'available' && planValue.exactSkillName) errors.push('Unavailable or unknown visualization plan cannot claim an exact skill name');
   if (planValue.experience?.mode!=='interactive' || !planValue.experience.pattern || !planValue.experience.views?.length || !planValue.experience.controls?.length) errors.push('Visualize must define a useful interactive experience rather than a static decoration');
   if (typeof planValue.gate !== 'string' || !planValue.gate.trim()) errors.push('Visualization plan must identify its workflow gate');
   if (planValue.constraints.maxInstances !== 1) errors.push('Only one visualization may be rendered per gate');

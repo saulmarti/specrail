@@ -214,12 +214,14 @@ export interface VisualizationSource {
 }
 
 export interface VisualizationPlan {
-  schemaVersion: 3;
+  schemaVersion: 4;
   capability: 'visualize';
   preferredCapabilityName: 'Visualize';
+  preferredSkillName: 'visualize';
+  skillInvocation: '$visualize';
   availability: VisualizationAvailability;
-  exactToolName: string | null;
-  discovery: 'host-tool-list';
+  exactSkillName: string | null;
+  discovery: 'codex-skill-catalog';
   kind: string;
   gate: string;
   title: string;
@@ -243,12 +245,14 @@ export interface VisualizationPlan {
 }
 
 export interface VisualizationCapabilityRecord {
-  schemaVersion: 2;
+  schemaVersion: 3;
   capability: 'visualize';
   preferredCapabilityName: 'Visualize';
+  preferredSkillName: 'visualize';
+  skillInvocation: '$visualize';
   sessionId: string;
   availability: VisualizationAvailability;
-  exactToolName: string | null;
+  exactSkillName: string | null;
   reason: string | null;
   checkedAt: string;
 }
@@ -420,7 +424,7 @@ export interface ProjectConfig {
   visualize: {
     enabled: boolean;
     capability: 'visualize';
-    discovery: 'host-tool-list';
+    discovery: 'codex-skill-catalog';
     mode: 'adaptive';
     maxPerGate: number;
     fallback: 'markdown-and-attachments';

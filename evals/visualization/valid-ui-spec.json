@@ -1,13 +1,12 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "capability": "visualize",
   "preferredCapabilityName": "Visualize",
   "availability": "available",
-  "exactToolName": "visualize.render",
-  "discovery": "host-tool-list",
+  "discovery": "codex-skill-catalog",
   "kind": "ui-spec-review",
   "gate": "spec-approval",
-  "title": "TASK-0001 \u2014 Homepage spotlight",
+  "title": "TASK-0001 — Homepage spotlight",
   "purpose": "Compare canonical before and proposal evidence without inventing UI.",
   "payload": {
     "taskId": "TASK-0001",
@@ -46,5 +45,8 @@
       "viewport selector"
     ],
     "defaultView": "Before"
-  }
+  },
+  "preferredSkillName": "visualize",
+  "skillInvocation": "$visualize",
+  "exactSkillName": "visualize"
 }

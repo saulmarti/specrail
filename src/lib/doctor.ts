@@ -69,7 +69,7 @@ export function doctor(root=process.cwd(),home=os.homedir()):DoctorResult{
  add('ai-project',existsSync(path.join(root,'.ai','config.json')),path.join(root,'.ai','config.json'),true,null);
  const packageRoot=path.join(home,'.ai-flow');const plugin=validateAgentPlugin(packageRoot);
  add('agent-plugin-manifest',plugin.valid,plugin.valid?`${plugin.manifestPath} (${plugin.name||'invalid'} ${plugin.version||''}; ${plugin.skills.length} skills)`:plugin.errors.join('; '),true,'managed-installation');
- add('visualize-host-capability',true,'Session-specific: Codex must inspect its actual host tool/plugin list and record the result before invocation.',false,null);
+ add('visualize-host-capability',true,'Session-specific: Codex must confirm whether the current skill catalog exposes `visualize` / `$visualize`; this is optional and non-blocking.',false,null);
  return{ok:checks.filter(check=>check.required).every(check=>check.ok),checks};
 }
 

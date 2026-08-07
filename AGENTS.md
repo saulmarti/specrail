@@ -31,6 +31,7 @@ When instructions conflict, stop and surface the conflict rather than silently c
 - No implementation before explicit specification approval.
 - No final completion before real evidence, final approval, and deterministic delivery.
 - Never assume a host tool, plugin, MCP, or command name exists. Discover and validate capabilities, and provide a non-blocking fallback where safe.
+- Codex Visualize is exposed by the installed `visualize` skill. When a signed plan needs an interactive review and that skill is available, invoke it explicitly as `$visualize`; `/visualize` is only the composer shortcut. Never invoke bundled plugin-cache scripts directly or claim a visualization was shown until the native `visualize` content reference is visibly emitted.
 - Preserve existing `.ai/` projects and the `ai-flow` command alias unless a documented migration is approved.
 - Do not turn SpecRail into a task board or duplicate GitHub/Jira/Azure DevOps.
 - New agents, gates, or review passes require a measurable customer-value hypothesis.

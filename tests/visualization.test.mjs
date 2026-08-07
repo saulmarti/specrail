@@ -27,12 +27,17 @@ const goodQuality={evaluator:'fresh-context',clearPurpose:true,sourceFaithful:tr
 function planFor(root,id,session){
  return interactionForTask(root,id,'spec-approval',{sessionId:session}).presentation.visualization;
 }
+function visualArtifact(name='review.html'){
+ const dir=mkdtempSync(path.join(tmpdir(),'codex-visualize-'));const file=path.join(dir,name);writeFileSync(file,'<div id="visual-root">Review</div>');return file;
+}
 
-test('project config describes host capability discovery without claiming a Visualize tool exists',()=>{
+test('project config describes Codex skill discovery and explicit $visualize invocation',()=>{
  const config=loadProjectConfig(repo());
  assert.equal(config.visualize.enabled,true);
  assert.equal(config.visualize.capability,'visualize');
- assert.equal(config.visualize.discovery,'host-tool-list');
+ assert.equal(config.visualize.discovery,'codex-skill-catalog');
+ assert.equal(config.visualize.skill,'visualize');
+ assert.equal(config.visualize.invocation,'$visualize');
  assert.equal(config.visualize.fallback,'markdown-and-attachments');
  assert.equal(config.visualize.sourceOfTruth,'markdown');
  assert.equal(config.visualize.maxPerGate,1);
@@ -42,11 +47,14 @@ test('project config describes host capability discovery without claiming a Visu
 test('unknown capability produces a signed fallback-first plan and never claims rendering',()=>{
  const root=repo(),id=frontendAtApproval(root),interaction=interactionForTask(root,id,'spec-approval',{sessionId:'chat-a'});
  const plan=interaction.presentation.visualization;
- assert.equal(plan.schemaVersion,3);
+ assert.equal(plan.schemaVersion,4);
  assert.equal(plan.capability,'visualize');
  assert.equal(plan.preferredCapabilityName,'Visualize');
+ assert.equal(plan.preferredSkillName,'visualize');
+ assert.equal(plan.skillInvocation,'$visualize');
+ assert.equal(plan.discovery,'codex-skill-catalog');
  assert.equal(plan.availability,'unknown');
- assert.equal(plan.exactToolName,null);
+ assert.equal(plan.exactSkillName,null);
  assert.equal(plan.kind,'ui-spec-review');
  assert.equal(plan.evaluatorMode,'fresh-context');
  assert.match(plan.planDigest,/^[a-f0-9]{64}$/);
@@ -58,24 +66,41 @@ test('unknown capability produces a signed fallback-first plan and never claims 
  assert.ok(interaction.presentation.attachments.some(x=>x.kind==='review-bundle'));
 });
 
-test('a rendered result requires the exact discovered tool, signed plan, invocation reference, result summary, and fresh evaluation',()=>{
+test('a rendered result requires the exact Visualize skill, signed plan, content reference, result summary, and fresh evaluation',()=>{
  const root=repo(),id=frontendAtApproval(root);
  const before=getVisualizationCapability(root,'chat-b');assert.equal(before.availability,'unknown');
- recordVisualizationCapability(root,{sessionId:'chat-b',availability:'available',exactToolName:'visualize.render',reason:'Present in the current Codex host tool list'});
+ recordVisualizationCapability(root,{sessionId:'chat-b',availability:'available',exactSkillName:'visualize',reason:'The current Codex skill catalog exposes $visualize'});
  const plan=planFor(root,id,'chat-b');
- assert.equal(plan.availability,'available');assert.equal(plan.exactToolName,'visualize.render');
- assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId:'chat-missing-plan',gate:'spec-approval',outcome:'rendered',provider:'visualize.render',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:'call-1',resultText:'Rendered a canonical comparison without inventing facts.',quality:goodQuality}),/persists.*plan/i);
- assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId:'chat-b',gate:'spec-approval',outcome:'rendered',provider:'visualize.render',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,resultText:'Rendered a canonical comparison without inventing facts.',quality:goodQuality}),/invocation reference/i);
- const record=recordVisualizationRun(root,{taskId:id,sessionId:'chat-b',gate:'spec-approval',outcome:'rendered',provider:'visualize.render',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:'tool-call-42',resultText:'Rendered a canonical comparison of the approved screenshots and criteria.',quality:goodQuality});
- assert.equal(record.outcome,'rendered');assert.equal(record.invocationRef,'tool-call-42');assert.match(record.resultDigest,/^[a-f0-9]{64}$/);assert.equal(getVisualizationRun(root,id,'spec-approval','chat-b').provider,'visualize.render');
+ assert.equal(plan.availability,'available');assert.equal(plan.exactSkillName,'visualize');assert.equal(plan.skillInvocation,'$visualize');
+ assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId:'chat-missing-plan',gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:'call-1',resultText:'Rendered a canonical comparison without inventing facts.',artifactPath:visualArtifact(),quality:goodQuality}),/persists.*plan/i);
+ const artifact=visualArtifact();
+ assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId:'chat-b',gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,resultText:'Rendered a canonical comparison without inventing facts.',artifactPath:artifact,quality:goodQuality}),/native Visualize content reference/i);
+ assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId:'chat-b',gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:'visualize-content-ref:'+artifact,resultText:'Rendered a canonical comparison without inventing facts.',artifactPath:artifact,quality:goodQuality}),/exact native.*visualize content reference/i);
+ assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId:'chat-b',gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:'visualize{\"path\":\"/tmp/different.html\"}',resultText:'Rendered a canonical comparison without inventing facts.',artifactPath:artifact,quality:goodQuality}),/path must match artifactPath/i);
+ const contentRef=`visualize${JSON.stringify({path:artifact,title:'SpecRail review'})}`;
+ const record=recordVisualizationRun(root,{taskId:id,sessionId:'chat-b',gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:contentRef,resultText:'Rendered a canonical comparison of the approved screenshots and criteria.',artifactPath:artifact,quality:goodQuality});
+ assert.equal(record.outcome,'rendered');assert.equal(record.invocationRef,contentRef);assert.match(record.resultDigest,/^[a-f0-9]{64}$/);assert.equal(getVisualizationRun(root,id,'spec-approval','chat-b').provider,'$visualize');
+});
+
+
+test('Visualize can register its task-owned HTML fragment outside the checked-out repository',()=>{
+ const root=repo(),id=frontendAtApproval(root),sessionId='chat-artifact';
+ recordVisualizationCapability(root,{sessionId,availability:'available',exactSkillName:'visualize'});
+ const plan=planFor(root,id,sessionId);
+ const visualDir=mkdtempSync(path.join(tmpdir(),'codex-visualization-'));
+ const artifact=path.join(visualDir,'review-cockpit.html');writeFileSync(artifact,'<div id="review">Review</div>');
+ const record=recordVisualizationRun(root,{taskId:id,sessionId,gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:`visualize${JSON.stringify({path:artifact})}`,resultText:'Visualize prepared the signed review comparator and its native content reference.',artifactPath:artifact,quality:goodQuality});
+ assert.equal(record.artifactPath,artifact);
+ const bad=path.join(visualDir,'review.txt');writeFileSync(bad,'not html');
+ assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId,gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:`visualize${JSON.stringify({path:bad})}`,resultText:'Visualize prepared a non-HTML artifact that must be rejected by the contract.',artifactPath:bad,quality:goodQuality}),/HTML fragments/i);
 });
 
 test('low-quality and self-approved high-impact visuals are rejected while an unavailable host records fallback',()=>{
  const root=repo(),id=frontendAtApproval(root);
- recordVisualizationCapability(root,{sessionId:'chat-quality',availability:'available',exactToolName:'visualize.render'});
- const plan=planFor(root,id,'chat-quality');
- assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId:'chat-quality',gate:'spec-approval',outcome:'rendered',provider:'visualize.render',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:'call-low',resultText:'Rendered output with known layout and readability defects.',quality:{evaluator:'self-check',clearPurpose:true,sourceFaithful:true,mobileReadable:false,noOverflow:false,noClipping:true,concise:true,score:65}}),/fresh-context|quality|mobileReadable|overflow/i);
- recordVisualizationCapability(root,{sessionId:'chat-no-tool',availability:'unavailable',reason:'No matching capability in host tool list'});
+ recordVisualizationCapability(root,{sessionId:'chat-quality',availability:'available',exactSkillName:'visualize'});
+ const plan=planFor(root,id,'chat-quality'),artifact=visualArtifact();
+ assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId:'chat-quality',gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:`visualize${JSON.stringify({path:artifact})}`,resultText:'Rendered output with known layout and readability defects.',artifactPath:artifact,quality:{evaluator:'self-check',clearPurpose:true,sourceFaithful:true,mobileReadable:false,noOverflow:false,noClipping:true,concise:true,score:65}}),/fresh-context|quality|mobileReadable|overflow/i);
+ recordVisualizationCapability(root,{sessionId:'chat-no-tool',availability:'unavailable',reason:'The current Codex skill catalog does not expose visualize'});
  const fallbackPlan=planFor(root,id,'chat-no-tool');
  const fallback=recordVisualizationRun(root,{taskId:id,sessionId:'chat-no-tool',gate:'spec-approval',outcome:'fallback',provider:null,planDigest:fallbackPlan.planDigest,sourceDigest:fallbackPlan.sourceDigest,quality:null});
  assert.equal(fallback.outcome,'fallback');
@@ -83,11 +108,11 @@ test('low-quality and self-approved high-impact visuals are rejected while an un
 
 test('changed source evidence invalidates a visualization plan before rendering',()=>{
  const root=repo(),id=frontendAtApproval(root);
- recordVisualizationCapability(root,{sessionId:'chat-stale',availability:'available',exactToolName:'visualize.render'});
+ recordVisualizationCapability(root,{sessionId:'chat-stale',availability:'available',exactSkillName:'visualize'});
  const interaction=interactionForTask(root,id,'spec-approval',{sessionId:'chat-stale'}),plan=interaction.presentation.visualization;
  const bundle=interaction.presentation.attachments.find(item=>item.kind==='review-bundle');
  appendFileSync(bundle.path,'\nChanged after visualization planning.\n');
- assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId:'chat-stale',gate:'spec-approval',outcome:'rendered',provider:'visualize.render',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:'call-stale',resultText:'Rendered an obsolete source set that should not be accepted.',quality:goodQuality}),/sources changed/i);
+ assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId:'chat-stale',gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:'call-stale',resultText:'Rendered an obsolete source set that should not be accepted.',artifactPath:visualArtifact(),quality:goodQuality}),/sources changed/i);
 });
 
 test('questions, blockers, and status plans use structured payloads without answering for the user',()=>{
@@ -99,18 +124,26 @@ test('questions, blockers, and status plans use structured payloads without answ
  const next=nextAction(root,task.meta.id,{sessionId:'chat-a'});assert.equal(next.visualization.kind,'workflow-status');assert.equal(next.visualization.payload.taskId,task.meta.id);assert.ok(Array.isArray(next.visualization.payload.steps));
 });
 
-test('skills require actual capability discovery, signed outcome recording, and Markdown fallback',()=>{
+test('skills use explicit $visualize invocation, signed outcome recording, and Markdown fallback',()=>{
  const primary=readFileSync(path.join(process.cwd(),'skills/ai-flow/SKILL.md'),'utf8');
  const ux=readFileSync(path.join(process.cwd(),'skills/ai-flow-ux-ui-designer/SKILL.md'),'utf8');
  const managed=readFileSync(path.join(process.cwd(),'src/lib/managed-installation.ts'),'utf8');
- assert.match(primary,/host tool|tool list|capabilit/i);assert.match(primary,/plan.?digest|signed plan/i);assert.match(primary,/invocation reference|tool call/i);assert.match(primary,/fallback|unavailable|no disponible/i);
- assert.match(ux,/host tool|tool list|capabilit/i);assert.match(managed,/ai-flow\/SKILL\.md|complete workflow contract/i);
+ assert.match(primary,/\$visualize/);assert.match(primary,/skill catalog/i);assert.match(primary,/signed plan/i);assert.match(primary,/content reference|invocation reference/i);assert.match(primary,/fallback|unavailable|non-blocking/i);
+ assert.match(primary,/do not ask the user to type `?\/visualize/i);assert.match(primary,/render\.py/i);
+ assert.match(ux,/\$visualize/);assert.match(ux,/skill catalog/i);assert.match(managed,/\$visualize/);assert.match(managed,/ai-flow\/SKILL\.md|complete workflow contract/i);
 });
 
-test('legacy visualization capability records migrate without deleting project runtime state',()=>{
+test('legacy host-tool capability records are invalidated and must rediscover the Visualize skill',()=>{
  const root=repo(),file=path.join(root,'.ai','runtime','capabilities','legacy-chat.json');
  mkdirSync(path.dirname(file),{recursive:true});
- writeFileSync(file,JSON.stringify({schemaVersion:1,capability:'visualize',sessionId:'legacy-chat',availability:'available',exactToolName:'legacy.visualize',reason:null,checkedAt:'2026-08-01T00:00:00.000Z'}));
+ writeFileSync(file,JSON.stringify({schemaVersion:2,capability:'visualize',sessionId:'legacy-chat',availability:'available',exactToolName:'legacy.visualize',reason:null,checkedAt:'2026-08-01T00:00:00.000Z'}));
  const migrated=getVisualizationCapability(root,'legacy-chat');
- assert.equal(migrated.schemaVersion,2);assert.equal(migrated.preferredCapabilityName,'Visualize');assert.equal(migrated.exactToolName,'legacy.visualize');
+ assert.equal(migrated.schemaVersion,3);assert.equal(migrated.preferredSkillName,'visualize');assert.equal(migrated.skillInvocation,'$visualize');assert.equal(migrated.availability,'unknown');assert.equal(migrated.exactSkillName,null);assert.match(migrated.reason,/legacy.*host-tool|rediscover/i);
+});
+
+test('Visualize availability accepts only the canonical visualize skill and rejects invented tool names',()=>{
+ const root=repo();
+ assert.throws(()=>recordVisualizationCapability(root,{sessionId:'chat-tool',availability:'available',exactSkillName:'visualize.render'}),/skill name.*visualize/i);
+ const record=recordVisualizationCapability(root,{sessionId:'chat-skill',availability:'available',exactSkillName:'$visualize'});
+ assert.equal(record.exactSkillName,'visualize');assert.equal(record.skillInvocation,'$visualize');
 });

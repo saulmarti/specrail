@@ -164,7 +164,7 @@ description: Official Taste Skill ${name}.
     json(bin, ['evidence', 'add', id, '--kind', 'ui-proposal-review', '--path', good, '--source', 'visual-proposal-review', '--label', 'Proposal review', '--tool', 'Taste Skill + Codex vision', '--root', repo]);
     json(bin, ['phase', 'complete', id, '--root', repo]);
     const review = json(bin, ['interaction', id, '--kind', 'spec-approval', '--root', repo]);
-    assert.match(review.presentation.markdown, /Objetivo visual/);
+    assert.match(review.presentation.markdown, /## UI Target/);
     assert.match(review.presentation.markdown, /section#home-spotlight/);
     assert.deepEqual(review.presentation.attachments.map(x => x.kind), ['review-cockpit', 'review-bundle', 'task-markdown', 'frontend-before', 'ui-design-brief', 'frontend-proposal', 'ui-proposal-review']);
 });

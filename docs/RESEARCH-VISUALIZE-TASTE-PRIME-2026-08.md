@@ -70,4 +70,4 @@ A new chat or subagent creates a branch while preserving the shared parent state
 
 ## Limitations
 
-The original X posts could not be reliably parsed directly in this build environment. Their claims were checked against indexed reposts, the official Taste repository, Prime Intellect’s primary article/docs, and OpenAI’s plugin documentation. The real Visualize tool name and renderer still require one physical test in the user’s Codex Desktop session.
+The original X posts could not be reliably parsed directly in this build environment. Their claims were checked against indexed reposts, the official Taste repository, Prime Intellect’s primary article/docs, and OpenAI’s plugin documentation. A physical Codex Desktop test on 2026-08-07 confirmed that the OpenAI-bundled Visualize plugin exposes the skill `visualize`, supports explicit `$visualize` selection, and renders through the native `visualize` content reference. SpecRail must use that public skill contract rather than plugin-cache implementation paths.

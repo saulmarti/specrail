@@ -10,7 +10,7 @@ description: Use when AI Flow routes an implementation to functional validation.
 4. Backend/API: run real positive, negative, authorization, persistence, and error scenarios. Database/CLI/jobs: record commands, outputs, exit codes, schema/migration effects, and failure behavior.
 5. Verify required property/mutation results and operational logs/traces/metrics when selected by risk.
 6. Register `qa-report` with the approved mission hash and link each acceptance criterion to evidence. Any unmet criterion is a failure.
-7. Use Visualize only for an interactive multi-flow/device evidence map when it improves review; canonical evidence remains authoritative.
+7. Use `$visualize` only for an interactive multi-flow/device evidence map when the installed Codex Visualize skill is available and it improves review; canonical evidence remains authoritative. Never ask the user to type `/visualize` and never invoke the plugin's internal renderer directly.
 
 Use `request_user_input` for material user decisions. Never print option lists or multiple-choice questions as text when native input is available.
 

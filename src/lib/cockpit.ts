@@ -37,6 +37,8 @@ export interface CockpitResult {
   nextAction: string;
   sourceDigest: string;
   generatedAt: string;
+  hostPresentation: 'not-verified';
+  presentationHint: string;
 }
 
 const IMAGE_MIME: Record<string, string> = {
@@ -271,6 +273,8 @@ export function writeReviewCockpit(root: string, id: string, requestedStage: Coc
     checks,
     nextAction: action,
     sourceDigest,
-    generatedAt: new Date().toISOString()
+    generatedAt: new Date().toISOString(),
+    hostPresentation: 'not-verified',
+    presentationHint: 'Cockpit HTML was generated locally. This does not confirm that the current host opened, rendered, attached, or displayed it.'
   };
 }

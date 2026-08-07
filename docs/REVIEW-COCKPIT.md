@@ -23,7 +23,7 @@ The result is written under:
 .ai/reviews/TASK-0042-status-cockpit.html
 ```
 
-At approval gates the HTML is the first inline attachment, followed by the authoritative Review Bundle, task Markdown, and evidence files.
+At approval gates SpecRail always generates the local Cockpit HTML as a durable, read-only fallback. When the installed Codex skill catalog exposes `visualize` and the signed gate plan calls for interactive review, the preferred in-conversation surface is `$visualize`, which must emit a real native `visualize` content reference before the Cockpit counts as shown. The CLI-generated HTML alone is **not** proof that Codex Desktop opened or rendered it. Regardless of Visualize availability, the complete authoritative Review Bundle Markdown plus every supported required evidence item must be visible before the native approval control. SpecRail must never claim that the Cockpit is visible without either the native Visualize content reference or another concrete successful host presentation result.
 
 ## What the MVP shows
 

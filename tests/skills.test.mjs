@@ -123,4 +123,26 @@ test('AI Flow contracts enforce approval hashes, task leases, spec lint, review 
     assert.match(managed, /complete workflow contract/i);
     assert.match(managed, /ai-flow\/SKILL\.md/i);
 });
+test('approval presentation never confuses generated Cockpit HTML with host-visible review', () => {
+    const primary = skill('ai-flow'), managed = readFileSync(path.join(root, 'src/lib/managed-installation.ts'), 'utf8');
+    assert.match(primary, /generation and host presentation as different states/i);
+    assert.match(primary, /never claim it is open, rendered, attached, or visible/i);
+    assert.match(primary, /complete `interaction\.presentation\.markdown`/i);
+    assert.match(primary, /preferred native in-conversation Review Cockpit renderer/i);
+    assert.match(managed, /never claim local HTML is visible without a concrete host result/i);
+    assert.match(managed, /complete returned presentation Markdown/i);
+});
+
+test('repository and public review docs agree on the $visualize skill and full Review Bundle contract', () => {
+    const primary = skill('ai-flow');
+    const agents = readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
+    const cockpit = readFileSync(path.join(root, 'docs/REVIEW-COCKPIT.md'), 'utf8');
+    const readme = readFileSync(path.join(root, 'README.md'), 'utf8');
+    for (const text of [primary, agents, cockpit, readme]) assert.match(text, /\$visualize/);
+    assert.match(agents, /composer shortcut/i);
+    assert.doesNotMatch(agents, /not an assistant-callable tool/i);
+    assert.match(cockpit, /complete authoritative Review Bundle/i);
+    assert.match(cockpit, /native `visualize` content reference/i);
+    assert.match(readme, /approval (?:control|selector)/i);
+});
 //# sourceMappingURL=skills.test.js.map

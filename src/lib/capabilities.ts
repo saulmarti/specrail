@@ -83,38 +83,58 @@ export function getVisualizationCapability(root: string, sessionId?: string | nu
   const id = sessionId?.trim();
   if (!id) {
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       capability: 'visualize',
       preferredCapabilityName: 'Visualize',
+      preferredSkillName: 'visualize',
+      skillInvocation: '$visualize',
       sessionId: 'unknown-session',
       availability: 'unknown',
-      exactToolName: null,
-      reason: 'No Codex session identifier was supplied, so the host capability list has not been inspected.',
+      exactSkillName: null,
+      reason: 'No Codex session identifier was supplied, so the current skill catalog has not been checked for $visualize.',
       checkedAt: new Date(0).toISOString()
     };
   }
   const stored = readJson<Record<string, unknown>>(visualizationCapabilityPath(root, id));
   const storedAvailability = stored?.availability;
-  if (stored?.capability === 'visualize' && (storedAvailability === 'unknown' || storedAvailability === 'available' || storedAvailability === 'unavailable')) {
+  if (stored?.schemaVersion === 3 && stored.capability === 'visualize' && (storedAvailability === 'unknown' || storedAvailability === 'available' || storedAvailability === 'unavailable')) {
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       capability: 'visualize',
       preferredCapabilityName: 'Visualize',
+      preferredSkillName: 'visualize',
+      skillInvocation: '$visualize',
       sessionId: typeof stored.sessionId === 'string' ? stored.sessionId : id,
       availability: storedAvailability,
-      exactToolName: typeof stored.exactToolName === 'string' ? stored.exactToolName : null,
-      reason: typeof stored.reason === 'string' ? stored.reason : (stored.schemaVersion === 1 ? 'Migrated from AI Flow visualization capability schema 1.' : null),
+      exactSkillName: typeof stored.exactSkillName === 'string' ? stored.exactSkillName : null,
+      reason: typeof stored.reason === 'string' ? stored.reason : null,
       checkedAt: typeof stored.checkedAt === 'string' ? stored.checkedAt : new Date(0).toISOString()
     };
   }
+  if (stored?.capability === 'visualize') {
+    return {
+      schemaVersion: 3,
+      capability: 'visualize',
+      preferredCapabilityName: 'Visualize',
+      preferredSkillName: 'visualize',
+      skillInvocation: '$visualize',
+      sessionId: id,
+      availability: 'unknown',
+      exactSkillName: null,
+      reason: 'Legacy Visualize capability data used host-tool discovery. Rediscover the installed Codex skill through the current skill catalog before claiming availability.',
+      checkedAt: new Date(0).toISOString()
+    };
+  }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     capability: 'visualize',
     preferredCapabilityName: 'Visualize',
+    preferredSkillName: 'visualize',
+    skillInvocation: '$visualize',
     sessionId: id,
     availability: 'unknown',
-    exactToolName: null,
-    reason: 'The actual Codex host tool/plugin list has not been inspected for this session.',
+    exactSkillName: null,
+    reason: 'The current Codex skill catalog has not been checked for the explicit $visualize skill in this session.',
     checkedAt: new Date(0).toISOString()
   };
 }
@@ -122,22 +142,25 @@ export function getVisualizationCapability(root: string, sessionId?: string | nu
 export interface RecordVisualizationCapabilityInput {
   sessionId: string;
   availability: VisualizationAvailability;
-  exactToolName?: string | null;
+  exactSkillName?: string | null;
   reason?: string | null;
 }
 
 export function recordVisualizationCapability(root: string, input: RecordVisualizationCapabilityInput): VisualizationCapabilityRecord {
   const sessionId = safeSegment(input.sessionId);
-  const exactToolName = input.exactToolName?.trim() || null;
-  if (input.availability === 'available' && !exactToolName) throw new Error('An available visualization capability must record the exact host-exposed tool or plugin name');
-  if (input.availability !== 'available' && exactToolName) throw new Error('An unavailable or unknown visualization capability cannot record an exact tool name');
+  const rawSkillName = input.exactSkillName?.trim() || null;
+  const exactSkillName = rawSkillName === '$visualize' ? 'visualize' : rawSkillName;
+  if (input.availability === 'available' && exactSkillName !== 'visualize') throw new Error('An available Visualize capability must record the exact Codex skill name "visualize" (invoked as $visualize)');
+  if (input.availability !== 'available' && exactSkillName) throw new Error('An unavailable or unknown visualization capability cannot record an exact skill name');
   const record: VisualizationCapabilityRecord = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     capability: 'visualize',
     preferredCapabilityName: 'Visualize',
+    preferredSkillName: 'visualize',
+    skillInvocation: '$visualize',
     sessionId,
     availability: input.availability,
-    exactToolName,
+    exactSkillName,
     reason: input.reason?.trim() || null,
     checkedAt: new Date().toISOString()
   };
@@ -198,9 +221,17 @@ export function recordVisualizationRun(root: string, input: RecordVisualizationR
   const quality = input.quality ?? null;
 
   if (input.outcome === 'rendered') {
-    if (capability.availability !== 'available' || !capability.exactToolName) throw new Error('Cannot record a rendered visualization until the actual host capability is recorded as available');
-    if (!provider || provider !== capability.exactToolName) throw new Error('Rendered visualization provider must match the exact discovered host tool name');
-    if (!invocationRef) throw new Error('Rendered visualization requires a real host invocation reference');
+    if (capability.availability !== 'available' || capability.exactSkillName !== 'visualize') throw new Error('Cannot record a rendered visualization until the current Codex session confirms the Visualize skill is available');
+    if (provider !== '$visualize') throw new Error('Rendered visualization provider must be the explicit Codex skill invocation $visualize');
+    if (!artifactPath) throw new Error('Rendered Visualize output requires the absolute HTML fragment path used by the native content reference');
+    if (!path.isAbsolute(artifactPath)) throw new Error('Rendered Visualize output must use an absolute executor-side HTML fragment path');
+    if (!invocationRef) throw new Error('Rendered visualization requires the real native Visualize content reference');
+    const contentRefMatch = invocationRef.match(/^visualize(\{[\s\S]*\})$/);
+    if (!contentRefMatch) throw new Error('Rendered visualization invocationRef must be the exact native visualize content reference emitted by Codex');
+    let contentRef: Record<string, unknown>;
+    try { contentRef = JSON.parse(contentRefMatch[1]!); } catch { throw new Error('Rendered visualization content reference must contain valid JSON'); }
+    if (typeof contentRef.path !== 'string' || !path.isAbsolute(contentRef.path)) throw new Error('Rendered visualization content reference must contain an absolute path');
+    if (path.resolve(contentRef.path) !== path.resolve(artifactPath)) throw new Error('Rendered visualization content reference path must match artifactPath');
     if (!resultText || resultText.length < 20) throw new Error('Rendered visualization requires a non-trivial host result summary for audit hashing');
     const qualityErrors = validateVisualizationQuality(quality, plan.evaluatorMode);
     if (qualityErrors.length) throw new Error(qualityErrors.join('; '));
@@ -209,8 +240,14 @@ export function recordVisualizationRun(root: string, input: RecordVisualizationR
   }
 
   if (artifactPath) {
-    const resolved = resolveProjectFile(root, artifactPath);
+    const resolved = provider === '$visualize' && path.isAbsolute(artifactPath) ? path.resolve(artifactPath) : resolveProjectFile(root, artifactPath);
     if (!existsSync(resolved) || !statSync(resolved).isFile()) throw new Error(`Visualization artifact does not exist: ${resolved}`);
+    if (provider === '$visualize') {
+      const project = path.resolve(root);
+      if (resolved === project || resolved.startsWith(`${project}${path.sep}`)) throw new Error('Visualize HTML fragments must live outside the checked-out repository');
+      if (path.extname(resolved).toLowerCase() !== '.html') throw new Error('Visualize artifacts must be HTML fragments referenced by the Codex visualization surface');
+      if (statSync(resolved).size > 1024 * 1024) throw new Error('Visualize HTML fragments must stay under 1 MB');
+    }
   }
 
   const record: VisualizationRunRecord = {

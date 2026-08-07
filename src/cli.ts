@@ -143,7 +143,7 @@ async function main() {
             break;
         case 'interaction':
             root = findProjectRoot(rootFrom(flags));
-            output(interactionForTask(root, reference(p), flags.kind || 'current'), true);
+            output(interactionForTask(root, reference(p), flags.kind || 'current', { sessionId: flags.session ? String(flags.session) : null }), true);
             break;
         case 'patch':
             root = findProjectRoot(rootFrom(flags));
@@ -180,12 +180,14 @@ async function main() {
                 throw new Error('Unknown question command');
             break;
         }
-        case 'phase':
+        case 'phase': {
             root = findProjectRoot(rootFrom(flags));
             if (arg(1) !== 'complete')
                 throw new Error('Use: specrail phase complete TASK');
-            output(taskSummary(completePhase(root, arg(2), { sessionId: flags.session })), true);
+            const completed = completePhase(root, arg(2), { sessionId: flags.session });
+            output({ ...taskSummary(completed), next: nextAction(root, completed.meta.id, { sessionId: flags.session ? String(flags.session) : null }) }, true);
             break;
+        }
         case 'spec':
             root = findProjectRoot(rootFrom(flags));
             if (arg(1) === 'approve')
@@ -358,7 +360,7 @@ async function main() {
             else if (arg(2) === 'record') output(recordVisualizationCapability(root, {
                 sessionId,
                 availability: requireFlag(flags, 'availability'),
-                exactToolName: flags.tool ? String(flags.tool) : null,
+                exactSkillName: flags.skill ? String(flags.skill) : flags.tool ? String(flags.tool) : null,
                 reason: flags.reason ? String(flags.reason) : null
             }), true);
             else throw new Error('Use: specrail capability visualize status|record');
@@ -487,7 +489,7 @@ async function main() {
             break;
         default: console.log(`specrail commands:\n  init, preflight, intake, project status|complete|learn, create, list, resolve, status, readiness, why-blocked, next, interaction, patch, refine\n  section set, question add|answer|list, phase complete\n  spec approve|changes|reject|lint, run, block, resume, return
   lease status|acquire|take|release, context status|request, review bundle|cockpit, cockpit TASK\n  evidence add|list|validate, acceptance coverage, scope set|status, amendment propose|list|approve|reject, dependency add, subtask create\n  worktree create|checkpoint|remove, final approve|reject, delivery merge|external|keep
-  capability visualize status|record, visualization status|record|validate-plan
+  capability visualize status|record [--skill visualize], visualization status|record|validate-plan
   qa mission, failure record|list, eval list|approve|dismiss, repair status|reset
   metrics, trace [TASK]|validate TASK, constitution list|add|check, quality, operations, slice status|create|materialize
   replay create|status|start|complete|compare|event|scenarios|cleanup

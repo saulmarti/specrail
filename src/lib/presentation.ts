@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { findTask, getSection, loadTask } from './task.js';
 import { listEvidence } from './evidence.js';
 import { writeReviewBundle } from './review.js';
@@ -44,11 +45,9 @@ function build(root: string,id: string,kind: 'specification-review'|'final-resul
  const taskDocument: Attachment={id:'TASK-MARKDOWN',kind:'task-markdown',label:`${task.meta.id} — ${task.meta.title}.md`,source:'task-markdown',tool:'SpecRail',route:null,viewport:null,path:task.path,mediaType:'text/markdown',display:'inline',sha256:null};
  const attachments=[cockpitDocument,bundleDocument,taskDocument,...evidenceForStage(root,id,specification?'specification':'final')];
  const heading=specification?'Especificación lista para validar':'Resultado listo para validar';
- const metadata=[`- **Tarea:** ${task.meta.id} — ${task.meta.title}`,`- **Tipo:** ${task.meta.type}`,`- **Tamaño / riesgo:** ${task.meta.size} / ${task.meta.risk}`,`- **Superficies:** ${task.meta.surfaces.join(', ')||'sin clasificar'}`,`- **Ruta aprobable:** ${routeSummary(task.meta.route)}`].join('\n');
- const sections=sectionsMarkdown(task,specification?SPEC_SECTIONS:FINAL_SECTIONS);
- const evidence=evidenceMarkdown(attachments.filter(item=>item.kind!=='task-markdown'));
- const lintLine=`- **Specification lint:** ${bundle.lint.valid?'PASS':'FAIL'} (${bundle.lint.score}/100)`;
- const markdown=[`# ${task.meta.id} — ${task.meta.title}`,`> **${heading}.** Abre primero el Review Cockpit interactivo adjunto; el Markdown y las evidencias siguen siendo la fuente de verdad. No es necesario abrir la carpeta \`.ai/\`.`,metadata,lintLine,sections,evidence].filter(Boolean).join('\n\n');
+ const evidence=evidenceMarkdown(attachments.filter(item=>item.kind!=='task-markdown'&&item.kind!=='review-cockpit'));
+ const bundleMarkdown=readFileSync(bundle.path,'utf8').trim();
+ const markdown=[`> **${heading}.** SpecRail ha generado un Review Cockpit HTML en \`${cockpit.relativePath}\`. Generarlo no significa que Codex lo haya abierto o mostrado. Cuando la skill \`$visualize\` esté disponible, úsala como superficie interactiva nativa del Review Cockpit. El Review Bundle completo que sigue es autoritativo y debe mostrarse íntegramente en chat antes de pedir aprobación.`,bundleMarkdown,evidence].filter(Boolean).join('\n\n');
  const config=loadProjectConfig(root);
  return{kind,requiredBeforeInput:true,title:`${task.meta.id} — ${task.meta.title}`,markdown,taskPath:task.path,taskRelativePath:taskRelativePath(root,task.path),attachments,visualization:specification?specificationVisualization(root,config,task,attachments,sessionId):finalVisualization(root,config,task,attachments,sessionId)};
 }

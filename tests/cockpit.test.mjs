@@ -57,7 +57,18 @@ test('approval presentation attaches the interactive Cockpit before Markdown and
   assert.equal(interaction.presentation.attachments[0].kind,'review-cockpit');
   assert.equal(interaction.presentation.attachments[0].mediaType,'text/html');
   assert.equal(interaction.presentation.attachments[0].display,'inline');
-  assert.match(interaction.presentation.markdown,/Review Cockpit interactivo/i);
+  assert.match(interaction.presentation.markdown,/generado un Review Cockpit HTML/i);
+  assert.match(interaction.presentation.markdown,/Generarlo no significa que Codex lo haya abierto o mostrado/i);
+  assert.match(interaction.presentation.markdown,/Review Bundle completo.*autoritativo/i);
+  assert.doesNotMatch(interaction.presentation.markdown,/interactive Review Cockpit\.html —/i);
+});
+
+test('Cockpit generation never claims host presentation succeeded',()=>{
+  const root=repo(),id=preparedSpec(root);
+  const cockpit=writeReviewCockpit(root,id,'spec');
+  assert.equal(cockpit.hostPresentation,'not-verified');
+  assert.match(cockpit.presentationHint,/does not confirm/i);
+  assert.match(cockpit.presentationHint,/opened|rendered|displayed/i);
 });
 
 test('Cockpit escapes blocker content and explains why the task is blocked',()=>{

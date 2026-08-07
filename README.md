@@ -38,7 +38,7 @@ SpecRail adds **rails**, not another project-management system. Markdown remains
 - Codex Desktop or another compatible Codex surface
 - [CodeGraph](https://github.com/colbymchenry/codegraph) available as a CLI and configured as `codegraph serve --mcp`
 - For UI work: compatible [Taste Skills](https://github.com/Leonxlnx/taste-skill)
-- Optional: a host visualization plugin/capability such as Visualize
+- Optional: the Codex Visualize plugin/skill for native interactive review surfaces
 
 ### Install the beta
 
@@ -231,7 +231,7 @@ A lightweight atomic lease prevents two chats from implementing the same task si
 
 ### Reviews are mobile-friendly
 
-At specification and final gates, SpecRail generates an interactive **Review Cockpit** as the first attachment, followed by the authoritative Review Bundle, task Markdown, and evidence. The Cockpit summarizes the approved outcome, before/proposal/after evidence, deterministic checks, blockers, repair budget, metrics, trace integrity, and required decision without creating another database.
+At specification and final gates, SpecRail generates a durable local **Review Cockpit** fallback and always presents the authoritative Review Bundle, task Markdown, and required evidence. When the installed `visualize` skill is available and the signed gate plan benefits from interactivity, SpecRail invokes `$visualize` to render the Cockpit natively in the conversation before the approval control. The Cockpit summarizes the approved outcome, before/proposal/after evidence, deterministic checks, blockers, repair budget, metrics, trace integrity, and required decision without creating another database.
 
 ## Prime-inspired execution model
 
@@ -288,7 +288,7 @@ The route is contextual. Dashboard/data-table work should not blindly receive la
 
 ## Visual explanations
 
-When the current Codex host exposes a suitable visualization capability, SpecRail can plan interactive:
+When the current Codex skill catalog exposes the exact `visualize` skill, SpecRail can invoke `$visualize` for interactive:
 
 - before / proposal / after comparators;
 - mobile / desktop viewport toggles;
@@ -324,7 +324,7 @@ specrail cockpit TASK-0001 --stage spec
 specrail cockpit TASK-0001 --stage final
 ```
 
-At specification and final approval gates it is generated automatically and attached first. The Cockpit includes:
+At specification and final approval gates the local fallback is generated automatically. When `$visualize` is available and planned, a native interactive Cockpit is rendered in-conversation before the approval selector; otherwise the full Review Bundle and supported evidence remain the authoritative visible fallback. The Cockpit includes:
 
 - overview of need, scope, out-of-scope boundaries and QA mission;
 - stage-specific readiness checks and exact blocker explanations;

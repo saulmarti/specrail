@@ -66,7 +66,7 @@ export function initProject(root: string, options: {name?:string} = {}): Project
     evidence: { requireRealArtifacts: true, embedVisualsInMarkdown: true, ...((existing.evidence&&typeof existing.evidence==='object')?existing.evidence as Record<string,unknown>:{}) },
     visualize: {
       ...((existing.visualize&&typeof existing.visualize==='object')?existing.visualize as Record<string,unknown>:{}),
-      enabled: true, capability:'visualize', discovery:'host-tool-list', mode:'adaptive', maxPerGate:1,
+      enabled: true, capability:'visualize', discovery:'codex-skill-catalog', skill:'visualize', invocation:'$visualize', mode:'adaptive', maxPerGate:1,
       fallback:'markdown-and-attachments', sourceOfTruth:'markdown', qualityGate:'risk-based'
     },
     repairs: { profiles: { fast: 2, standard: 3, rigorous: 4 }, stopAndAsk: true, ...((existing.repairs&&typeof existing.repairs==='object')?existing.repairs as Record<string,unknown>:{}) },
