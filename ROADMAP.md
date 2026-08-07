@@ -23,7 +23,40 @@ SpecRail is building a **human-approved, evidence-backed delivery layer for codi
 - **Research** — value or approach still needs evidence.
 - **Deferred** — valid use case, but intentionally has no current priority or target release.
 
-## Current foundation — `0.5.x beta`
+
+## Current release line — `0.9.x beta`
+
+**Status: Beta**
+
+`0.9.x` consolidates the governance work introduced through `0.8.x` and hardens the human-review contract inside Codex. It does not turn SpecRail into a task board or move approval authority away from native user gates.
+
+### Review presentation contract
+
+**Status: Beta · Introduced: `0.9.0-beta.0`**
+
+Specification and final approval gates now carry one deterministic presentation contract from the CLI into Codex:
+
+- `presentation.markdown` contains the complete generated Review Bundle rather than a second shortened reconstruction;
+- `phase complete` returns the newly reached `next.interaction` so the agent does not invent or paraphrase its own approval selector;
+- the orchestrator must show the complete Review Bundle and supported evidence before forwarding the exact native questions returned by SpecRail;
+- generating Review Cockpit HTML never proves that the user has seen it; generated and host-visible states remain distinct;
+- in Codex, the installed `visualize` skill is invoked explicitly as `$visualize` when an interactive review materially helps; SpecRail never invents a `visualize.render` tool, asks the user to type `/visualize`, or calls private plugin scripts directly;
+- a Visualize result counts as rendered only when a native `visualize...` content reference points at the actual task-owned HTML fragment outside the repository and the signed visualization/evaluation contract remains valid;
+- Markdown and evidence remain the authoritative non-blocking fallback when Visualize is unavailable.
+
+**Success metric:** zero approval turns where SpecRail claims a review surface was displayed without host-visible evidence, and fewer approvals made from summaries that omit governed requirements or evidence.
+
+See [`docs/REVIEW-COCKPIT.md`](docs/REVIEW-COCKPIT.md).
+
+### Release metadata integrity
+
+**Status: Beta · Introduced: `0.9.0-beta.0`**
+
+`package.json` is the canonical package version. Release tooling synchronizes and verifies the portable Agent Plugin manifest and lockfile metadata before tests, packing, or publishing, so `npm version` cannot silently leave package identities on different versions. Public-release tests validate version coherence instead of hard-coding one release number.
+
+**Success metric:** no publish attempt reaches `npm publish` with divergent package, lockfile, or Agent Plugin versions.
+
+## Foundation lineage — `0.5.x beta`
 
 **Status: Beta**
 
@@ -48,7 +81,7 @@ SpecRail is building a **human-approved, evidence-backed delivery layer for codi
 
 ---
 
-## Current delivery intelligence — `0.6.x beta`
+## Delivery intelligence lineage — `0.6.x beta`
 
 ### Readiness / Why blocked
 
@@ -215,7 +248,28 @@ The Blueprint is advisory project context until explicitly accepted into governe
 
 Improve SpecRail self-update/install behavior so managed assets are compared by content, unchanged files are left alone, customized files are identified before replacement, and recoverable backups are created before any managed overwrite. Existing `.ai/` project history remains untouched.
 
+### Release, migration, and rollback contract
+
+**Status: Planned**
+
+Define an explicit compatibility and recovery contract for SpecRail upgrades and for governed delivery changes that require migration. Releases should declare relevant state/schema compatibility, required migrations, backup expectations, and the supported rollback path instead of treating rollback as an informal operational note.
+
+For application changes classified as breaking, the same contract should connect affected consumers, migration/compatibility strategy, operational verification, and rollback evidence to the approved Impact Radius.
+
+**Success metric:** upgrades and breaking deliveries can be reversed or recovered without guessing which SpecRail state or consumer contract is safe.
+
 ---
+
+## Accepted implementation order
+
+The current priority sequence is:
+
+1. **Specification Intelligence:** Requirement Source Ledger, adversarial critic, first-class NFRs, failure/change classification, contract compatibility/Impact Radius, and Repository Blueprint/domain vocabulary.
+2. **Safe lifecycle management:** content-aware managed updates plus explicit release/migration/rollback contracts.
+3. **Human attention layer:** Review Inbox / “What needs me?” built as a projection over deterministic Readiness and governance contracts, not as a Kanban board.
+4. **Experiment automation:** Automatic Experiment Runner after the specification and human-review contracts are stable enough to compare workflow policies safely.
+
+This order may change when real usage exposes a higher-value integrity or usability problem.
 
 ## Human attention layer — after specification intelligence
 
@@ -239,17 +293,18 @@ Orchestrate an approved `fast`/`standard`/`rigorous` comparison end-to-end witho
 
 **Status: Beta**
 
-The MVP is implemented in `0.5.0-beta.2`. Future improvements depend on real review sessions:
+The local read-only MVP was implemented in `0.5.0-beta.2`; `0.9.0-beta.0` hardens how that review is actually presented inside Codex. Current behavior and future improvements are:
 
-- richer backend, architecture, and database evidence explorers;
+- **0.7.0-beta.1:** latest replay comparison, exact reported token metrics, and adaptive Harness recommendation are visible in the Cockpit experiment view;
+- **0.9.0-beta.0:** complete Review Bundle presentation is mandatory before native approval input; generated Cockpit HTML is never treated as proof of display; `$visualize` is the explicit Codex skill path for a native interactive review surface when useful, with the native content reference required as render evidence;
+- richer backend, architecture, contract-impact, NFR, and database evidence explorers;
 - better comparison of multiple desktop/mobile captures;
-- clearer stale-evidence explanations;
-- optional opening from Codex host capabilities without assuming a tool name;
+- clearer stale-evidence and requirement-provenance explanations;
 - accessibility audits and keyboard-navigation evals;
 - review-time metrics and qualitative rejection analysis;
-- **0.7.0-beta.1:** latest replay comparison, exact reported token metrics, and adaptive Harness recommendation are now visible in the Cockpit experiment view.
+- additional host adapters only when they expose a verifiable presentation result; no hard-coded fictional tool names or private host implementation paths.
 
-The Cockpit remains read-only and derived from `.ai/`; native Codex gates own decisions.
+The Cockpit remains read-only and derived from governed SpecRail state; native Codex gates own decisions. Visualize improves the review surface but never becomes a substitute for the complete Markdown/evidence contract.
 
 See [`docs/REVIEW-COCKPIT.md`](docs/REVIEW-COCKPIT.md).
 
