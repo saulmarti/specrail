@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Sealed specification review state before computing presentation acknowledgments: legacy QA Mission/quality/governance normalization and Scope Guard baselines now happen before review, repeated review preparation is idempotent, and exact Review Bundle plus canonical visual bytes participate in freshness so approval cannot accept content that changed after presentation.
 - Hardened review presentation and phase-boundary UX: canonical visual evidence is now `requiredVisible`, local paths are audit-only, visual approval uses session/digest-bound `host_actions` acknowledgments before any native decision can be emitted or accepted, Cockpit/Visualize track prepared/reference versus unverified host presentation with mandatory fallback, pending visual Amendments cannot bypass that presentation gate through the CLI, `spec approve` returns the native implementation-boundary choice at top level, and browser QA requires a structural host-browser surface, invocation reference and served target while preserving human verification separately.
 - Added `specrail update`, preserving the installed `beta`/`latest` channel by default, supporting explicit `--beta` / `--latest` switching and network-free `--dry-run`, and refreshing managed Codex assets with the newly installed CLI rather than an older managed copy.
 - Made `package.json` the canonical release version and added deterministic synchronization/checks for `plugin.json` and both package-lock version fields before tests, packing, and publishing.

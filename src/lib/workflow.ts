@@ -17,8 +17,7 @@ import { recordTrace } from './trace.js';
 import { recordFailure } from './failures.js';
 import { registerRepairAttempt } from './repairs.js';
 import { taskMetrics } from './metrics.js';
-import { applyQualityPolicy } from './quality.js';
-import { applyOperationalPolicy } from './observability.js';
+import { ensureQAMissionContent, ensureStrategySections, prepareSpecificationReviewState } from './spec-review-prep.js';
 import { loadSlicePlan, materializeSlices } from './slices.js';
 import { assertPhaseBoundaryEntered, invalidatePhaseBoundary } from './phase-boundary.js';
 import { finalPresentation, specificationPresentation } from './presentation.js';
@@ -38,30 +37,6 @@ function assertGatePresentationReady(root: string, task: TaskDocument, gate: 'sp
   const contract=presentation.presentationContract;
   if(!contract.evidence.inlineRequired)return;
   assertPresentationReady(root,{taskId:task.meta.id,gate,sessionId,presentationDigest:contract.presentationDigest,actions:contract.fallback.requiredHostActions});
-}
-function ensureQAMissionContent(task: TaskDocument): TaskDocument {
-  if (getSection(task.body,'QA Mission').trim()) return task;
-  const users=getSection(task.body,'Users').trim().replace(/\s+/g,' ') || 'approved product user';
-  const need=getSection(task.body,'Need').trim().replace(/\s+/g,' ') || task.meta.title;
-  const criteria=getSection(task.body,'Acceptance Criteria').trim().replace(/\s+/g,' ') || 'all approved acceptance criteria pass with real evidence';
-  const ui=task.meta.surfaces.some(item=>['frontend','ui','ux'].includes(item));
-  const api=task.meta.surfaces.some(item=>['backend','api'].includes(item));
-  const allowed=ui?'public user interface only':api?'public API or externally observable contract only':'public product interface only';
-  task.body=setSection(task.body,'QA Mission',`- Persona: ${users.slice(0,180)}\n- Starting point: the approved public entry point for this task\n- Goal: ${need.slice(0,240)}\n- Allowed interface: ${allowed}; do not inspect implementation code before attempting the mission\n- Success: ${criteria.slice(0,320)}\n- Failure: the goal cannot be completed, behavior differs from the approved criteria, required evidence is missing, or a hidden workaround is needed`);
-  appendLog(task,'Product Specifier generated the immutable QA mission from the refined specification.');
-  return task;
-}
-function ensureStrategySections(task: TaskDocument): TaskDocument {
-  const quality=applyQualityPolicy(task);
-  const operational=applyOperationalPolicy(quality);
-  if (!getSection(operational.body,'Quality Strategy').trim()) {
-    const q=operational.meta.route;
-    operational.body=setSection(operational.body,'Quality Strategy',`- Property testing: ${q.property_testing}\n- Mutation testing: ${q.mutation_testing ? 'risk-selected' : 'not required'}\n- Selection basis: task risk ${operational.meta.risk}, size ${operational.meta.size}, surfaces ${operational.meta.surfaces.join(', ')||'unspecified'}.`);
-  }
-  if (!getSection(operational.body,'Operational Evidence').trim()) {
-    operational.body=setSection(operational.body,'Operational Evidence',`- Level: ${operational.meta.route.observability}\n- Collect only evidence required by the risk-based operational policy.\n- Logs, traces, and metrics must come from a real execution and remain linked to this task.`);
-  }
-  return operational;
 }
 function validateSpec(task: TaskDocument, stage: 'product' | 'approval' = 'approval') {
   if (task.meta.open_questions > 0) throw new Error('Cannot continue while there are open questions');
@@ -210,8 +185,8 @@ function reapproveLegacyIntegrity(root:string,task:TaskDocument,note:string,opti
  task.meta.spec_integrity_version=2;task.meta.project_governance_hash=projectGovernanceHash(root);const lint=validateSpec(task,'approval');task.meta.spec_approval_hash=lint.hash;task.meta.spec_effective_hash=effectiveSpecificationHash(root,task.meta.id,lint.hash);task.meta.spec_approved_at=new Date().toISOString();task.meta.qa_mission_hash=missionHash;task.meta.status=previousStatus;task.meta.phase=previousPhase;task.meta.waiting_for=previousWaiting;appendLog(task,`Legacy specification integrity explicitly reapproved by user with hardened base hash ${lint.hash} and project-governance seal. ${note}`);const saved=saveTask(task);trace(root,saved,'specification-integrity-reapproved',{specificationHash:lint.hash,effectiveSpecificationHash:String(saved.meta.spec_effective_hash||lint.hash),qaMissionHash:missionHash},options);return saved;
 }
 export function approveSpecification(root:string,id:string,note='Approved by user',options:Record<string,unknown>={}){
-  let task=loadTask(findTask(root,id));if(task.meta.spec_approval==='approved'&&Number(task.meta.spec_integrity_version||1)<2){assertGatePresentationReady(root,task,'spec-approval',options);return reapproveLegacyIntegrity(root,task,note,options);}if(task.meta.status!=='awaiting_spec_approval'||task.meta.phase!=='spec-approval')throw new Error('Task is not awaiting specification approval');assertGatePresentationReady(root,task,'spec-approval',options);
-  task=ensureAcceptanceCriteriaIds(ensureStrategySections(ensureQAMissionContent(task)));task.meta.spec_integrity_version=2;task.meta.project_governance_hash=projectGovernanceHash(root);saveTask(task);if(task.meta.route.implementation){sealBlastRadius(root,task.meta.id);task=loadTask(findTask(root,task.meta.id));}if(task.meta.delivery_strategy==='vertical-slices'&&task.meta.size==='large'&&task.meta.type==='feature'&&!loadSlicePlan(root,task.meta.id))throw new Error('Large feature requires an approved vertical slice plan before specification approval');const lint=validateSpec(task,'approval');const evidence=validateEvidence(root,id,'pre-approval');if(!evidence.valid)throw new Error(`Missing required evidence: ${[...evidence.missing,...evidence.errors].join(', ')}`);
+  let task=loadTask(findTask(root,id));if(task.meta.spec_approval==='approved'&&Number(task.meta.spec_integrity_version||1)<2){assertGatePresentationReady(root,task,'spec-approval',options);return reapproveLegacyIntegrity(root,task,note,options);}if(task.meta.status!=='awaiting_spec_approval'||task.meta.phase!=='spec-approval')throw new Error('Task is not awaiting specification approval');task=prepareSpecificationReviewState(root,id);assertGatePresentationReady(root,task,'spec-approval',options);
+  if(task.meta.delivery_strategy==='vertical-slices'&&task.meta.size==='large'&&task.meta.type==='feature'&&!loadSlicePlan(root,task.meta.id))throw new Error('Large feature requires an approved vertical slice plan before specification approval');const lint=validateSpec(task,'approval');const evidence=validateEvidence(root,id,'pre-approval');if(!evidence.valid)throw new Error(`Missing required evidence: ${[...evidence.missing,...evidence.errors].join(', ')}`);
   const missionErrors=validateQAMission(task);if(missionErrors.length)throw new Error(`QA Mission invalid: ${missionErrors.join(', ')}`);
   task.meta.spec_approval='approved';task.meta.spec_approval_hash=lint.hash;task.meta.spec_effective_hash=effectiveSpecificationHash(root,task.meta.id,lint.hash);task.meta.spec_approved_at=new Date().toISOString();task.meta.qa_mission_hash=qaMissionHash(task);task.meta.status='ready';task.meta.phase=nextAfterApproval(task);task.meta.waiting_for='none';appendLog(task,`Specification approved by user with base hash ${lint.hash}, effective hash ${task.meta.spec_effective_hash}, and QA mission ${task.meta.qa_mission_hash}. ${note}`);
   let saved=saveTask(task);if(saved.meta.delivery_strategy==='vertical-slices'&&saved.meta.size==='large'&&loadSlicePlan(root,saved.meta.id)){materializeSlices(root,saved.meta.id);saved=loadTask(findTask(root,saved.meta.id));}if(saved.meta.phase==='builder')invalidatePhaseBoundary(root,saved.meta.id,'builder');

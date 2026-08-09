@@ -137,7 +137,10 @@ test('next exposes the exact same readiness contract and required gates block at
   assert.equal(readiness.blockers.some(item=>item.id==='qa-mission'),true);
   assert.ok(['spec-lint','qa-mission'].includes(readiness.next.gateId));
   const next=nextAction(root,task.meta.id);
-  assert.deepEqual(next.readiness.gates.map(item=>[item.id,item.status]),readiness.gates.map(item=>[item.id,item.status]));
+  const preparedReadiness=taskReadiness(root,task.meta.id);
+  assert.equal(next.readiness.ready,preparedReadiness.ready);
+  assert.deepEqual(next.readiness.gates.map(item=>[item.id,item.status]),preparedReadiness.gates.map(item=>[item.id,item.status]));
+  assert.equal(next.readiness.gates.find(item=>item.id==='qa-mission')?.status,'pass','next must prepare the exact review state before exposing the approval surface');
 });
 
 test('next normalizes legacy project config blocks before building runtime visualization',()=>{

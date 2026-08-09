@@ -1,7 +1,7 @@
 // @ts-nocheck
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -12,6 +12,8 @@ import { startRefinement, completePhase, approveSpecification, returnTask } from
 import { interactionForTask } from '../dist/src/lib/interactions.js';
 import { nextAction } from '../dist/src/lib/next.js';
 import { recordPresentationAction } from '../dist/src/lib/presentation-state.js';
+import { specificationPresentation } from '../dist/src/lib/presentation.js';
+import { scopeGuardStatus, setBlastRadius } from '../dist/src/lib/scope-guard.js';
 import { proposeAmendment } from '../dist/src/lib/amendments.js';
 const repo = () => mkdtempSync(path.join(tmpdir(), 'ai-flow-presentation-'));
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z7h8AAAAASUVORK5CYII=', 'base64');
@@ -282,4 +284,78 @@ test('generic refine/return transitions cannot bypass explicit user approval gat
     assert.throws(()=>startRefinement(root,task.meta.id),/user decision gate|request-changes/i);
     const atFinal=loadTask(findTask(root,task.meta.id));atFinal.meta.status='awaiting_final_approval';atFinal.meta.phase='final-approval';atFinal.meta.waiting_for='user';saveTask(atFinal);
     assert.throws(()=>returnTask(root,task.meta.id,'builder','bypass'),/user decision gate/i);
+});
+
+
+test('specification presentation normalizes and seals legacy awaiting-review state before computing the acknowledged digest', () => {
+    const root=repo(),id=prepareFrontendSpec(root),sessionId='legacy-prep-session';
+    let task=loadTask(findTask(root,id));
+    task.body=setSection(task.body,'QA Mission','');
+    task.body=setSection(task.body,'Quality Strategy','');
+    task.body=setSection(task.body,'Operational Evidence','');
+    task.meta.spec_integrity_version=1;
+    task.meta.project_governance_hash=null;
+    task.meta.scope_guard_hash=null;
+    task.meta.scope_baseline_commit=null;
+    saveTask(task);
+    const presented=specificationPresentation(root,id,sessionId);
+    task=loadTask(findTask(root,id));
+    assert.ok(task.body.includes('## QA Mission\n\n- Persona:'));
+    assert.ok(task.body.includes('## Quality Strategy\n\n- Property testing:'));
+    assert.equal(task.meta.spec_integrity_version,2);
+    assert.ok(task.meta.project_governance_hash);
+    assert.ok(task.meta.scope_guard_hash);
+    assert.equal(specificationPresentation(root,id,sessionId).presentationContract.presentationDigest,presented.presentationContract.presentationDigest,'re-reading the prepared gate must be digest-stable');
+    acknowledgePresentation(root,id,'spec-approval',sessionId);
+    assert.equal(approveSpecification(root,id,'Approved exact prepared review',{sessionId}).meta.spec_approval,'approved');
+});
+
+test('changing canonical visual bytes after acknowledgement invalidates the presentation before approval', () => {
+    const root=repo(),id=prepareFrontendSpec(root),sessionId='visual-byte-freshness';
+    const first=interactionForTask(root,id,'spec-approval',{sessionId});
+    const firstDigest=first.presentation.presentationContract.presentationDigest;
+    const bundle=first.presentation.attachments.find(item=>item.kind==='review-bundle');
+    assert.match(String(bundle.sha256||''),/^[a-f0-9]{64}$/,'the exact Review Bundle bytes must participate in presentation freshness');
+    acknowledgePresentation(root,id,'spec-approval',sessionId);
+    assert.equal(interactionForTask(root,id,'spec-approval',{sessionId}).tool,'request_user_input');
+    const visual=first.presentation.attachments.find(item=>item.requiredVisible);
+    appendFileSync(visual.path,Buffer.from([9,9,9]));
+    const changed=interactionForTask(root,id,'spec-approval',{sessionId});
+    assert.equal(changed.tool,'host_actions');
+    assert.notEqual(changed.presentation.presentationContract.presentationDigest,firstDigest);
+    assert.equal(changed.presentation.presentationContract.acknowledgement.approvalReady,false);
+});
+
+test('changing canonical visual bytes after final-review acknowledgement invalidates that final presentation', () => {
+    const root=repo(),id=prepareFrontendSpec(root),sessionId='final-byte-freshness';
+    let task=loadTask(findTask(root,id));
+    task.body=setSection(task.body,'QA','- QA executed the approved public mission.');
+    task.body=setSection(task.body,'Final Customer','- Final customer validated the visible outcome.');
+    task.body=setSection(task.body,'Handoff','Ready for final review.');
+    task.meta.status='awaiting_final_approval';task.meta.phase='final-approval';task.meta.waiting_for='user';saveTask(task);
+    const first=interactionForTask(root,id,'final-approval',{sessionId});
+    const firstDigest=first.presentation.presentationContract.presentationDigest;
+    acknowledgePresentation(root,id,'final-approval',sessionId);
+    assert.equal(interactionForTask(root,id,'final-approval',{sessionId}).tool,'request_user_input');
+    const visual=first.presentation.attachments.find(item=>item.requiredVisible);
+    appendFileSync(visual.path,Buffer.from([7,7,7]));
+    const changed=interactionForTask(root,id,'final-approval',{sessionId});
+    assert.equal(changed.tool,'host_actions');
+    assert.notEqual(changed.presentation.presentationContract.presentationDigest,firstDigest);
+    assert.equal(changed.presentation.presentationContract.acknowledgement.approvalReady,false);
+});
+
+test('rebuilding specification presentation never moves an already sealed filesystem Scope Guard baseline', () => {
+    const root=repo();initProject(root,{name:'Stable scope baseline'});readyProjectContext(root);
+    mkdirSync(path.join(root,'src'),{recursive:true});writeFileSync(path.join(root,'src','allowed.ts'),'export const allowed = true;\n');
+    const task=createTask(root,{title:'Backend scoped task',type:'task',surfaces:['backend']});startRefinement(root,task.meta.id);
+    let loaded=loadTask(findTask(root,task.meta.id));
+    loaded.body=setSection(loaded.body,'Need','Expose a scoped backend change.');loaded.body=setSection(loaded.body,'Product Value','Keep the change isolated.');loaded.body=setSection(loaded.body,'Users','Operators.');loaded.body=setSection(loaded.body,'Scope','Only src/allowed.ts.');loaded.body=setSection(loaded.body,'Out of Scope','Any other file.');loaded.body=setSection(loaded.body,'Acceptance Criteria','- AC-001: The allowed change remains isolated.');loaded.meta.route.design=false;loaded.meta.route.architecture=false;loaded.meta.route.database=false;saveTask(loaded);
+    setBlastRadius(root,task.meta.id,{allowedFiles:['src/allowed.ts'],protectedFiles:[],expectedSymbols:[],reason:'Only the approved backend file may change.'});completePhase(root,task.meta.id);
+    specificationPresentation(root,task.meta.id,'scope-baseline-session');
+    writeFileSync(path.join(root,'src','rogue.ts'),'export const rogue = true;\n');
+    specificationPresentation(root,task.meta.id,'scope-baseline-session');
+    const scope=scopeGuardStatus(root,task.meta.id);
+    assert.equal(scope.valid,false);
+    assert.deepEqual(scope.unexpectedFiles,['src/rogue.ts']);
 });

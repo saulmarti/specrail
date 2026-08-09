@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { findTask, getSection, loadTask } from './task.js';
 import { listEvidence, matchesAnyExpectedVisualContext } from './evidence.js';
@@ -8,6 +9,7 @@ import { loadProjectConfig } from './project.js';
 import { finalVisualization, specificationVisualization } from './visualization.js';
 import { getVisualizationRun } from './capabilities.js';
 import { presentationAcknowledgementState, presentationDigest as computePresentationDigest } from './presentation-state.js';
+import { prepareSpecificationReviewState } from './spec-review-prep.js';
 import type { Attachment, EvidenceRecord, Presentation, PresentationHostAction, TaskDocument, TaskRoute } from './types.js';
 
 const SPEC_SECTIONS: Array<[string,string]> = [
@@ -27,6 +29,7 @@ function routeSummary(route: TaskRoute): string {
 }
 function taskRelativePath(root: string,file: string): string {return path.relative(path.resolve(root),file).split(path.sep).join('/');}
 function evidencePath(root: string,id: string,item: EvidenceRecord): string {return path.resolve(root,'.ai/evidence',id,item.path);}
+function fileSha256(file: string): string | null { try { return createHash('sha256').update(readFileSync(file)).digest('hex'); } catch { return null; } }
 function mediaType(file: string): string {const ext=path.extname(file).toLowerCase();return ({'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif','.svg':'image/svg+xml','.md':'text/markdown','.json':'application/json','.txt':'text/plain','.log':'text/plain','.http':'text/plain'} as Record<string,string>)[ext] ?? 'application/octet-stream';}
 function visualRole(kind: string): 'Before'|'Proposal'|'After'|null { if(kind.includes('proposal'))return'Proposal';if(kind.includes('after'))return'After';if(kind.includes('before'))return'Before';return null; }
 function presentationLabel(item: EvidenceRecord): string { const role=visualRole(item.kind);if(!role)return item.label;const details=[item.route,item.target,item.viewport,item.captureScope].filter(Boolean).join(' · ');return details?`${role} · ${details}`:role; }
@@ -44,7 +47,7 @@ function evidenceForStage(root: string,id: string,stage: 'specification'|'final'
  const visualOrder={before:0,proposal:1,after:2} as const;
  const visuals=[...canonicalVisuals.values()].sort((a,b)=>{const ra=a.kind.includes('proposal')?'proposal':a.kind.includes('after')?'after':'before';const rb=b.kind.includes('proposal')?'proposal':b.kind.includes('after')?'after':'before';return visualOrder[ra]-visualOrder[rb]||String(a.viewport||'').localeCompare(String(b.viewport||''));});
  const selected=[...visuals,...nonVisuals];
- return selected.map(item=>{const file=evidencePath(root,id,item),type=mediaType(file),role=visualRole(item.kind);const requiredVisible=type.startsWith('image/');return{id:item.id,kind:item.kind,label:presentationLabel(item),source:item.source,tool:item.tool,route:item.route,viewport:item.viewport,target:item.target,captureScope:item.captureScope,runtimeUrl:item.runtimeUrl??null,path:file,mediaType:type,display:requiredVisible?'inline':'attachment',sha256:item.sha256,reviewRole:role?role.toLowerCase() as 'before'|'proposal'|'after':'supporting',requiredVisible};});
+ return selected.map(item=>{const file=evidencePath(root,id,item),type=mediaType(file),role=visualRole(item.kind);const requiredVisible=type.startsWith('image/');return{id:item.id,kind:item.kind,label:presentationLabel(item),source:item.source,tool:item.tool,route:item.route,viewport:item.viewport,target:item.target,captureScope:item.captureScope,runtimeUrl:item.runtimeUrl??null,path:file,mediaType:type,display:requiredVisible?'inline':'attachment',sha256:fileSha256(file),reviewRole:role?role.toLowerCase() as 'before'|'proposal'|'after':'supporting',requiredVisible};});
 }
 function sectionsMarkdown(task: TaskDocument,sections: Array<[string,string]>): string {return sections.map(([source,title])=>{const content=cleanSection(getSection(task.body,source));return content?`## ${title}\n\n${content}`:'';}).filter(Boolean).join('\n\n');}
 function previewUrlFor(items: Attachment[], specification: boolean): string | null {
@@ -53,12 +56,13 @@ function previewUrlFor(items: Attachment[], specification: boolean): string | nu
  return null;
 }
 function build(root: string,id: string,kind: 'specification-review'|'final-result-review',sessionId?: string|null): Presentation {
- const task=loadTask(findTask(root,id));
  const specification=kind==='specification-review';
+ if(specification)prepareSpecificationReviewState(root,id);
+ const task=loadTask(findTask(root,id));
  const bundle=writeReviewBundle(root,id,specification?'spec':'final');
  const cockpit=writeReviewCockpit(root,id,specification?'spec':'final');
  const cockpitDocument: Attachment={id:'REVIEW-COCKPIT',kind:'review-cockpit',label:`${task.meta.id} — interactive Review Cockpit.html`,source:'specrail-review-cockpit',tool:'SpecRail',route:null,viewport:null,path:cockpit.path,mediaType:'text/html',display:'inline',sha256:cockpit.sourceDigest,openUrl:cockpit.openUrl};
- const bundleDocument: Attachment={id:'REVIEW-BUNDLE',kind:'review-bundle',label:`${task.meta.id} — ${specification?'specification':'final'} review.md`,source:'specrail-review-bundle',tool:'SpecRail',route:null,viewport:null,path:bundle.path,mediaType:'text/markdown',display:'inline',sha256:null};
+ const bundleDocument: Attachment={id:'REVIEW-BUNDLE',kind:'review-bundle',label:`${task.meta.id} — ${specification?'specification':'final'} review.md`,source:'specrail-review-bundle',tool:'SpecRail',route:null,viewport:null,path:bundle.path,mediaType:'text/markdown',display:'inline',sha256:fileSha256(bundle.path)};
  const attachments=[cockpitDocument,bundleDocument,...evidenceForStage(root,id,specification?'specification':'final')];
  const heading=specification?'Especificación lista para validar':'Resultado listo para validar';
  const bundleMarkdown=readFileSync(bundle.path,'utf8').trim();
