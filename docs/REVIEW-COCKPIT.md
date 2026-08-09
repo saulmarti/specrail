@@ -38,14 +38,29 @@ At approval gates SpecRail always generates the local Cockpit HTML as a durable,
 - shortest safe next action;
 - context budget usage.
 
-### Evidence
+### Evidence — Visual Comparator v2
 
-- before / proposal / after comparison;
-- viewport selector when multiple captures exist;
-- exact route and target metadata;
-- all registered evidence kinds and sources.
+For frontend review the Cockpit now renders a deterministic **Visual Comparator v2** rather than a one-image-at-a-time switcher:
 
-Raster screenshots up to 5 MB are embedded as data URIs, making the generated Cockpit self-contained. Larger or non-raster artifacts remain listed in the authoritative evidence set.
+- **Side by side:** Before / Proposal / After remain simultaneously visible when available;
+- **Slider:** compare the strongest available canonical pair interactively;
+- **Overlay:** blend the strongest available pair to inspect alignment and visual drift;
+- viewport filtering;
+- route + target filtering and always-visible context chips;
+- only contexts declared by the current `UI Target` are active in the comparator; historical/stale frontend captures remain audit evidence but cannot substitute for the current proposal;
+- each visual context is declared in deterministic `Route → Target → exact pixel Viewport(s) → Capture` order, and route/target identity is matched exactly rather than case-folded;
+- explicit red missing-evidence states instead of blank frames or broken thumbnails;
+- canonical evidence IDs and review roles preserved on embedded images;
+- the active canonical visual set is shown first; superseded or out-of-scope frontend visuals are separated as historical audit evidence, while supporting evidence remains listed below the comparator.
+
+At specification approval the required frontend roles are Before + Proposal. At final approval they are Before + Proposal + After. Missing required roles are never silently hidden.
+
+Registered PNG/JPEG/WebP/GIF/SVG visuals up to 8 MB are embedded as data URIs, making the generated local Cockpit self-contained. The Review Bundle does not emit repository-local Markdown image URLs because Codex cannot reliably resolve them in chat; it lists canonical visual metadata instead. When `$visualize` renders a `visual-comparator-v2` plan, it must reproduce the same review contract: one `data-specrail-comparator="v2"` root, Side by side / Slider / Overlay modes, viewport, route/target, and capture-scope filters, exact route+target+viewport+capture grouping, visible missing-role states, and canonical images embedded as data URIs with `data-specrail-evidence-id`, `data-specrail-review-role`, `data-specrail-comparator-source="v2"`, and their route/target/viewport/capture-scope metadata. A static gallery does not count as Visual Comparator v2. The rendered fragment must contain marked split/opacity range controls and a marked v2 runtime that actually binds filtering, slider state, and overlay opacity. It must read local image bytes rather than using `file://`, absolute filesystem paths, or repository-relative `<img src>` values. If an image cannot be embedded, the surface must show an explicit fallback instead of a broken placeholder.
+
+
+### Live frontend preview
+
+Frontend `before` and `after` evidence recorded after this contract must include the exact served runtime URL used for the capture. It must be `http://` or `https://`; raw `index.html` and `file://` previews are invalid evidence. Approval presentations expose the appropriate URL as `presentation.previewUrl`, and Codex should health-check/open that URL while keeping the dev/preview server alive through the human gate.
 
 ### Checks
 

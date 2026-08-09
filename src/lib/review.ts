@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { findTask, getSection, loadTask } from './task.js';
-import { listEvidence } from './evidence.js';
+import { listEvidence, matchesAnyExpectedVisualContext } from './evidence.js';
 import { lintSpecification, specificationHash } from './specification.js';
 import { applicableActiveEvals } from './failures.js';
 import { acceptanceCoverage } from './acceptance.js';
@@ -12,6 +12,32 @@ import { listTrace, validateTrace } from './trace.js';
 const SPEC = ['Need', 'Product Value', 'Users', 'Scope', 'UI Target', 'Blast Radius', 'Out of Scope', 'Acceptance Criteria', 'Gherkin', 'QA Mission', 'UX/UI Proposal', 'Architecture and Data Design', 'Quality Strategy', 'Operational Evidence', 'Vertical Slices', 'Constitution Impact', 'Implementation Plan', 'Decisions'];
 function clean(v: any) { return String(v || '').trim(); }
 function rel(from: any, to: any) { return path.relative(path.dirname(from), to).split(path.sep).join('/'); }
+
+function evidenceVisualRole(kind: string): string | null {
+    if (['frontend-before','frontend-mobile-before'].includes(kind)) return 'Before';
+    if (['frontend-proposal','frontend-mobile-proposal'].includes(kind)) return 'Proposal';
+    if (['frontend-after','frontend-mobile-after'].includes(kind)) return 'After';
+    return null;
+}
+function evidenceDisplay(item: any): string {
+    const role = evidenceVisualRole(item.kind);
+    if (!role) return item.label;
+    const context = [item.route, item.target, item.viewport, item.captureScope].filter(Boolean).join(' · ');
+    return context ? `${role} · ${context}` : role;
+}
+function activeVisualEvidence(task: any, evidence: any[], stage: any): { active: any[]; historical: any[] } {
+    const allowedRoles = stage === 'final' ? new Set(['Before','Proposal','After']) : new Set(['Before','Proposal']);
+    const canonical = new Map<string, any>();
+    const visual = evidence.filter(item => evidenceVisualRole(item.kind));
+    for (const item of visual) {
+        const role = evidenceVisualRole(item.kind)!;
+        if (!allowedRoles.has(role) || !matchesAnyExpectedVisualContext(task, item)) continue;
+        canonical.set(`${role}|${item.route || ''}|${item.target || ''}|${item.viewport || ''}|${item.captureScope || ''}`, item);
+    }
+    const active = [...canonical.values()];
+    const activeIds = new Set(active.map(item => item.id));
+    return { active, historical: visual.filter(item => !activeIds.has(item.id)) };
+}
 function gitSummary(root: any, task: any) { const cwd = task.meta.worktree_path || root; const status = spawnSync('git', ['status', '--short'], { cwd, encoding: 'utf8' }); const stat = spawnSync('git', ['diff', '--stat'], { cwd, encoding: 'utf8' }); return { status: status.status === 0 ? String(status.stdout || '').trim() : 'Unavailable', stat: stat.status === 0 ? String(stat.stdout || '').trim() : 'Unavailable' }; }
 export function writeReviewBundle(root: any, id: any, stage: any = 'spec') {
     const task = loadTask(findTask(root, id)), suffix = stage === 'final' ? 'final-review' : 'spec-review', file = path.join(path.resolve(root), '.ai', 'reviews', `${task.meta.id}-${suffix}.md`);
@@ -39,13 +65,36 @@ export function writeReviewBundle(root: any, id: any, stage: any = 'spec') {
     if(activeEvals.length) lines.push('## Active regression evals','',...activeEvals.map(item=>`- ${item.id} · ${item.category}: ${item.statement}`),'');
     const evidence = listEvidence(root, id);
     if (evidence.length) {
-        lines.push('## Evidence', '');
-        for (const item of evidence) {
-            const abs = path.resolve(root, '.ai', 'evidence', id, item.path), link = rel(file, abs);
-            if (/\.(?:png|jpe?g|webp|gif|svg)$/i.test(item.path))
-                lines.push(`### ${item.label}`, '', `![${item.label}](${link})`, '');
-            else
-                lines.push(`- [${item.label}](${link}) — \`${item.kind}\` · ${item.source}`);
+        lines.push('## Evidence', '', '> Visual files are intentionally not embedded with local Markdown image URLs. Codex cannot reliably render repository-local image links in chat. The active canonical visual set below is the same set used by presentation attachments/Cockpit; older or out-of-scope visuals remain audit evidence only. Canonical images must be shown through the presentation attachments and, when available, the native `$visualize` Review Cockpit.', '');
+        const visualState = activeVisualEvidence(task, evidence, stage);
+        if (visualState.active.length) {
+            lines.push('### Active visual review evidence', '');
+            for (const item of visualState.active) {
+                const abs = path.resolve(root, '.ai', 'evidence', id, item.path), link = rel(file, abs);
+                const runtime = item.runtimeUrl ? ` · runtime: \`${item.runtimeUrl}\`` : '';
+                lines.push(`- **${evidenceDisplay(item)}** — \`${item.kind}\` · ${item.source}${runtime} · canonical file: \`${link}\``);
+            }
+            lines.push('');
+        }
+        const supporting = evidence.filter(item => !evidenceVisualRole(item.kind));
+        if (supporting.length) {
+            lines.push('### Supporting evidence', '');
+            for (const item of supporting) {
+                const abs = path.resolve(root, '.ai', 'evidence', id, item.path), link = rel(file, abs);
+                const runtime = item.runtimeUrl ? ` · runtime: \`${item.runtimeUrl}\`` : '';
+                const visual = /\.(?:png|jpe?g|webp|gif|svg)$/i.test(item.path);
+                if (visual) lines.push(`- **${item.label}** — \`${item.kind}\` · ${item.source}${runtime} · canonical file: \`${link}\``);
+                else lines.push(`- [${item.label}](${link}) — \`${item.kind}\` · ${item.source}${runtime}`);
+            }
+            lines.push('');
+        }
+        if (visualState.historical.length) {
+            lines.push('### Historical / inactive visual evidence', '', '> These visuals are retained for audit history but are not active Comparator/Visualize sources for this gate.', '');
+            for (const item of visualState.historical) {
+                const abs = path.resolve(root, '.ai', 'evidence', id, item.path), link = rel(file, abs);
+                lines.push(`- ${evidenceDisplay(item)} — \`${item.kind}\` · canonical file: \`${link}\``);
+            }
+            lines.push('');
         }
     }
     if (stage === 'final') {

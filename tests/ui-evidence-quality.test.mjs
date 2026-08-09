@@ -28,7 +28,7 @@ test('primary frontend captures must target the requested section instead of the
     const before = file(root, task.meta.id, 'before.png', png(1));
     assert.throws(() => addEvidence(root, task.meta.id, { kind: 'frontend-before', path: before, source: 'browser-capture', label: 'Before', tool: 'Codex browser', route: '/', viewport: '1440x1000' }), /target/i);
     assert.throws(() => addEvidence(root, task.meta.id, { kind: 'frontend-before', path: before, source: 'browser-capture', label: 'Before', tool: 'Codex browser', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'full-page' }), /focused-section|focused-element/i);
-    const item = addEvidence(root, task.meta.id, { kind: 'frontend-before', path: before, source: 'browser-capture', label: 'Focused current section', tool: 'Codex browser', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section' });
+    const item = addEvidence(root, task.meta.id, { kind: 'frontend-before', path: before, source: 'browser-capture', label: 'Focused current section', tool: 'Codex browser', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section', runtimeUrl: 'http://127.0.0.1:4173/' });
     assert.equal(item.target, 'section#home-spotlight');
     assert.equal(item.captureScope, 'focused-section');
 });
@@ -38,11 +38,11 @@ test('UI proposals require Taste Skill context, Image Gen, and a visual critique
     const task = createTask(root, { title: 'Spotlight redesign', type: 'feature', surfaces: ['frontend'] });
     const before = file(root, task.meta.id, 'before.png', png(1));
     const proposal = file(root, task.meta.id, 'proposal.png', png(2));
-    addEvidence(root, task.meta.id, { kind: 'frontend-before', path: before, source: 'browser-capture', label: 'Before', tool: 'Codex browser', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section' });
-    assert.throws(() => addEvidence(root, task.meta.id, { kind: 'frontend-proposal', path: proposal, source: 'browser-rendered-proposal', label: 'Legacy proposal', tool: 'Codex browser', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section' }), /image-gen-proposal/i);
+    addEvidence(root, task.meta.id, { kind: 'frontend-before', path: before, source: 'browser-capture', label: 'Before', tool: 'Codex browser', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section', runtimeUrl: 'http://127.0.0.1:4173/' });
+    assert.throws(() => addEvidence(root, task.meta.id, { kind: 'frontend-proposal', path: proposal, source: 'browser-rendered-proposal', label: 'Legacy proposal', tool: 'Codex browser', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section', runtimeUrl: 'http://127.0.0.1:4173/' }), /image-gen-proposal/i);
     assert.throws(() => addEvidence(root, task.meta.id, { kind: 'ui-design-brief', path: file(root, task.meta.id, 'bad-brief.json', JSON.stringify({ schemaVersion: 1, tasteSkill: { used: false }, proposalMethod: 'image-gen' })), source: 'ui-design-brief', label: 'Bad brief', tool: 'Codex' }), /Taste Skill/i);
     addDesignBrief(root, task.meta.id);
-    addEvidence(root, task.meta.id, { kind: 'frontend-proposal', path: proposal, source: 'image-gen-proposal', label: 'Image Gen proposal', tool: 'ChatGPT Image Gen', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section' });
+    addEvidence(root, task.meta.id, { kind: 'frontend-proposal', path: proposal, source: 'image-gen-proposal', label: 'Image Gen proposal', tool: 'ChatGPT Image Gen', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section', runtimeUrl: 'http://127.0.0.1:4173/' });
     assert.ok(validateEvidence(root, task.meta.id, 'pre-approval').missing.includes('ui-proposal-review'));
     addProposalReview(root, task.meta.id);
     assert.equal(validateEvidence(root, task.meta.id, 'pre-approval').valid, true);
@@ -53,9 +53,9 @@ test('visible overflow, clipping, overlap, or mismatched target invalidates an I
     const task = createTask(root, { title: 'Spotlight redesign', type: 'feature', surfaces: ['frontend'] });
     const before = file(root, task.meta.id, 'before.png', png(1));
     const proposal = file(root, task.meta.id, 'proposal.png', png(2));
-    addEvidence(root, task.meta.id, { kind: 'frontend-before', path: before, source: 'browser-capture', label: 'Before', tool: 'Codex browser', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section' });
+    addEvidence(root, task.meta.id, { kind: 'frontend-before', path: before, source: 'browser-capture', label: 'Before', tool: 'Codex browser', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section', runtimeUrl: 'http://127.0.0.1:4173/' });
     addDesignBrief(root, task.meta.id);
-    addEvidence(root, task.meta.id, { kind: 'frontend-proposal', path: proposal, source: 'image-gen-proposal', label: 'Proposal', tool: 'ChatGPT Image Gen', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section' });
+    addEvidence(root, task.meta.id, { kind: 'frontend-proposal', path: proposal, source: 'image-gen-proposal', label: 'Proposal', tool: 'ChatGPT Image Gen', route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section', runtimeUrl: 'http://127.0.0.1:4173/' });
     const bad = file(root, task.meta.id, 'bad-review.json', proposalReview({ overflow: true, verdict: 'fail' }));
     assert.throws(() => addEvidence(root, task.meta.id, { kind: 'ui-proposal-review', path: bad, source: 'visual-proposal-review', label: 'Bad review', tool: 'Taste Skill + Codex vision' }), /visible overflow/i);
     const mismatch = file(root, task.meta.id, 'mismatch-review.json', proposalReview({ target: 'section#hero' }));
@@ -69,7 +69,7 @@ test('final frontend evidence requires a real after layout audit on the approved
     initProject(root, { name: 'UI' });
     const task = createTask(root, { title: 'Spotlight redesign', type: 'feature', surfaces: ['frontend'] });
     for (const [kind, name, source, marker, tool] of [['frontend-before', 'before.png', 'browser-capture', 1, 'Codex browser'], ['frontend-proposal', 'proposal.png', 'image-gen-proposal', 2, 'ChatGPT Image Gen'], ['frontend-after', 'after.png', 'browser-capture', 3, 'Codex browser']])
-        addEvidence(root, task.meta.id, { kind, path: file(root, task.meta.id, name, png(marker)), source, label: kind, tool, route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section' });
+        addEvidence(root, task.meta.id, { kind, path: file(root, task.meta.id, name, png(marker)), source, label: kind, tool, route: '/', viewport: '1440x1000', target: 'section#home-spotlight', captureScope: 'focused-section', runtimeUrl: 'http://127.0.0.1:4173/' });
     addDesignBrief(root, task.meta.id);
     addProposalReview(root, task.meta.id);
     assert.ok(validateEvidence(root, task.meta.id, 'qa').missing.includes('ui-after-validation'));
@@ -78,3 +78,14 @@ test('final frontend evidence requires a real after layout audit on the approved
     assert.ok(!validation.missing.includes('ui-after-validation'));
 });
 //# sourceMappingURL=ui-evidence-quality.test.js.map
+test('new frontend runtime evidence requires a served HTTP URL and rejects raw file previews', () => {
+    const root = repo();
+    initProject(root, { name: 'Runtime evidence' });
+    const task = createTask(root, { title: 'Runtime preview', type: 'task', surfaces: ['frontend'] });
+    const before = file(root, task.meta.id, 'runtime-before.png', png(9));
+    const base = { kind: 'frontend-before', path: before, source: 'browser-capture', label: 'Before', tool: 'Codex browser', route: '/', viewport: '1440x1000', target: 'main', captureScope: 'focused-section' };
+    assert.throws(() => addEvidence(root, task.meta.id, base), /served runtime URL/i);
+    assert.throws(() => addEvidence(root, task.meta.id, { ...base, runtimeUrl: `file://${path.join(root, 'index.html')}` }), /http:\/\/ or https:\/\//i);
+    const item = addEvidence(root, task.meta.id, { ...base, runtimeUrl: 'http://127.0.0.1:4173/' });
+    assert.equal(item.runtimeUrl, 'http://127.0.0.1:4173/');
+});

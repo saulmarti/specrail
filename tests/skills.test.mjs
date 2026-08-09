@@ -129,8 +129,8 @@ test('approval presentation never confuses generated Cockpit HTML with host-visi
     assert.match(primary, /never claim it is open, rendered, attached, or visible/i);
     assert.match(primary, /complete `interaction\.presentation\.markdown`/i);
     assert.match(primary, /preferred native in-conversation Review Cockpit renderer/i);
-    assert.match(managed, /never claim local HTML is visible without a concrete host result/i);
-    assert.match(managed, /complete returned presentation Markdown/i);
+    assert.match(managed, /Generated Cockpit HTML is not proof of display/i);
+    assert.match(managed, /complete Review Bundle/i);
 });
 
 test('repository and public review docs agree on the $visualize skill and full Review Bundle contract', () => {
@@ -146,3 +146,19 @@ test('repository and public review docs agree on the $visualize skill and full R
     assert.match(readme, /approval (?:control|selector)/i);
 });
 //# sourceMappingURL=skills.test.js.map
+test('frontend preview contracts forbid raw index.html and local-image rendering paths', () => {
+    const primary = readFileSync(path.join(process.cwd(), 'skills/ai-flow/SKILL.md'), 'utf8');
+    const ux = readFileSync(path.join(process.cwd(), 'skills/ai-flow-ux-ui-designer/SKILL.md'), 'utf8');
+    const builder = readFileSync(path.join(process.cwd(), 'skills/ai-flow-builder/SKILL.md'), 'utf8');
+    const qa = readFileSync(path.join(process.cwd(), 'skills/ai-flow-qa-engineer/SKILL.md'), 'utf8');
+    const managed = readFileSync(path.join(process.cwd(), 'src/lib/managed-installation.ts'), 'utf8');
+    for (const text of [primary, ux, builder, qa]) {
+        assert.match(text, /http:\/\/|https:\/\//i);
+        assert.match(text, /index\.html|file:\/\//i);
+    }
+    assert.match(primary, /presentation\.previewUrl/i);
+    assert.match(primary, /data:image|data URI/i);
+    assert.match(primary, /broken image placeholder|broken evidence/i);
+    assert.match(managed, /data URIs/i);
+    assert.match(managed, /presentation\.previewUrl/i);
+});

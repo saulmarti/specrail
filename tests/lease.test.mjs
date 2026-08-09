@@ -9,13 +9,14 @@ import { createTask, findTask, loadTask, saveTask, setSection } from '../dist/sr
 import { completePhase, approveSpecification, startExecution } from '../dist/src/lib/workflow.js';
 import { acquireTaskLease, leaseStatus, takeTaskLease } from '../dist/src/lib/lease.js';
 import { nextAction } from '../dist/src/lib/next.js';
-import { readyProjectContext, setDefaultBlastRadius } from './helpers.mjs';
+import { readyProjectContext, setDefaultBlastRadius, enterCurrentPhaseBoundary } from './helpers.mjs';
 const repo = () => { const root = mkdtempSync(path.join(tmpdir(), 'ai-flow-lease-')); initProject(root); readyProjectContext(root); return root; };
 function ready(root) { const task = createTask(root, { title: 'Add health route', type: 'feature', surfaces: ['backend'] }); let t = loadTask(findTask(root, task.meta.id)); t.meta.status = 'refining'; for (const [h, v] of [['Need', 'Expose service health.'], ['Product Value', 'Enable reliable deployment checks.'], ['Users', 'Operators and deployment automation.'], ['Scope', 'Add GET /health.'], ['Out of Scope', 'Dependency diagnostics.'], ['Acceptance Criteria', '- A GET request returns HTTP 200 with status ok.\n- An unsupported method returns HTTP 405.'], ['Implementation Plan', 'Add route and tests.']])
     t.body = setSection(t.body, h, v); saveTask(t); setDefaultBlastRadius(root,t.meta.id); completePhase(root, t.meta.id); return approveSpecification(root, t.meta.id); }
 test('one active session owns execution and another receives a native takeover gate', () => {
     const root = repo();
     const task = ready(root);
+    enterCurrentPhaseBoundary(root, task.meta.id, 'chat-a');
     startExecution(root, task.meta.id, { sessionId: 'chat-a' });
     const lease = leaseStatus(root, task.meta.id, 'chat-b');
     assert.equal(lease.conflict, true);

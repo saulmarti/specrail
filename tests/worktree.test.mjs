@@ -27,7 +27,7 @@ test('creates, checkpoints, and removes an isolated task worktree', () => {
     assert.equal(existsSync(wt.path), false);
 });
 import { initProject } from '../dist/src/lib/project.js';
-import { readyProjectContext, setDefaultBlastRadius } from './helpers.mjs';
+import { readyProjectContext, setDefaultBlastRadius, enterCurrentPhaseBoundary } from './helpers.mjs';
 import { createTask, findTask, loadTask, saveTask, setSection } from '../dist/src/lib/task.js';
 import { approveSpecification, approveFinal, completePhase, startExecution, completeDelivery } from '../dist/src/lib/workflow.js';
 import { addEvidence } from '../dist/src/lib/evidence.js';
@@ -47,17 +47,19 @@ function prepareBackendTask(root) {
     setDefaultBlastRadius(root,task.meta.id);
     completePhase(root, task.meta.id);
     approveSpecification(root, task.meta.id);
-    startExecution(root, task.meta.id);
+    enterCurrentPhaseBoundary(root, task.meta.id, 'worktree-builder');
+    startExecution(root, task.meta.id, { sessionId: 'worktree-builder' });
     return task.meta.id;
 }
 function finishBackendEvidence(root, id) {
-    completePhase(root, id);
+    completePhase(root, id, { sessionId: 'worktree-builder' });
     const reviewDir = path.join(root, '.ai', 'evidence', id, 'review');
     mkdirSync(reviewDir, { recursive: true });
     const review = path.join(reviewDir, 'review.md');
     writeFileSync(review, '# Review\n\nNo blockers.\n');
     addEvidence(root, id, { kind: 'technical-review-report', path: review, source: 'technical-review', label: 'Review', tool: 'Codex' });
-    completePhase(root, id);
+    enterCurrentPhaseBoundary(root, id, 'worktree-reviewer');
+    completePhase(root, id, { sessionId: 'worktree-reviewer' });
     const qaDir = path.join(root, '.ai', 'evidence', id, 'qa');
     mkdirSync(qaDir, { recursive: true });
     const demo = path.join(qaDir, 'response.txt'), tests = path.join(qaDir, 'tests.txt'), qa = path.join(qaDir, 'qa.md');
@@ -67,7 +69,7 @@ function finishBackendEvidence(root, id) {
     addEvidence(root, id, { kind: 'backend-demo', path: demo, source: 'executed-command', label: 'Response', tool: 'terminal', command: 'curl /health', exitCode: 0 });
     addEvidence(root, id, { kind: 'test-log', path: tests, source: 'executed-command', label: 'Tests', tool: 'terminal', command: 'npm test', exitCode: 0 });
     addEvidence(root, id, { kind: 'qa-report', path: qa, source: 'qa-validation', label: 'QA', tool: 'Codex', attributes:{proves:['AC-001']} });
-    completePhase(root, id);
+    completePhase(root, id, { sessionId: 'worktree-reviewer' });
     recordTaskLearning(root, id, 'Health is delivered through the public endpoint.');
 }
 test('final approval requires explicit delivery when implementation lives in a worktree', () => {

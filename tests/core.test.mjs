@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { initProject, loadProjectConfig } from '../dist/src/lib/project.js';
-import { readyProjectContext, addApprovedImageGenProposal, setDefaultBlastRadius } from './helpers.mjs';
+import { readyProjectContext, addApprovedImageGenProposal, setDefaultBlastRadius, enterCurrentPhaseBoundary } from './helpers.mjs';
 import { recordTaskLearning } from '../dist/src/lib/learning.js';
 import { createTask, findTask, loadTask, saveTask, setSection } from '../dist/src/lib/task.js';
 import { addQuestion, answerQuestion, listQuestions } from '../dist/src/lib/questions.js';
@@ -17,9 +17,15 @@ function readySpec(root, id) {
     task.body = setSection(task.body, 'Need', 'Replace the homepage hero while preserving navigation.');
     task.body = setSection(task.body, 'Product Value', 'Improve clarity for first-time visitors.');
     task.body = setSection(task.body, 'Scope', '- Homepage hero only');
-    task.body = setSection(task.body, 'UI Target', `- Route: \`/\`
+    const uiTarget = task.meta.surfaces.includes('frontend')
+        ? `- Route: \`/\`
 - Target: \`section#homepage-hero\`
-- Capture: focused section`);
+- Viewport: \`1440x1000\`
+- Capture: focused section`
+        : `- Route: \`/\`
+- Target: \`section#homepage-hero\`
+- Capture: focused section`;
+    task.body = setSection(task.body, 'UI Target', uiTarget);
     task.body = setSection(task.body, 'Out of Scope', '- Navigation redesign');
     task.body = setSection(task.body, 'Acceptance Criteria', '- New hero is visible\n- Navigation remains unchanged');
     saveTask(task);
@@ -31,7 +37,7 @@ test('init creates project-only artifacts and requires CodeGraph MCP', () => {
     assert.equal(config.codegraph.mode, 'mcp');
     assert.equal(config.codegraph.command, 'codegraph serve --mcp');
     assert.equal(config.codegraph.required, true);
-    assert.equal(config.version, 10);
+    assert.equal(config.version, 14);
     assert.match(config.codegraph.preflight.missing, /init.*--index/);
     assert.match(config.codegraph.preflight.existing, /sync/);
     assert.match(config.codegraph.preflight.recovery, /index.*--force.*--quiet/);
@@ -79,8 +85,9 @@ test('frontend proposal evidence must be real, embedded, and distinct', () => {
     const validation = validateEvidence(root, created.meta.id, 'pre-approval');
     assert.equal(validation.valid, true);
     const markdown = readFileSync(findTask(root, created.meta.id), 'utf8');
-    assert.match(markdown, /!\[Homepage before\]\(\.\.\/\.\.\/evidence\/TASK-0001\/frontend\/before\.png\)/);
-    assert.match(markdown, /!\[Homepage proposal\]/);
+    assert.match(markdown, /\[Open canonical visual evidence\]\(\.\.\/\.\.\/evidence\/TASK-0001\/frontend\/before\.png\)/);
+    assert.match(markdown, /Homepage proposal/);
+    assert.doesNotMatch(markdown, /!\[[^\]]*Homepage (?:before|proposal)[^\]]*\]\(/);
 });
 test('final approval requires post-implementation evidence', () => {
     const root = repo();
@@ -91,15 +98,17 @@ test('final approval requires post-implementation evidence', () => {
     readySpec(root, created.meta.id);
     completePhase(root, created.meta.id);
     approveSpecification(root, created.meta.id, 'Approved by user');
-    startExecution(root, created.meta.id);
-    completePhase(root, created.meta.id); // builder -> review
+    enterCurrentPhaseBoundary(root, created.meta.id, 'builder-test');
+    startExecution(root, created.meta.id, { sessionId: 'builder-test' });
+    completePhase(root, created.meta.id, { sessionId: 'builder-test' }); // builder -> review
     const reviewDir = path.join(root, '.ai/evidence', created.meta.id, 'review');
     mkdirSync(reviewDir, { recursive: true });
     const review = path.join(reviewDir, 'technical-review.md');
     writeFileSync(review, '# Technical Review\n\nNo blocking findings.\n');
     addEvidence(root, created.meta.id, { kind: 'technical-review-report', path: review, source: 'technical-review', label: 'Technical review', tool: 'Codex' });
-    completePhase(root, created.meta.id); // review -> qa
-    assert.throws(() => completePhase(root, created.meta.id), /missing required evidence/i);
+    enterCurrentPhaseBoundary(root, created.meta.id, 'reviewer-test');
+    completePhase(root, created.meta.id, { sessionId: 'reviewer-test' }); // review -> qa
+    assert.throws(() => completePhase(root, created.meta.id, { sessionId: 'reviewer-test' }), /missing required evidence/i);
     const dir = path.join(root, '.ai/evidence', created.meta.id, 'backend');
     mkdirSync(dir, { recursive: true });
     const demo = path.join(dir, 'response.txt');
@@ -111,7 +120,7 @@ test('final approval requires post-implementation evidence', () => {
     addEvidence(root, created.meta.id, { kind: 'backend-demo', path: demo, source: 'executed-command', label: 'Real API response', command: 'curl ...', exitCode: 0, tool: 'Codex terminal' });
     addEvidence(root, created.meta.id, { kind: 'test-log', path: tests, source: 'executed-command', label: 'Test run', command: 'npm test', exitCode: 0, tool: 'Codex terminal' });
     addEvidence(root, created.meta.id, { kind: 'qa-report', path: qa, source: 'running-application', label: 'QA report', tool: 'Codex', attributes:{proves:['AC-001','AC-002']} });
-    completePhase(root, created.meta.id); // qa -> final approval
+    completePhase(root, created.meta.id, { sessionId: 'reviewer-test' }); // qa -> final approval
     recordTaskLearning(root, created.meta.id, 'Health endpoint behavior and evidence are now part of the product.');
     assert.equal(loadTask(findTask(root, created.meta.id)).meta.status, 'awaiting_final_approval');
     approveFinal(root, created.meta.id, 'Accepted by user');

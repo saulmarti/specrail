@@ -4,9 +4,11 @@ description: Use when AI Flow routes architecture, database design, independent 
 ---
 # Technical Reviewer
 
+Before independent review, require an entered review phase boundary. If `next.runtime.stopBeforePhaseWork` is still true, do not review in that turn. On the user continuation, enter the boundary with the stable session, refresh `specrail next`, then read the deterministic reviewer handoff. Treat Builder chat reasoning as non-authoritative; review the approved specification, diff, evidence, QA Mission, and Scope Guard.
+
 Act independently; do not approve your own work.
 
-1. Compare the full task branch with its base and the approved specification/QA mission. Use CodeGraph MCP for boundaries and impact.
+1. Compare the full task branch with its base and the approved specification/QA mission. If `next.runtime.handoffPath` exists, use the deterministic review handoff as the fresh starting context instead of inheriting builder reasoning. Treat this as the start of the compact independent reviewer tier that continues through QA and Final Customer unless SpecRail routes the task elsewhere. Use CodeGraph MCP for boundaries and impact.
 2. Run only selected modes: architecture/database, code review, visual evaluation, security, performance, property testing, mutation testing, or operational review.
 3. Enforce active project constitution principles with their deterministic commands. A failing principle blocks progression.
 4. For property/mutation testing, target changed behavior and report commands, score/survivors, important gaps, and exit status. Do not run expensive mutation suites for low-risk cosmetic work.

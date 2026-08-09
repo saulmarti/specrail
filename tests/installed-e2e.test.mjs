@@ -50,18 +50,20 @@ test('installed CLI completes a natural backend request with native approval pay
     const spec = json(bin, ['interaction', id, '--kind', 'spec-approval', '--root', repo]);
     assert.equal(spec.tool, 'request_user_input');
     assert.equal(spec.questions[0].options[0].label, 'Aprobar especificación');
-    json(bin, ['spec', 'approve', id, '--root', repo]);
-    json(bin, ['run', id, '--root', repo]);
+    json(bin, ['spec', 'approve', id, '--session', 'backend-planner', '--root', repo]);
+    json(bin, ['boundary', 'enter', id, '--session', 'backend-builder', '--root', repo]);
+    json(bin, ['run', id, '--session', 'backend-builder', '--root', repo]);
     const worktree = json(bin, ['worktree', 'create', id, '--root', repo]);
     writeFileSync(path.join(worktree.path, 'health-endpoint.txt'), 'implemented\n');
     json(bin, ['worktree', 'checkpoint', id, '--root', repo]);
-    json(bin, ['phase', 'complete', id, '--root', repo]);
+    json(bin, ['phase', 'complete', id, '--session', 'backend-builder', '--root', repo]);
     const reviewDir = path.join(repo, '.ai', 'evidence', id, 'review');
     mkdirSync(reviewDir, { recursive: true });
     const reviewFile = path.join(reviewDir, 'technical-review.md');
     writeFileSync(reviewFile, '# Technical Review\n\nNo blocking findings.\n');
     json(bin, ['evidence', 'add', id, '--kind', 'technical-review-report', '--path', reviewFile, '--source', 'technical-review', '--label', 'Technical review', '--tool', 'Codex reviewer', '--root', repo]);
-    json(bin, ['phase', 'complete', id, '--root', repo]);
+    json(bin, ['boundary', 'enter', id, '--session', 'backend-reviewer', '--root', repo]);
+    json(bin, ['phase', 'complete', id, '--session', 'backend-reviewer', '--root', repo]);
     const dir = path.join(repo, '.ai', 'evidence', id, 'backend');
     mkdirSync(dir, { recursive: true });
     const files = {
@@ -80,7 +82,7 @@ test('installed CLI completes a natural backend request with native approval pay
         if (kind === 'qa-report') args.push('--proves','AC-001,AC-002');
         json(bin, args);
     }
-    json(bin, ['phase', 'complete', id, '--root', repo]);
+    json(bin, ['phase', 'complete', id, '--session', 'backend-reviewer', '--root', repo]);
     json(bin, ['project', 'learn', '--task', id, '--text', 'The health endpoint is a stable public monitoring contract.', '--root', repo]);
     const final = json(bin, ['interaction', id, '--kind', 'final-approval', '--root', repo]);
     assert.equal(final.tool, 'request_user_input');
@@ -138,7 +140,7 @@ test('installed CLI requires Taste Skill plus Image Gen and rejects a visibly br
     const before = path.join(dir, 'before.png'), proposal = path.join(dir, 'proposal.png');
     writeFileSync(before, Buffer.concat([base, Buffer.from([1])]));
     writeFileSync(proposal, Buffer.concat([base, Buffer.from([2])]));
-    const common = ['--route', '/', '--viewport', '1440x1000', '--target', 'section#home-spotlight', '--capture-scope', 'focused-section', '--root', repo];
+    const common = ['--route', '/', '--viewport', '1440x1000', '--target', 'section#home-spotlight', '--capture-scope', 'focused-section', '--url', 'http://127.0.0.1:4173/', '--root', repo];
     json(bin, ['evidence', 'add', id, '--kind', 'frontend-before', '--path', before, '--source', 'browser-capture', '--label', 'Focused before', '--tool', 'Codex browser', ...common]);
     const legacy = spawnSync(bin, ['evidence', 'add', id, '--kind', 'frontend-proposal', '--path', proposal, '--source', 'browser-rendered-proposal', '--label', 'Legacy proposal', '--tool', 'Codex browser', ...common], { encoding: 'utf8' });
     assert.notEqual(legacy.status, 0);
@@ -166,6 +168,7 @@ description: Official Taste Skill ${name}.
     const review = json(bin, ['interaction', id, '--kind', 'spec-approval', '--root', repo]);
     assert.match(review.presentation.markdown, /## UI Target/);
     assert.match(review.presentation.markdown, /section#home-spotlight/);
-    assert.deepEqual(review.presentation.attachments.map(x => x.kind), ['review-cockpit', 'review-bundle', 'task-markdown', 'frontend-before', 'ui-design-brief', 'frontend-proposal', 'ui-proposal-review']);
+    assert.equal(review.presentation.previewUrl, 'http://127.0.0.1:4173/');
+    assert.deepEqual(review.presentation.attachments.map(x => x.kind), ['review-cockpit', 'review-bundle', 'frontend-before', 'frontend-proposal', 'ui-design-brief', 'ui-proposal-review']);
 });
 //# sourceMappingURL=installed-e2e.test.js.map

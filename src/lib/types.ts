@@ -146,6 +146,7 @@ export interface EvidenceRecord {
   viewport: string | null;
   target: string | null;
   captureScope: string | null;
+  runtimeUrl?: string | null;
   missionHash?: string | null;
   attributes?: Record<string, JsonValue>;
   size: number;
@@ -170,6 +171,7 @@ export interface EvidenceInput {
   viewport?: string;
   target?: string;
   captureScope?: string;
+  runtimeUrl?: string;
   missionHash?: string;
   attributes?: Record<string, JsonValue>;
 }
@@ -188,6 +190,7 @@ export interface Attachment {
   viewport?: string | null;
   target?: string | null;
   captureScope?: string | null;
+  runtimeUrl?: string | null;
   sha256?: string | null;
 }
 
@@ -198,6 +201,7 @@ export interface Presentation {
   markdown: string;
   taskPath: string;
   taskRelativePath: string;
+  previewUrl: string | null;
   attachments: Attachment[];
   visualization: VisualizationPlan | null;
 }
@@ -207,10 +211,19 @@ export type VisualizationOutcome = 'pending' | 'rendered' | 'fallback' | 'failed
 export type VisualizationEvaluatorMode = 'self-check' | 'fresh-context';
 
 export interface VisualizationSource {
+  id: string;
   kind: string;
+  label: string;
   path: string;
   mediaType?: string;
   sha256?: string | null;
+  reviewRole?: 'before' | 'proposal' | 'after' | 'supporting';
+  route?: string | null;
+  viewport?: string | null;
+  target?: string | null;
+  captureScope?: string | null;
+  requiredInVisual: boolean;
+  runtimeUrl?: string | null;
 }
 
 export interface VisualizationPlan {
@@ -229,12 +242,17 @@ export interface VisualizationPlan {
   payload: Record<string, unknown>;
   experience: { mode:'interactive'; pattern:string; views:string[]; controls:string[]; defaultView:string; };
   sources: VisualizationSource[];
+  requiredSourceIds: string[];
   constraints: {
     readOnly: true;
     maxInstances: 1;
     mustNotModifyProject: true;
     mustNotAnswerForUser: true;
     sourceOfTruth: 'markdown';
+    imageSourcePolicy: 'embed-data-uri';
+    forbidLocalFileImageSrc: true;
+    requireEvidenceMarkers: true;
+    requiredEvidenceContent: 'embedded-data-image';
   };
   evaluatorMode: VisualizationEvaluatorMode;
   fallback: 'markdown-and-attachments';
@@ -258,7 +276,7 @@ export interface VisualizationCapabilityRecord {
 }
 
 export interface VisualizationRunRecord {
-  schemaVersion: 2;
+  schemaVersion: 3;
   taskId: string;
   sessionId: string;
   gate: string;
@@ -269,6 +287,7 @@ export interface VisualizationRunRecord {
   invocationRef: string | null;
   resultDigest: string | null;
   artifactPath: string | null;
+  displayedSourceIds: string[];
   quality: VisualizationQuality | null;
   recordedAt: string;
 }
@@ -404,6 +423,41 @@ export interface ContextManifest {
   history: ContextHistoryEntry[];
   createdAt: string;
   updatedAt: string;
+}
+
+export type RuntimeRole = 'thinker' | 'implementer' | 'reviewer' | 'system';
+
+export interface RuntimeRecommendation {
+  role: RuntimeRole;
+  strategy: 'phase-boundary-handoff';
+  contextProfile: string | null;
+  freshSessionRecommended: boolean;
+  stopBeforePhaseWork: boolean;
+  sessionEntryRequired: boolean;
+  handoffPath: string | null;
+  handoffRelativePath: string | null;
+  handoffDigest: string | null;
+  handoffContentDigest: string | null;
+  handoffWords: number | null;
+  handoffWordLimit: number | null;
+  handoffEstimatedTokens: number | null;
+  handoffTruncated: boolean;
+  boundary: null | {
+    status: 'required' | 'entered';
+    recommendation: 'same-chat-ok' | 'fresh-chat-recommended';
+    sameChatAllowed: true;
+    mode: 'same-chat' | 'fresh-chat' | 'unknown' | null;
+    originSessionId: string | null;
+    enteredSessionId: string | null;
+  };
+  rationale: string;
+  transitionNotice: null | {
+    kind: 'implementation-handoff' | 'review-handoff';
+    title: string;
+    message: string;
+    resumePrompt: string;
+  };
+  transitionInstruction: string | null;
 }
 
 export interface ProjectConfig {

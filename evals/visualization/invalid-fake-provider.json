@@ -15,7 +15,9 @@
     "maxInstances": 1,
     "mustNotModifyProject": true,
     "mustNotAnswerForUser": true,
-    "sourceOfTruth": "markdown"
+    "sourceOfTruth": "markdown",
+    "imageSourcePolicy": "embed-data-uri",
+    "forbidLocalFileImageSrc": true
   },
   "evaluatorMode": "fresh-context",
   "fallback": "markdown-and-attachments",

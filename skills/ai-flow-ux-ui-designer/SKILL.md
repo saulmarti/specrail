@@ -17,12 +17,12 @@ Run brief inference (page kind, audience, direction, variance, density, motion),
 
 ## Proposal
 
-1. Open the real application, navigate and scroll to the exact route/target, and capture a focused before image at each approved viewport.
+1. Start/open the real application through its served `http://` or `https://` runtime URL, navigate and scroll to the exact route/target, and capture a focused before image at each approved viewport. Never open a raw `index.html` or `file://` URL. Keep the preview server alive through the approval gate and register the exact runtime URL with each before capture.
 2. Prefer Image Gen editing that screenshot with real content and the current design system. Generate from scratch only for a genuinely new surface.
 3. Produce one strong proposal for a trivial change or up to three meaningfully different variants for a material redesign.
 4. Critique every proposal with Taste and vision. Reject overflow, clipping, malformed text, overlap, illegibility, generic styling, target mismatch, or scope drift.
 5. Material UI work gets an independent fresh-context Technical Reviewer. Its source digest must bind the canonical before, brief, proposal, and critique.
-6. Present before/proposal interactively with Visualize when available, using toggle/viewport/detail controls—not as a static decoration—and always show canonical images in chat.
+6. Present before/proposal interactively with Visualize when available using Visual Comparator v2: side-by-side, slider, overlay, viewport filtering, route/target filtering, exact route+target+viewport grouping, and explicit missing-evidence states—not as a static gallery or cross-context comparison. For local source images, Visualize must read the bytes and embed data URIs; never point `<img src>` at local filesystem paths. Always show canonical images through a host-supported surface and never treat a broken placeholder as presented evidence.
 
 Do not implement before user approval. Builder receives the precise target, viewport, approved image, preserved areas, tokens, behavior, and acceptance criteria.
 

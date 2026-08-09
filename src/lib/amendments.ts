@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import path from 'node:path';
 import { appendLog, findTask, loadTask, saveTask } from './task.js';
 import { listTrace, recordTrace, validateTrace } from './trace.js';
+import { invalidatePhaseBoundary } from './phase-boundary.js';
 
 export type AmendmentStatus='proposed'|'approved'|'rejected';
 export interface AmendmentInput { title:string; reason:string; changes:string[]; acceptanceCriteria?:string[]; allowedFiles?:string[]; protectedFilesRemoved?:string[]; scopeAdditions?:string[]; }
@@ -41,7 +42,7 @@ export function proposeAmendment(root:string,id:string,input:AmendmentInput):Ame
 export function decideAmendment(root:string,id:string,amendmentId:string,status:'approved'|'rejected',note:string):Amendment{
   const task=loadTask(findTask(root,id)),current=listAmendments(root,task.meta.id).find(item=>item.id===amendmentId);if(!current)throw new Error(`Amendment not found: ${amendmentId}`);if(current.status!=='proposed')throw new Error(`Amendment is already ${current.status}`);const target=file(root,task.meta.id,amendmentId),amendment:{[K in keyof Amendment]:Amendment[K]}={...current};
   amendment.status=status;amendment.decidedAt=new Date().toISOString();amendment.decisionNote=String(note||'').trim()||null;amendment.decisionDigest=hash(decisionPart(amendment));writeFileSync(target,`${JSON.stringify(amendment,null,2)}\n`);
-  if(status==='approved'){const baseHash=String(task.meta.spec_approval_hash||'');task.meta.spec_effective_hash=effectiveSpecificationHash(root,task.meta.id,baseHash);appendLog(task,`Specification amendment approved: ${amendment.id}. Effective specification hash is ${task.meta.spec_effective_hash}.`);}else appendLog(task,`Specification amendment rejected: ${amendment.id}.`);
+  if(status==='approved'){const baseHash=String(task.meta.spec_approval_hash||'');task.meta.spec_effective_hash=effectiveSpecificationHash(root,task.meta.id,baseHash);if(task.meta.phase==='builder'||task.meta.phase==='technical-reviewer')invalidatePhaseBoundary(root,task.meta.id,task.meta.phase);appendLog(task,`Specification amendment approved: ${amendment.id}. Effective specification hash is ${task.meta.spec_effective_hash}.`);}else appendLog(task,`Specification amendment rejected: ${amendment.id}.`);
   const saved=saveTask(task);recordTrace(root,saved,status==='approved'?'specification-amendment-approved':'specification-amendment-rejected',{amendmentId:amendment.id,digest:amendment.digest,decisionDigest:amendment.decisionDigest||'',note:amendment.decisionNote||''});return amendment;
 }
 export function approveAmendment(root:string,id:string,amendmentId:string,note='Approved by user'){return decideAmendment(root,id,amendmentId,'approved',note);}

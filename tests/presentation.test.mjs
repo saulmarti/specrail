@@ -31,6 +31,7 @@ function prepareFrontendSpec(root) {
     setDefaultBlastRadius(root,task.meta.id);
     completePhase(root, task.meta.id);
     addApprovedImageGenProposal(root, task.meta.id, { target: 'section#home-spotlight', beforeLabel: 'Homepage actual', proposalLabel: 'Propuesta H3' });
+    addApprovedImageGenProposal(root, task.meta.id, { target: 'section#home-spotlight', viewport: '390x844', beforeLabel: 'Homepage mobile actual', proposalLabel: 'Propuesta H3 mobile' });
     completePhase(root, task.meta.id);
     return task.meta.id;
 }
@@ -53,9 +54,18 @@ test('spec approval includes a complete chat presentation before native input', 
     assert.doesNotMatch(interaction.presentation.markdown, /Workflow Log/);
     const bundleText = readFileSync(interaction.presentation.attachments.find(item => item.kind === 'review-bundle').path, 'utf8').trim();
     assert.ok(interaction.presentation.markdown.includes(bundleText), 'presentation.markdown must contain the complete authoritative Review Bundle');
-    assert.equal(interaction.presentation.attachments.length, 7);
+    assert.doesNotMatch(bundleText, /!\[[^\]]*(?:Homepage actual|Propuesta H3)[^\]]*\]\(/, 'Review Bundle must not emit broken repository-local image Markdown');
+    assert.doesNotMatch(interaction.presentation.markdown, /## Evidencias visibles/, 'presentation layer must not append a second evidence listing');
+    assert.match(bundleText, /### Active visual review evidence/);
+    assert.match(bundleText, /\*\*Before · \/ · section#home-spotlight · 1440x1000 · focused-section\*\*/);
+    assert.match(bundleText, /\*\*Proposal · \/ · section#home-spotlight · 1440x1000 · focused-section\*\*/);
+    assert.match(bundleText, /\*\*Before · \/ · section#home-spotlight · 390x844 · focused-section\*\*/);
+    assert.match(bundleText, /\*\*Proposal · \/ · section#home-spotlight · 390x844 · focused-section\*\*/);
+    assert.equal(interaction.presentation.previewUrl, 'http://127.0.0.1:4173/');
+    assert.equal(interaction.presentation.attachments.length, 10);
     assert.ok(interaction.presentation.attachments.every(item => path.isAbsolute(item.path)));
-    assert.deepEqual(interaction.presentation.attachments.map(x => x.kind), ['review-cockpit', 'review-bundle', 'task-markdown', 'frontend-before', 'ui-design-brief', 'frontend-proposal', 'ui-proposal-review']);
+    assert.deepEqual(interaction.presentation.attachments.map(x => x.kind), ['review-cockpit', 'review-bundle', 'frontend-before', 'frontend-before', 'frontend-proposal', 'frontend-proposal', 'ui-design-brief', 'ui-proposal-review', 'ui-design-brief', 'ui-proposal-review']);
+    assert.ok(interaction.presentation.attachments.filter(item=>item.kind==='frontend-proposal').every(item=>item.label.includes('/ · section#home-spotlight')&&item.label.includes('focused-section')));
 });
 
 test('final approval presentation also embeds the complete final Review Bundle', () => {
@@ -85,7 +95,7 @@ test('next action carries the same review presentation so a new chat can render 
     assert.equal(next.action, 'approve-or-refine-specification');
     assert.equal(next.interaction.presentation.requiredBeforeInput, true);
     assert.match(next.interaction.presentation.markdown, /## Scope/);
-    assert.equal(next.interaction.presentation.attachments.length, 7);
+    assert.equal(next.interaction.presentation.attachments.length, 10);
 });
 test('orchestrator contract requires the exact SpecRail gate, full Review Bundle, evidence, and Visualize before asking', () => {
     const skill = readFileSync(path.join(process.cwd(), 'skills/ai-flow/SKILL.md'), 'utf8');
@@ -93,7 +103,8 @@ test('orchestrator contract requires the exact SpecRail gate, full Review Bundle
     assert.match(skill, /exact `next\.interaction` \/ `interaction` returned by SpecRail/i);
     assert.match(skill, /complete `interaction\.presentation\.markdown`/i);
     assert.match(skill, /complete authoritative Review Bundle/i);
-    assert.match(skill, /attach every host-supported required item/i);
+    assert.match(skill, /present every host-supported required item/i);
+    assert.match(skill, /must not be re-inlined as Markdown\/file-path images/i);
     assert.match(skill, /native `visualize` content reference must be visible before the gate questions/i);
     assert.match(skill, /Do not ask for approval/i);
 });
@@ -104,19 +115,25 @@ test('approval prompts explicitly refer to the preview already shown above', () 
     assert.equal(interaction.presentation.attachments[0].display, 'inline');
     assert.equal(interaction.presentation.attachments[0].mediaType, 'text/html');
     assert.equal(interaction.presentation.attachments[1].mediaType, 'text/markdown');
-    assert.equal(interaction.presentation.attachments[2].mediaType, 'text/markdown');
+    assert.match(interaction.presentation.attachments[2].mediaType, /^image\//);
     assert.match(interaction.presentation.attachments[3].mediaType, /^image\//);
+    assert.match(interaction.presentation.attachments[4].mediaType, /^image\//);
+    assert.match(interaction.presentation.attachments[5].mediaType, /^image\//);
+    for (const index of [2,3,4,5]) assert.equal(interaction.presentation.attachments[index].display, 'attachment');
+    assert.match(interaction.presentation.attachments[2].label, /^Before · \/ · section#home-spotlight · 1440x1000 · focused-section$/);
+    assert.match(interaction.presentation.attachments[3].label, /^Before · \/ · section#home-spotlight · 390x844 · focused-section$/);
+    assert.match(interaction.presentation.attachments[4].label, /^Proposal · \/ · section#home-spotlight · 1440x1000 · focused-section$/);
+    assert.match(interaction.presentation.attachments[5].label, /^Proposal · \/ · section#home-spotlight · 390x844 · focused-section$/);
 });
 test('managed activation delegates presentation details to the global skill while preserving the approval invariant', () => {
     const managed = readFileSync(path.join(process.cwd(), 'src/lib/managed-installation.ts'), 'utf8');
     assert.match(managed, /follow .*ai-flow\/SKILL\.md/i);
-    assert.match(managed, /Before approval, use one stable session token/i);
-    assert.match(managed, /Cockpit generation is not host presentation/i);
-    assert.match(managed, /never claim local HTML is visible without a concrete host result/i);
-    assert.match(managed, /Never invent or paraphrase request_user_input/i);
-    assert.match(managed, /exact interaction returned by SpecRail/i);
-    assert.match(managed, /complete returned presentation Markdown .*full Review Bundle/i);
-    assert.match(managed, /native .*content reference must be visibly emitted/i);
+    assert.match(managed, /stable session token/i);
+    assert.match(managed, /Generated Cockpit HTML is not proof of display/i);
+    assert.match(managed, /never invent request_user_input/i);
+    assert.match(managed, /exact SpecRail interaction/i);
+    assert.match(managed, /complete Review Bundle/i);
+    assert.match(managed, /emit the native \$visualize reference before the questions/i);
     assert.match(managed, /Never implement before specification approval/i);
 });
 
@@ -152,3 +169,16 @@ test('phase complete returns the newly reached approval gate with its full prese
     assert.equal(result.next.interaction.presentation.visualization.recordRequired, true);
 });
 //# sourceMappingURL=presentation.test.js.map
+test('approval presentation does not attach stale frontend visuals outside the current UI Target',()=>{
+    const root=repo(),id=prepareFrontendSpec(root);
+    addApprovedImageGenProposal(root,id,{target:'section#historical-target',viewport:'1200x800',beforeLabel:'Historical before',proposalLabel:'Historical proposal'});
+    const interaction=interactionForTask(root,id,'spec-approval',{sessionId:'presentation-stale-filter'});
+    const frontendVisuals=interaction.presentation.attachments.filter(item=>['frontend-before','frontend-mobile-before','frontend-proposal','frontend-mobile-proposal'].includes(item.kind));
+    assert.equal(frontendVisuals.some(item=>item.target==='section#historical-target'),false);
+    assert.equal(frontendVisuals.length,4);
+    const bundleText=readFileSync(interaction.presentation.attachments.find(item=>item.kind==='review-bundle').path,'utf8');
+    const activeSection=bundleText.split('### Active visual review evidence')[1]?.split('### Supporting evidence')[0]||'';
+    assert.doesNotMatch(activeSection,/historical-target/);
+    assert.match(bundleText,/### Historical \/ inactive visual evidence/);
+    assert.match(bundleText,/section#historical-target/);
+});

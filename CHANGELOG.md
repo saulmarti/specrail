@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Added `specrail update`, preserving the installed `beta`/`latest` channel by default, supporting explicit `--beta` / `--latest` switching and network-free `--dry-run`, and refreshing managed Codex assets with the newly installed CLI rather than an older managed copy.
+- Made `package.json` the canonical release version and added deterministic synchronization/checks for `plugin.json` and both package-lock version fields before tests, packing, and publishing.
+- Hardened frontend evidence around real served runtimes: new Before/After captures require an exact `http(s)` runtime URL, approval presentation exposes `presentation.previewUrl`, and raw `index.html`, `file://`, or filesystem-path previews are invalid.
+- Reworked Review Bundle/Cockpit/`$visualize` evidence presentation so repository-local image links are never treated as visible review evidence; canonical images are embedded from verified bytes and stale/historical contexts are separated from the active review set.
+- Added **Visual Comparator v2** with Side by side, Slider, and Overlay modes; exact case-sensitive route + target + viewport + capture-scope grouping; viewport/route-target/capture filters; explicit missing-role states; and canonical Before/Proposal/After source markers.
+- Strengthened `$visualize` rendering so a successful comparator requires the real v2 interaction structure, exact canonical evidence metadata, matching embedded bytes/hashes/media types, visible non-hidden sources, a native `visualize...` content reference, and a regular external HTML artifact rather than a symlink or static gallery.
+- Hardened UI Target/evidence matching for multiple targets and viewports, Spanish `Pantalla` ambiguity, stale proposal/layout-review freshness, exact capture scope, symlink-safe evidence roots, and canonical visual-evaluator digests.
+- Removed SpecRail-owned model selection/configuration. Model and reasoning settings remain entirely user-owned in the Codex selector; legacy `modelRouting` project config is migrated away.
+- Renamed the remaining internal model-routing modules/tests to phase-role/phase-handoff terminology so the source tree no longer implies that SpecRail chooses models.
+- Added strong/flexible planning → Builder and Builder → Technical Review phase boundaries with deterministic implementation/reviewer capsules, explicit turn stops, same-chat or fresh-chat continuation, session-inferred boundary mode, integrity digests, lease-safe ownership transfer, Amendment invalidation, and model-independent raw context-savings estimates.
+- Re-hardened phase boundaries so Builder and Technical Review cannot bypass entry through direct runtime calls, context expansion cannot re-arm an entered boundary, phase resets are not returned stale by `next`, blocked work cannot resume from another session without entry, and spec approval prepares the implementation boundary in the approval session.
+- Reordered the public roadmap around the highest-value path exposed by real usage: implementation-capsule quality and conformance first, runtime/review reliability second, measured context efficiency third, then Specification Intelligence, lifecycle management, Review Inbox, and experiment automation.
+- Added planned Capsule Quality Gate, Builder Comprehension Preflight, Decision Budget, Executable Acceptance Criteria, Contract Conformance Monitor, Preview Session Manager, runtime Doctor checks, real phase token telemetry, adaptive boundary recommendations, Capsule Delta, role-specific context cache, and implementation checkpoints.
+
 ## 0.8.0-beta.2 — 2026-08-07
 
 - Hardened approval integrity, Amendment decision seals, Scope Guard protected-state coverage, Replay trace validation, token provenance `realpath` checks, and safe reapproval of intact legacy approvals.

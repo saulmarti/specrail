@@ -32,7 +32,7 @@ test('approval and product questions are emitted as native request_user_input pa
     loaded.body = setSection(loaded.body, 'Need', 'Let signed-in users save favorites.');
     loaded.body = setSection(loaded.body, 'Product Value', 'Return quickly to relevant content.');
     loaded.body = setSection(loaded.body, 'Scope', 'Save and remove favorites.');
-    loaded.body = setSection(loaded.body, 'UI Target', '- Route: `/favorites`\n- Target: `main#favorites`\n- Capture: focused section');
+    loaded.body = setSection(loaded.body, 'UI Target', '- Route: `/favorites`\n- Target: `main#favorites`\n- Viewport: `1440x1000`\n- Capture: focused section');
     loaded.body = setSection(loaded.body, 'Out of Scope', 'Sharing favorites.');
     loaded.body = setSection(loaded.body, 'Acceptance Criteria', '- Save a favorite\n- Remove a favorite');
     saveTask(loaded);

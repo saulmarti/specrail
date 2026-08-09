@@ -44,6 +44,29 @@ test('specification linter rejects vague non-observable acceptance criteria', ()
     assert.equal(lint.valid, false);
     assert.ok(lint.errors.some(x => /observable|vague|UI Target/i.test(x)));
 });
+test('frontend UI Target requires an exact pixel viewport so visual evidence contexts are deterministic', () => {
+    const root = repo();
+    const task = createTask(root, { title: 'Responsive hero', type: 'task', surfaces: ['frontend'] });
+    let loaded = loadTask(findTask(root, task.meta.id));
+    for (const [h, v] of [['Need','Keep the hero readable on affected screens.'],['Product Value','Visitors can understand the primary action.'],['Users','Desktop and mobile visitors.'],['Scope','Only the homepage hero.'],['UI Target','- Route: `/`\n- Target: `#hero`\n- Viewport: desktop and mobile\n- Capture: focused section'],['Out of Scope','All other sections.'],['Acceptance Criteria','- The hero title remains fully visible without horizontal overflow.']]) loaded.body=setSection(loaded.body,h,v);
+    saveTask(loaded);
+    const lint=lintSpecification(loaded,{stage:'product'});
+    assert.equal(lint.valid,false);assert.ok(lint.errors.some(error=>/exact pixel viewport/i.test(error)));
+});
+
+
+test('frontend UI Target rejects ambiguous multi-target ordering instead of pairing a viewport with the previous target', () => {
+    const root=repo();const task=createTask(root,{title:'Two targets out of order',type:'task',surfaces:['frontend']});let loaded=loadTask(findTask(root,task.meta.id));
+    const uiTarget="- Route: `/`\n- Viewport: `1440x1000`\n- Target: `section#hero`\n- Route: `/`\n- Target: `section#features`\n- Viewport: `390x844`\n- Capture: focused section";
+    for(const [h,v] of [['Need','Keep two homepage sections readable at their approved viewports.'],['Product Value','Visitors see the intended hierarchy without ambiguous review evidence.'],['Users','Homepage visitors.'],['Scope','Only hero and features sections.'],['UI Target',uiTarget],['Out of Scope','Other sections.'],['Acceptance Criteria','- The hero and features remain visible at their explicitly approved viewports without horizontal overflow.']])loaded.body=setSection(loaded.body,h,v);saveTask(loaded);
+    const lint=lintSpecification(loaded,{stage:'product'});assert.equal(lint.valid,false);assert.ok(lint.errors.some(error=>/viewport.*follow.*Target|must define.*viewport/i.test(error)),lint.errors.join('; '));
+});
+test('viewport dimensions cannot masquerade as the UI route through an ambiguous Screen/Pantalla label',()=>{
+    const root=repo();const task=createTask(root,{title:'Ambiguous target',type:'task',surfaces:['frontend']});let loaded=loadTask(findTask(root,task.meta.id));
+    for(const [h,v] of [['Need','Keep the hero readable for mobile visitors.'],['Product Value','Visitors can read the primary action.'],['Users','Mobile visitors.'],['Scope','Only the hero.'],['UI Target','- Pantalla: `390x844`\n- Objetivo: `#hero`\n- Captura: focused section'],['Out of Scope','Other sections.'],['Acceptance Criteria','- The hero remains fully visible at 390x844 without horizontal overflow.']])loaded.body=setSection(loaded.body,h,v);saveTask(loaded);
+    const lint=lintSpecification(loaded,{stage:'product'});assert.equal(lint.valid,false);assert.ok(lint.errors.some(error=>/route or screen separately/i.test(error)));
+});
+
 test('approval stores a deterministic hash and execution is invalidated when governed specification changes', () => {
     const root = repo();
     let task = completeBackendSpec(root);
@@ -104,3 +127,20 @@ test('a vague criterion remains invalid even when it contains an arbitrary numbe
     assert.ok(lint.errors.some(x => /vague|observable/i.test(x)));
 });
 //# sourceMappingURL=spec-governance.test.js.map
+test('frontend UI Target rejects a dangling Route instead of silently dropping an incomplete context',()=>{
+    const root=repo();const task=createTask(root,{title:'Dangling route',type:'task',surfaces:['frontend']});let loaded=loadTask(findTask(root,task.meta.id));
+    for(const [h,v] of [['Need','Keep reviewed sections deterministic.'],['Product Value','Review evidence maps to every declared route.'],['Users','Frontend reviewers.'],['Scope','Only declared visual contexts.'],['UI Target','- Route: `/`\n- Target: `#hero`\n- Viewport: `1440x1000`\n- Capture: focused section\n- Route: `/settings`'],['Out of Scope','Other routes.'],['Acceptance Criteria','- The hero remains visible at the declared viewport without horizontal overflow.']])loaded.body=setSection(loaded.body,h,v);saveTask(loaded);
+    const lint=lintSpecification(loaded,{stage:'product'});assert.equal(lint.valid,false);assert.ok(lint.errors.some(error=>/\/settings.*Target\/Objetivo/i.test(error)),lint.errors.join('; '));
+});
+
+test('frontend UI Target requires an explicit focused capture scope for every complete visual context',()=>{
+    const root=repo();const task=createTask(root,{title:'Missing capture',type:'task',surfaces:['frontend']});let loaded=loadTask(findTask(root,task.meta.id));
+    for(const [h,v] of [['Need','Keep hero review deterministic.'],['Product Value','Reviewers compare the same crop.'],['Users','Frontend reviewers.'],['Scope','Only the hero.'],['UI Target','- Route: `/`\n- Target: `#hero`\n- Viewport: `1440x1000`'],['Out of Scope','Other sections.'],['Acceptance Criteria','- The hero remains visible at 1440x1000 without horizontal overflow.']])loaded.body=setSection(loaded.body,h,v);saveTask(loaded);
+    const lint=lintSpecification(loaded,{stage:'product'});assert.equal(lint.valid,false);assert.ok(lint.errors.some(error=>/capture/i.test(error)),lint.errors.join('; '));
+});
+
+test('frontend UI Target rejects conflicting capture scopes inside the same visual context',()=>{
+    const root=repo();const task=createTask(root,{title:'Conflicting capture',type:'task',surfaces:['frontend']});let loaded=loadTask(findTask(root,task.meta.id));
+    for(const [h,v] of [['Need','Keep the hero comparison deterministic.'],['Product Value','Reviewers must see one unambiguous crop contract.'],['Users','Frontend reviewers.'],['Scope','Only the hero.'],['UI Target','- Route: `/`\n- Target: `#hero`\n- Viewport: `1440x1000`\n- Capture: focused section\n- Capture: focused element'],['Out of Scope','Other sections.'],['Acceptance Criteria','- The hero remains visible at 1440x1000 without horizontal overflow.']])loaded.body=setSection(loaded.body,h,v);saveTask(loaded);
+    const lint=lintSpecification(loaded,{stage:'product'});assert.equal(lint.valid,false);assert.ok(lint.errors.some(error=>/conflicting.*capture/i.test(error)),lint.errors.join('; '));
+});

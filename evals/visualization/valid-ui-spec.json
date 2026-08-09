@@ -10,22 +10,98 @@
   "purpose": "Compare canonical before and proposal evidence without inventing UI.",
   "payload": {
     "taskId": "TASK-0001",
-    "gate": "spec-approval"
+    "gate": "spec-approval",
+    "renderingContract": {
+      "localImages": "read-bytes-and-embed-as-data-uri",
+      "imagePreparation": "embed-canonical-bytes-exactly-or-fallback",
+      "maxFragmentBytes": 1048576,
+      "forbidImageSrc": [
+        "file://",
+        "absolute-local-path",
+        "repository-relative-path"
+      ],
+      "requiredEvidenceIds": [
+        "EV-001",
+        "EV-002"
+      ],
+      "evidenceMarker": "data-specrail-evidence-id",
+      "requiredMarkup": "exact-canonical-data-image-with-evidence-and-source-hash-markers",
+      "missingImageBehavior": "show-explicit-fallback-and-do-not-claim-visible",
+      "sourceHashAttribute": "data-specrail-source-sha256",
+      "comparator": {
+        "version": 2,
+        "rootMarker": "data-specrail-comparator=\"v2\"",
+        "modes": [
+          "side-by-side",
+          "slider",
+          "overlay"
+        ],
+        "filters": [
+          "viewport",
+          "route-target",
+          "capture-scope"
+        ],
+        "groupBy": [
+          "route",
+          "target",
+          "viewport",
+          "captureScope"
+        ],
+        "crossContextComparison": "forbidden",
+        "requiredRoles": [
+          "before",
+          "proposal"
+        ],
+        "missingRoleBehavior": "visible-error"
+      }
+    }
   },
   "sources": [
     {
-      "kind": "review-bundle",
-      "path": ".ai/reviews/TASK-0001-spec-review.md",
-      "mediaType": "text/markdown",
-      "sha256": null
+      "id": "EV-001",
+      "kind": "frontend-before",
+      "label": "Before",
+      "path": ".ai/evidence/TASK-0001/frontend/before.png",
+      "mediaType": "image/png",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "reviewRole": "before",
+      "requiredInVisual": true,
+      "runtimeUrl": "http://127.0.0.1:4173/",
+      "route": "/",
+      "target": "section#home-spotlight",
+      "viewport": "1440x1000",
+      "captureScope": "focused-section"
+    },
+    {
+      "id": "EV-002",
+      "kind": "frontend-proposal",
+      "label": "Proposal",
+      "path": ".ai/evidence/TASK-0001/frontend/proposal.png",
+      "mediaType": "image/png",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "reviewRole": "proposal",
+      "requiredInVisual": true,
+      "runtimeUrl": null,
+      "route": "/",
+      "target": "section#home-spotlight",
+      "viewport": "1440x1000",
+      "captureScope": "focused-section"
     }
+  ],
+  "requiredSourceIds": [
+    "EV-001",
+    "EV-002"
   ],
   "constraints": {
     "readOnly": true,
     "maxInstances": 1,
     "mustNotModifyProject": true,
     "mustNotAnswerForUser": true,
-    "sourceOfTruth": "markdown"
+    "sourceOfTruth": "markdown",
+    "imageSourcePolicy": "embed-data-uri",
+    "forbidLocalFileImageSrc": true,
+    "requireEvidenceMarkers": true,
+    "requiredEvidenceContent": "embedded-data-image"
   },
   "evaluatorMode": "fresh-context",
   "fallback": "markdown-and-attachments",
@@ -35,16 +111,23 @@
   "createdAt": "2026-08-06T00:00:00.000Z",
   "experience": {
     "mode": "interactive",
-    "pattern": "before-proposal-comparator",
+    "pattern": "visual-comparator-v2",
     "views": [
-      "Before",
-      "Proposal"
+      "Side by side",
+      "Slider",
+      "Overlay",
+      "Acceptance criteria",
+      "Risks"
     ],
     "controls": [
-      "view toggle",
-      "viewport selector"
+      "comparison mode",
+      "viewport selector",
+      "route/target selector",
+      "capture-scope selector",
+      "split/opacity control",
+      "detail tabs"
     ],
-    "defaultView": "Before"
+    "defaultView": "Side by side"
   },
   "preferredSkillName": "visualize",
   "skillInvocation": "$visualize",

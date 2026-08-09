@@ -6,6 +6,8 @@ import { completeProjectContext } from '../dist/src/lib/project.js';
 import { markCodeGraphReadyForTests } from '../dist/src/lib/codegraph.js';
 import { addEvidence } from '../dist/src/lib/evidence.js';
 import { setBlastRadius } from '../dist/src/lib/scope-guard.js';
+import { runtimeRecommendation } from '../dist/src/lib/phase-handoff.js';
+import { enterPhaseBoundary } from '../dist/src/lib/phase-boundary.js';
 export function createFakeCodeGraph({ failSync = false, failStatus = false, incompatibleContract = false } = {}) {
     const dir = mkdtempSync(path.join(tmpdir(), 'fake-codegraph-'));
     const command = path.join(dir, 'codegraph');
@@ -29,13 +31,15 @@ export function readyProjectContext(root) {
     return completeProjectContext(root, 'Test context');
 }
 const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z7h8AAAAASUVORK5CYII=', 'base64');
-export function addApprovedImageGenProposal(root, id, { route = '/', target = 'section#homepage-hero', viewport = '1440x1000', beforeLabel = 'Before', proposalLabel = 'Proposal' } = {}) {
+export function addApprovedImageGenProposal(root, id, { route = '/', target = 'section#homepage-hero', viewport = '1440x1000', captureScope = 'focused-section', beforeLabel = 'Before', proposalLabel = 'Proposal' } = {}) {
     const dir = path.join(root, '.ai', 'evidence', id, 'frontend');
     mkdirSync(dir, { recursive: true });
-    const before = path.join(dir, 'before.png'), proposal = path.join(dir, 'proposal.png');
-    writeFileSync(before, Buffer.concat([tinyPng, Buffer.from([1])]));
-    writeFileSync(proposal, Buffer.concat([tinyPng, Buffer.from([2])]));
-    addEvidence(root, id, { kind: 'frontend-before', path: before, source: 'browser-capture', label: beforeLabel, tool: 'Codex browser', route, viewport, target, captureScope: 'focused-section' });
+    const suffix = `${viewport === '1440x1000' ? '' : `-${viewport.replace(/[^0-9x]+/gi,'-')}`}${captureScope === 'focused-section' ? '' : `-${captureScope}`}`;
+    const before = path.join(dir, `before${suffix}.png`), proposal = path.join(dir, `proposal${suffix}.png`);
+    const seed = [...Buffer.from(viewport)].reduce((sum,value)=>(sum+value)%200,0);
+    writeFileSync(before, Buffer.concat([tinyPng, Buffer.from([1,seed])]));
+    writeFileSync(proposal, Buffer.concat([tinyPng, Buffer.from([2,seed])]));
+    addEvidence(root, id, { kind: 'frontend-before', path: before, source: 'browser-capture', label: beforeLabel, tool: 'Codex browser', route, viewport, target, captureScope, runtimeUrl: 'http://127.0.0.1:4173/' });
     const tasteBase = path.join(root, '.agents', 'skills');
     const skills = ['gpt-taste','redesign-existing-projects','imagegen-frontend-web','image-to-code'].map(name => {
         const skillPath = path.join(tasteBase, name, 'SKILL.md');
@@ -48,11 +52,11 @@ description: Official Taste Skill workflow for ${name}.
 `);
         return { name, path: skillPath };
     });
-    const brief = path.join(dir, 'ui-design-brief.json');
+    const brief = path.join(dir, `ui-design-brief${suffix}.json`);
     writeFileSync(brief, JSON.stringify({ schemaVersion: 2, agent: 'codex', taskMode: 'redesign', surface: 'web', skills, briefInference: { pageKind: 'existing page section', audience: 'product users', direction: 'coherent editorial redesign', variance: 4, density: 4, motion: 2 }, locks: { color: 'existing design system', shape: 'consistent component geometry', theme: 'current project theme' }, auditFirst: true, preflightPassed: true, proposalMethod: 'image-gen', generationMode: 'edit-existing-screenshot', context: { beforeEvidenceKind: 'frontend-before', route, target, viewport, realContentProvided: true, designSystemReferenced: true, preserveUnchangedAreas: true } }));
     addEvidence(root, id, { kind: 'ui-design-brief', path: brief, source: 'ui-design-brief', label: 'Taste and Image Gen brief', tool: 'Codex' });
-    addEvidence(root, id, { kind: 'frontend-proposal', path: proposal, source: 'image-gen-proposal', label: proposalLabel, tool: 'ChatGPT Image Gen', route, viewport, target, captureScope: 'focused-section' });
-    const review = path.join(dir, 'ui-proposal-review.json');
+    addEvidence(root, id, { kind: 'frontend-proposal', path: proposal, source: 'image-gen-proposal', label: proposalLabel, tool: 'ChatGPT Image Gen', route, viewport, target, captureScope });
+    const review = path.join(dir, `ui-proposal-review${suffix}.json`);
     writeFileSync(review, JSON.stringify({ schemaVersion: 1, screenshotKind: 'frontend-proposal', route, target, viewport, checks: { targetMatch: true, scopePreserved: true, noVisibleOverflow: true, noTextClipping: true, noOverlappingElements: true, readableText: true, designSystemConsistency: true }, tasteSkillApplied: true, verdict: 'pass' }));
     addEvidence(root, id, { kind: 'ui-proposal-review', path: review, source: 'visual-proposal-review', label: 'Proposal visual review', tool: 'Taste Skill + Codex vision' });
     return { dir, before, proposal, brief, review };
@@ -62,7 +66,7 @@ export function addFrontendAfterAudit(root, id, { route = '/', target = 'section
     mkdirSync(dir, { recursive: true });
     const after = path.join(dir, 'after.png');
     writeFileSync(after, Buffer.concat([tinyPng, Buffer.from([3])]));
-    addEvidence(root, id, { kind: 'frontend-after', path: after, source: 'browser-capture', label: afterLabel, tool: 'Codex browser', route, viewport, target, captureScope: 'focused-section' });
+    addEvidence(root, id, { kind: 'frontend-after', path: after, source: 'browser-capture', label: afterLabel, tool: 'Codex browser', route, viewport, target, captureScope: 'focused-section', runtimeUrl: 'http://127.0.0.1:4173/' });
     const [width, height] = viewport.split('x').map(Number);
     const audit = path.join(dir, 'after-layout.json');
     writeFileSync(audit, JSON.stringify({ schemaVersion: 1, screenshotKind: 'frontend-after', route, target, viewport: { width, height }, capture: { scope: 'focused-section', targetFound: true, targetVisible: true, targetCoverage: 0.7 }, checks: { horizontalOverflow: false, textClipping: false, overlappingElements: false, unreadableText: false }, measurements: [{ selector: target, clientWidth: 800, scrollWidth: 800, clientHeight: 400, scrollHeight: 400 }] }));
@@ -75,4 +79,10 @@ export function addFrontendAfterAudit(root, id, { route = '/', target = 'section
 // continue exercising their original concern without bypassing production gates.
 export function setDefaultBlastRadius(root, id, allowedFiles = ['**']) {
     return setBlastRadius(root, id, { allowedFiles, protectedFiles: [], expectedSymbols: [], reason: 'Legacy regression fixture boundary.' });
+}
+
+export function enterCurrentPhaseBoundary(root, id, sessionId = 'test-session') {
+    const runtime = runtimeRecommendation(root, id, { sessionId });
+    if (!runtime.handoffDigest || !runtime.handoffContentDigest) throw new Error('No active phase boundary handoff');
+    return enterPhaseBoundary(root, id, { sessionId, handoffDigest: runtime.handoffDigest, handoffContentDigest: runtime.handoffContentDigest, handoffWords: runtime.handoffWords });
 }

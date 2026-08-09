@@ -17,7 +17,7 @@ import { taskReadiness } from '../dist/src/lib/readiness.js';
 import { writeReviewCockpit } from '../dist/src/lib/cockpit.js';
 import { writeReviewBundle } from '../dist/src/lib/review.js';
 import { nextAction } from '../dist/src/lib/next.js';
-import { readyProjectContext } from './helpers.mjs';
+import { readyProjectContext, enterCurrentPhaseBoundary } from './helpers.mjs';
 
 function repo(prefix='specrail-gov-'){const root=mkdtempSync(path.join(tmpdir(),prefix));git(root,['init','-b','main']);git(root,['config','user.email','test@example.com']);git(root,['config','user.name','SpecRail Test']);writeFileSync(path.join(root,'app.txt'),'base\n');writeFileSync(path.join(root,'protected.txt'),'locked\n');writeFileSync(path.join(root,'extra.txt'),'extra\n');git(root,['add','.']);git(root,['commit','-m','base']);return root;}
 function git(root,args){return execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();}
@@ -76,7 +76,8 @@ test('approved amendments extend effective acceptance and blast radius without m
   const criteria=acceptanceCriteria(root,id);assert.equal(criteria.length,3);assert.match(criteria[2].text,/503/);
   assert.ok(scopeGuardStatus(root,id).allowedFiles.includes('extra.txt'));
   assert.equal(listAmendments(root,id).filter(x=>x.status==='approved').length,1);
-  assert.doesNotThrow(()=>startExecution(root,id));
+  enterCurrentPhaseBoundary(root,id,'amended-builder');
+  assert.doesNotThrow(()=>startExecution(root,id,{sessionId:'amended-builder'}));
 });
 
 test('implementation acceptance coverage ignores conceptual before/proposal evidence and Cockpit/Review show governance state',()=>{
@@ -141,6 +142,7 @@ test('legacy approved tasks can be explicitly reapproved in place without rebasi
   legacy.meta.spec_integrity_version=1;legacy.meta.project_governance_hash=null;const legacyHash=specificationHash(legacy);legacy.meta.spec_approval_hash=legacyHash;legacy.meta.spec_effective_hash=effectiveSpecificationHash(root,id,legacyHash);saveTask(legacy);
   const next=nextAction(root,id);assert.equal(next.actor,'user');assert.equal(next.action,'reapprove-hardened-specification');assert.equal(next.interaction.tool,'request_user_input');assert.equal(next.interaction.questions[0].options[0].label,'Reaprobar con sello');
   const migrated=approveSpecification(root,id,'explicit migration approval');assert.equal(migrated.meta.spec_integrity_version,2);assert.ok(migrated.meta.project_governance_hash);assert.equal(migrated.meta.scope_baseline_commit,originalBaseline);assert.equal(migrated.meta.phase,originalPhase);assert.equal(migrated.meta.status,originalStatus);assert.notEqual(migrated.meta.spec_approval_hash,legacyHash);
+  enterCurrentPhaseBoundary(root,id,'post-migration');
   assert.doesNotThrow(()=>startExecution(root,id,{sessionId:'post-migration'}));
 });
 

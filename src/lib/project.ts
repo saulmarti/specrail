@@ -15,6 +15,7 @@ const PROJECT_DOCS: Record<string,string> = {
   'constitution.md': '# Project Constitution\n\nApproved mechanical principles are managed by AI Flow.\n'
 };
 const REQUIRED_CONTEXT=['product.md','product-owner.md','users.md','architecture.md','runbook.md'];
+
 const PLACEHOLDER=/\b(?:Describe the|Generated and maintained|Record current|Record deterministic)\b/i;
 function now(): string { return new Date().toISOString(); }
 function readJsonObject(file: string): Record<string, unknown> {
@@ -48,9 +49,10 @@ export function initProject(root: string, options: {name?:string} = {}): Project
   const existingCodegraph=(existing.codegraph&&typeof existing.codegraph==='object')?existing.codegraph as Record<string,unknown>:{};
   const existingContextBudget=(existing.contextBudget&&typeof existing.contextBudget==='object')?existing.contextBudget as Record<string,unknown>:{};
   const existingProfiles=(existingContextBudget.profiles&&typeof existingContextBudget.profiles==='object')?existingContextBudget.profiles as Record<string,unknown>:{};
+  const { modelRouting: _legacyModelRouting, ...existingWithoutModelRouting } = existing;
   const config: ProjectConfig = {
-    ...existing,
-    version: 10,
+    ...existingWithoutModelRouting,
+    version: 14,
     name: options.name || (typeof existing.name==='string'?existing.name:path.basename(projectRoot)),
     projectRoot,
     codegraph: {
@@ -63,7 +65,7 @@ export function initProject(root: string, options: {name?:string} = {}): Project
     },
     context: (existing.context&&typeof existing.context==='object') ? existing.context as ProjectConfig['context'] : {status:'pending',initializedAt:null,updatedAt:null},
     subagents: { maxParallel: 3, maxDepth: 1, defaultAccess: 'read-only', writeRequiresApprovedNonOverlappingSubtasks: true, ...((existing.subagents&&typeof existing.subagents==='object')?existing.subagents as Record<string,unknown>:{}) },
-    evidence: { requireRealArtifacts: true, embedVisualsInMarkdown: true, ...((existing.evidence&&typeof existing.evidence==='object')?existing.evidence as Record<string,unknown>:{}) },
+    evidence: { ...((existing.evidence&&typeof existing.evidence==='object')?existing.evidence as Record<string,unknown>:{}), requireRealArtifacts: true, embedVisualsInMarkdown: false },
     visualize: {
       ...((existing.visualize&&typeof existing.visualize==='object')?existing.visualize as Record<string,unknown>:{}),
       enabled: true, capability:'visualize', discovery:'codex-skill-catalog', skill:'visualize', invocation:'$visualize', mode:'adaptive', maxPerGate:1,

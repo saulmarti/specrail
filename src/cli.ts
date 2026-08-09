@@ -38,6 +38,9 @@ import { acceptanceCoverage } from './lib/acceptance.js';
 import { setBlastRadius, scopeGuardStatus } from './lib/scope-guard.js';
 import { proposeAmendment, listAmendments, approveAmendment, rejectAmendment } from './lib/amendments.js';
 import { inferUpdateChannel, updateSpecRail, type UpdateChannel } from './lib/update.js';
+import { enterPhaseBoundary } from './lib/phase-boundary.js';
+import { estimatePhaseBoundary } from './lib/boundary-metrics.js';
+import { runtimeRecommendation } from './lib/phase-handoff.js';
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PACKAGE_META = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')) as { version?: string };
 const VERSION = PACKAGE_META.version || '0.0.0';
@@ -202,8 +205,10 @@ async function main() {
         }
         case 'spec':
             root = findProjectRoot(rootFrom(flags));
-            if (arg(1) === 'approve')
-                output(taskSummary(approveSpecification(root, arg(2), flags.note)), true);
+            if (arg(1) === 'approve') {
+                const approved = approveSpecification(root, arg(2), flags.note, { sessionId: flags.session });
+                output({ ...taskSummary(approved), next: nextAction(root, approved.meta.id, { sessionId: flags.session ? String(flags.session) : null }) }, true);
+            }
             else if (arg(1) === 'changes')
                 output(taskSummary(requestSpecChanges(root, arg(2), requireFlag(flags, 'note'))), true);
             else if (arg(1) === 'reject')
@@ -248,7 +253,7 @@ async function main() {
         case 'evidence': {
             root = findProjectRoot(rootFrom(flags));
             if (arg(1) === 'add')
-                { const attrs=(flags.attributes?jsonValue(flags.attributes):{}) as Record<string,unknown>; if(flags.proves) attrs.proves=surfaces(flags.proves); output(addEvidence(root, arg(2), { kind: requireFlag(flags, 'kind'), path: requireFlag(flags, 'path'), source: requireFlag(flags, 'source'), label: flags.label, tool: flags.tool, command: flags.command, exitCode: flags['exit-code'] === undefined ? null : Number(flags['exit-code']), route: flags.route, viewport: flags.viewport, target: flags.target, captureScope: flags['capture-scope'], missionHash: flags['mission-hash'], attributes: attrs as any }), true); }
+                { const attrs=(flags.attributes?jsonValue(flags.attributes):{}) as Record<string,unknown>; if(flags.proves) attrs.proves=surfaces(flags.proves); output(addEvidence(root, arg(2), { kind: requireFlag(flags, 'kind'), path: requireFlag(flags, 'path'), source: requireFlag(flags, 'source'), label: flags.label, tool: flags.tool, command: flags.command, exitCode: flags['exit-code'] === undefined ? null : Number(flags['exit-code']), route: flags.route, viewport: flags.viewport, target: flags.target, captureScope: flags['capture-scope'], runtimeUrl: flags.url, missionHash: flags['mission-hash'], attributes: attrs as any }), true); }
             else if (arg(1) === 'list')
                 output(listEvidence(root, arg(2)), true);
             else if (arg(1) === 'validate')
@@ -294,6 +299,28 @@ async function main() {
                 output(releaseTaskLease(root, id, { sessionId: flags.session, force: Boolean(flags.force) }), true);
             else
                 throw new Error('Unknown lease command');
+            break;
+        }
+        case 'boundary': {
+            root = findProjectRoot(rootFrom(flags));
+            const taskId = arg(2) || arg(1);
+            const sub = arg(1);
+            if (sub === 'status') {
+                output(runtimeRecommendation(root, taskId, { sessionId: flags.session }), true);
+            } else if (sub === 'enter') {
+                const runtime = runtimeRecommendation(root, taskId, { sessionId: flags.session });
+                if (!runtime.handoffDigest) throw new Error('No active implementation/review boundary for this task');
+                if (!flags.session) throw new Error('Boundary enter requires --session <stable-codex-session-id>');
+                if (flags.mode) throw new Error('Boundary mode is inferred from stable session IDs and cannot be supplied manually');
+                const boundary = enterPhaseBoundary(root, taskId, { sessionId: flags.session, handoffDigest: runtime.handoffDigest, handoffContentDigest: runtime.handoffContentDigest, handoffWords: runtime.handoffWords });
+                output({ boundary, runtime: runtimeRecommendation(root, taskId, { sessionId: flags.session }) }, true);
+            } else if (sub === 'estimate') {
+                output(estimatePhaseBoundary(root, taskId, {
+                    historyTokens: flags['history-tokens'] === undefined ? null : Number(flags['history-tokens']),
+                    implementationTurns: flags.turns === undefined ? null : Number(flags.turns),
+                    inputCostPerMillion: flags['input-cost-per-million'] === undefined ? null : Number(flags['input-cost-per-million'])
+                }), true);
+            } else throw new Error('Use: specrail boundary status|enter|estimate TASK [--session ID]');
             break;
         }
         case 'context': {
@@ -500,7 +527,7 @@ async function main() {
             } else output(doctor(root, process.env.AI_FLOW_HOME ? path.resolve(process.env.AI_FLOW_HOME) : undefined), true);
             break;
         default: console.log(`specrail commands:\n  init, preflight, intake, project status|complete|learn, create, list, resolve, status, readiness, why-blocked, next, interaction, patch, refine\n  section set, question add|answer|list, phase complete\n  spec approve|changes|reject|lint, run, block, resume, return
-  lease status|acquire|take|release, context status|request, review bundle|cockpit, cockpit TASK\n  evidence add|list|validate, acceptance coverage, scope set|status, amendment propose|list|approve|reject, dependency add, subtask create\n  worktree create|checkpoint|remove, final approve|reject, delivery merge|external|keep
+  lease status|acquire|take|release, boundary status|enter|estimate TASK, context status|request, review bundle|cockpit, cockpit TASK\n  evidence add|list|validate, acceptance coverage, scope set|status, amendment propose|list|approve|reject, dependency add, subtask create\n  worktree create|checkpoint|remove, final approve|reject, delivery merge|external|keep
   capability visualize status|record [--skill visualize], visualization status|record|validate-plan
   qa mission, failure record|list, eval list|approve|dismiss, repair status|reset
   metrics, trace [TASK]|validate TASK, constitution list|add|check, quality, operations, slice status|create|materialize

@@ -6,7 +6,8 @@ description: Use when AI Flow routes user-facing work to strict customer validat
 
 1. Use the persona and outcome defined by the approved specification and QA Mission. Add realistic device, knowledge, and time constraints without changing the goal.
 2. Do not inspect implementation code or internal handoffs before attempting the mission.
-3. Use only the public UI, API, CLI, or documented external interface.
+2a. Stay on the compact reviewer context returned by `next.runtime` rather than returning to builder reasoning. Preserve independence through the review handoff; use only the approved mission and public product surface.
+3. Use only the public UI, API, CLI, or documented external interface. For a frontend, use the served `http://` or `https://` preview URL and reject raw `index.html`/`file://` previews as invalid customer evidence.
 4. Record completion, confusion, friction, trust, usefulness, and whether the persona would use it again. Separate functional, usability, and value failures.
 5. Save and register `customer-report` with real supporting evidence. Do not manufacture success.
 6. A rejection returns to the correct phase, records a classified failure, consumes the repair budget, and may create a user-approved regression-eval candidate.

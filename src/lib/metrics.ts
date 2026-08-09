@@ -30,7 +30,7 @@ export function taskMetrics(root:string,id:string){
     elapsedSeconds:Math.max(0,Math.round((last-first)/1000)),timeToSpecApprovalSeconds:secondsFromStart(specApproved),timeToFinalApprovalSeconds:secondsFromStart(finalApproved),timeToDeliverySeconds:secondsFromStart(delivered),
     phaseEntries,phaseDurationsSeconds,repairAttempts,userRejections,qaReturns:failures.filter(failure=>failure.phase==='qa-engineer').length,customerReturns:failures.filter(failure=>failure.phase==='final-customer'||failure.category==='low-value'||failure.category==='usability-friction').length,
     failureCategories,questions:events.filter(event=>event.event==='question-added').length,userGates:events.filter(event=>['question-added','blocked','specification-approved','final-approved'].includes(event.event)).length,
-    contextFiles:context.files.length,contextExpansions:context.expansionCount,contextBudgetProfile:task.meta.execution_profile,
+    contextFiles:context.files.length,contextExpansions:context.expansionCount,contextBudgetProfile:context.profile,
     completed:task.meta.status==='done',deliveryStatus:task.meta.delivery_status,generatedAt:new Date().toISOString()
   };
   const file=path.join(path.resolve(root),'.ai','metrics',`${task.meta.id}.json`);mkdirSync(path.dirname(file),{recursive:true});writeFileSync(file,`${JSON.stringify(metrics,null,2)}\n`);return{...metrics,path:file};

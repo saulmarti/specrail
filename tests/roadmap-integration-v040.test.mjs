@@ -75,10 +75,10 @@ import { approveEvalCandidate, applicableActiveEvals } from '../dist/src/lib/fai
 import { nextAction } from '../dist/src/lib/next.js';
 import { writeReviewBundle } from '../dist/src/lib/review.js';
 import { addEvidence, listEvidence } from '../dist/src/lib/evidence.js';
-import { acquireTaskLease } from '../dist/src/lib/lease.js';
 import { completePhase } from '../dist/src/lib/workflow.js';
 import { specificationHash } from '../dist/src/lib/specification.js';
 import { qaMissionHash } from '../dist/src/lib/qa.js';
+import { enterCurrentPhaseBoundary } from './helpers.mjs';
 
 function reportFile(root,id,name,content='evidence'){const target=path.join(root,'.ai','evidence',id,'reports',name);mkdirSync(path.dirname(target),{recursive:true});writeFileSync(target,content,{flag:'w'});return target;}
 
@@ -119,7 +119,7 @@ test('active constitution checks can be registered by technical review without f
   let task=createTask(root,{title:'Reviewed change',surfaces:[]});task=loadTask(findTask(root,task.meta.id));
   task.body=setSection(task.body,'QA Mission','- Persona: reviewer\n- Starting point: public docs\n- Goal: verify change\n- Allowed interface: public docs\n- Success: result is present\n- Failure: result missing');
   task.meta.spec_approval='approved';task.meta.spec_integrity_version=2;task.meta.project_governance_hash=projectGovernanceHash(root);task.meta.status='review';task.meta.phase='technical-reviewer';task.meta.route.qa='none';task.meta.route.final_customer=false;task.meta.spec_approval_hash=specificationHash(task);task.meta.qa_mission_hash=qaMissionHash(task);saveTask(task);
-  acquireTaskLease(root,task.meta.id,{sessionId:'review-session',phase:'technical-reviewer'});
+  enterCurrentPhaseBoundary(root,task.meta.id,'review-session');
   const report=reportFile(root,task.meta.id,'technical.md','# Review\n\nPass');addEvidence(root,task.meta.id,{kind:'technical-review-report',path:report,source:'technical-review',tool:'Codex'});
   completePhase(root,task.meta.id,{sessionId:'review-session'});assert.ok(listEvidence(root,task.meta.id).some(item=>item.kind==='constitution-report'));
 });

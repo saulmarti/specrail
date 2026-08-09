@@ -18,7 +18,7 @@ import { qualityPolicy } from '../dist/src/lib/quality.js';
 import { operationalPolicy } from '../dist/src/lib/observability.js';
 import { createSlicePlan, materializeSlices } from '../dist/src/lib/slices.js';
 import { validateTasteBrief } from '../dist/src/lib/taste.js';
-import { readyProjectContext, setDefaultBlastRadius } from './helpers.mjs';
+import { readyProjectContext, setDefaultBlastRadius, enterCurrentPhaseBoundary } from './helpers.mjs';
 
 const repo=()=>{const root=mkdtempSync(path.join(tmpdir(),'ai-flow-040-'));initProject(root);readyProjectContext(root);return root;};
 function fillSpec(root,task,{frontend=false}={}){let t=loadTask(findTask(root,task.meta.id));for(const [h,v] of [['Need','Deliver a concrete observable capability for real users.'],['Product Value','Users can complete the intended outcome with less friction.'],['Users','Primary product users and operators.'],['Scope','Implement only the approved behavior and evidence.'],['Out of Scope','Unrelated redesigns and infrastructure changes.'],['Acceptance Criteria','- A real request or user action produces the specified observable result.\n- Invalid input produces an explicit error without changing state.'],['Implementation Plan','Implement a vertical behavior, tests, evidence, review, and QA.'],['QA Mission','- Persona: primary user\n- Starting point: public product entry point\n- Goal: complete the approved outcome\n- Allowed interface: public UI or API only\n- Success: acceptance criteria pass with real evidence\n- Failure: any blocked path, incorrect result, overflow, or hidden workaround']])t.body=setSection(t.body,h,v);if(frontend)t.body=setSection(t.body,'UI Target','- Route: `/`\n- Target: `section#target`\n- Viewport: `1440x1000`\n- Capture: focused-section');saveTask(t);setDefaultBlastRadius(root,t.meta.id);return loadTask(findTask(root,t.meta.id));}
@@ -49,7 +49,7 @@ test('repair budget blocks repeated returns and asks the user instead of looping
 });
 
 test('structured traces produce local delivery metrics without telemetry',()=>{
- const root=repo();let task=createTask(root,{title:'Measured task',surfaces:['backend']});task=fillSpec(root,task);task.meta.status='awaiting_spec_approval';task.meta.phase='spec-approval';saveTask(task);task=approveSpecification(root,task.meta.id);startExecution(root,task.meta.id,{sessionId:'s1'});
+ const root=repo();let task=createTask(root,{title:'Measured task',surfaces:['backend']});task=fillSpec(root,task);task.meta.status='awaiting_spec_approval';task.meta.phase='spec-approval';saveTask(task);task=approveSpecification(root,task.meta.id);enterCurrentPhaseBoundary(root,task.meta.id,'s1');startExecution(root,task.meta.id,{sessionId:'s1'});
  const metrics=taskMetrics(root,task.meta.id);assert.equal(metrics.taskId,task.meta.id);assert.ok(metrics.events>=2);assert.ok(metrics.phaseEntries.builder>=1);assert.equal(metrics.telemetry,'local-only');
 });
 

@@ -47,7 +47,7 @@ npm install -g @saulmarti/specrail@beta
 specrail install
 ```
 
-The current public channel is `beta`; stable releases will later use the default `latest` tag.
+The current public channel is `beta`; stable releases will later use the default `latest` tag. The exact source-tree release number is canonical in `package.json`; the README intentionally follows the dist-tag instead of hard-coding a version that can drift.
 
 The npm package is **`@saulmarti/specrail`**. The installed CLI command remains **`specrail`**; npm package scopes do not become part of executable names. The legacy `ai-flow` executable remains available as a compatibility alias.
 
@@ -216,7 +216,7 @@ QA must execute that exact mission and cite its approved hash. It cannot invent 
 
 SpecRail validates evidence contracts rather than trusting filenames:
 
-- frontend: exact target, route, viewport, focused captures, proposal critique, final layout audit;
+- frontend: current `UI Target` contexts declared deterministically as `Route → Target → exact pixel Viewport(s) → Capture`, case-sensitive route/target identity, focused captures, proposal critique, and final layout audit;
 - backend: executed request/response, command and exit code;
 - architecture/database: editable source plus rendered diagrams and migration/rollback evidence;
 - high-risk work: measurable property/mutation reports and operational logs, traces, or metrics.
@@ -274,6 +274,47 @@ rigorous  high-risk delivery
 
 Full-repository scans are not the default.
 
+## Clean phase handoffs without model configuration
+
+SpecRail does **not** store a model configuration. The active model and reasoning setting are always whatever the user selected in Codex. SpecRail only separates phase context so planning can stay lean while implementation still starts with everything it needs.
+
+```text
+Planning / refinement
+  bounded repository context
+            ↓ specification approved
+  SpecRail compiles implementation capsule
+  and enforces a TURN boundary
+            ↓
+  next turn: same chat OR fresh chat
+  user may keep or change Codex model
+            ↓
+Implementation
+  executable capsule
+  + canonical visual evidence
+  + standard/rigorous CodeGraph context
+            ↓
+  strong/flexible review boundary
+            ↓
+Technical Review / QA / Final Customer
+```
+
+At the implementation boundary, `next.runtime.transitionNotice` tells the user that the compiled implementation capsule is ready and gives a stable resume prompt such as `Continue TASK-0007`. SpecRail **requires the host/skill to end the current turn before coding**, but it does not pretend to have a trusted Codex turn ID and it does not force a new chat. The next turn explicitly enters the phase boundary. What SpecRail can enforce mechanically is that Builder cannot start or complete until the boundary has been entered by the active stable session. Boundary entry acquires the task lease; the Builder lease is released before Technical Review so an independent reviewer can enter from another chat without a fake takeover conflict. Boundary records and handoff content carry integrity digests, so edited/stale runtime state cannot silently promote a phase.
+
+If the stable session is unchanged SpecRail records `same-chat`; if a new Codex chat enters it records `fresh-chat`. The recommendation is contextual: small low-risk work can return `same-chat-ok`; normal, large, risky, or context-heavy work returns `fresh-chat-recommended`. Same-chat continuation preserves correctness through a logical authority reset, but it does not remove previous conversation tokens. Fresh-chat continuation gives both the logical reset and real context/token isolation. Preparing either boundary resets active CodeGraph file/symbol context even when the old and new phases happen to use the same context profile; the relevant prior seeds have already been compiled into the handoff.
+
+The implementation handoff is a **compiled execution capsule**, not a prose summary. It explicitly states execution authority, required step order, effective ACs, Scope Guard, immutable QA Mission, UI target and approved proposal, canonical Before/Proposal/After evidence, implementation plan, architecture/decision constraints, CodeGraph seeds, Definition of Done, and exact stop/escalation conditions. Previous conversational reasoning is non-authoritative. A Builder should not reload the entire task unless the capsule says a section was truncated, a conflict needs source verification, or a concrete missing detail is required. This is deliberately designed so a less-capable implementation model can execute rather than reinterpret the plan.
+
+You can inspect the boundary and estimate raw context savings without configuring a model:
+
+```bash
+specrail boundary status TASK-0007 --session my-session
+specrail boundary estimate TASK-0007 --history-tokens 25000 --turns 6
+```
+
+The estimate is model-independent and uses a transparent UTF-8 chars/4 token heuristic. It measures only raw **prior-phase carryover**, assuming that prefix would otherwise remain in each measured turn. It is not Codex billing telemetry: host compaction/summarization, context-window behavior, prompt caching, and the selected model/provider can make actual token and monetary savings different.
+
+SpecRail uses **phase-boundary handoffs**, not model-routed `spawn_agent`. If Codex later exposes a stable thread API, SpecRail may automate visible thread creation, but model selection remains entirely in the user's Codex selector.
+
 ## UI/UX and Taste Skills
 
 SpecRail does not treat “Taste Skill” as one generic prompt. It validates and selects the installed skills by their official frontmatter names:
@@ -290,14 +331,14 @@ The route is contextual. Dashboard/data-table work should not blindly receive la
 
 When the current Codex skill catalog exposes the exact `visualize` skill, SpecRail can invoke `$visualize` for interactive:
 
-- before / proposal / after comparators;
+- Visual Comparator v2: side-by-side, slider and overlay Before / Proposal / After review with viewport, route/target, and capture-scope filtering;
 - mobile / desktop viewport toggles;
 - option and consequence explorers;
 - workflow timelines;
 - request / response / error explorers;
 - architecture and migration layer views.
 
-It never assumes a tool name. The session records the exact discovered capability, signed plan, source digest, real invocation reference and quality evaluation. Markdown, files, screenshots and executable evidence remain authoritative and provide a non-blocking fallback.
+It never assumes a tool name. The session records the exact discovered capability, signed plan, source digest, real invocation reference and quality evaluation. The Review Bundle mirrors the active canonical Comparator set first and moves superseded/out-of-scope frontend visuals into an explicitly historical audit subsection, so old captures cannot look like active proposals. For required Before/Proposal/After evidence, a rendered result is accepted only when each canonical evidence ID is attached directly to the embedded `data:image/...;base64,...` `<img>` in the Visualize fragment; wrapper markers or local filesystem image URLs do not count. Frontend `visual-comparator-v2` plans additionally require the interactive comparator structure itself—Side by side, Slider, Overlay, viewport filter, route/target filter, exact route+target+viewport+capture grouping, and review-role/context markers—so a static image gallery or cross-context comparison cannot be recorded as a successful comparator. Markdown, files, screenshots and executable evidence remain authoritative and provide a non-blocking fallback.
 
 ## Large features ship as vertical slices
 
@@ -328,7 +369,7 @@ At specification and final approval gates the local fallback is generated automa
 
 - overview of need, scope, out-of-scope boundaries and QA mission;
 - stage-specific readiness checks and exact blocker explanations;
-- before / proposal / after comparison with viewport filtering;
+- Visual Comparator v2 with simultaneous side-by-side review, slider/overlay modes, viewport + route/target + capture-scope filtering, and explicit missing-evidence states;
 - evidence inventory, repair budget, context usage, metrics and signed trace history;
 - the latest Harness experiment, exact reported token usage, and adaptive recommendation when enough history exists;
 - the available decision paths.

@@ -24,15 +24,15 @@ SpecRail is building a **human-approved, evidence-backed delivery layer for codi
 - **Deferred** — valid use case, but intentionally has no current priority or target release.
 
 
-## Current release line — `0.9.x beta`
+## Current beta hardening
 
 **Status: Beta**
 
-`0.9.x` consolidates the governance work introduced through `0.8.x` and hardens the human-review contract inside Codex. It does not turn SpecRail into a task board or move approval authority away from native user gates.
+The canonical release number lives in `package.json`; this section describes the behavior implemented in the current beta source tree. The current hardening extends the `0.8.x` governance line with stronger Codex review presentation, visual evidence integrity, runtime previews, and phase-context boundaries. It does not turn SpecRail into a task board or move approval authority away from native user gates.
 
 ### Review presentation contract
 
-**Status: Beta · Introduced: `0.9.0-beta.0`**
+**Status: Beta · Introduced: `0.8.2-beta.0`**
 
 Specification and final approval gates now carry one deterministic presentation contract from the CLI into Codex:
 
@@ -41,16 +41,61 @@ Specification and final approval gates now carry one deterministic presentation 
 - the orchestrator must show the complete Review Bundle and supported evidence before forwarding the exact native questions returned by SpecRail;
 - generating Review Cockpit HTML never proves that the user has seen it; generated and host-visible states remain distinct;
 - in Codex, the installed `visualize` skill is invoked explicitly as `$visualize` when an interactive review materially helps; SpecRail never invents a `visualize.render` tool, asks the user to type `/visualize`, or calls private plugin scripts directly;
-- a Visualize result counts as rendered only when a native `visualize...` content reference points at the actual task-owned HTML fragment outside the repository and the signed visualization/evaluation contract remains valid;
+- a Visualize result counts as rendered only when a native `visualize...` content reference points at the actual task-owned HTML fragment outside the repository, every required canonical visual is an embedded `data:image/...;base64,...` `<img>` carrying its own evidence ID, and the signed visualization/evaluation contract remains valid;
+- frontend visual evidence is presented through host-supported attachments, Cockpit embedding, or Visualize data URIs rather than repository-local Markdown image links, so broken local thumbnails are never treated as reviewed evidence;
+- before/after frontend captures and the user-facing preview are tied to the served `http(s)` runtime that produced them; raw `index.html`, `file://`, and filesystem-path previews are invalid for approval, and the gate exposes the verified runtime as `presentation.previewUrl`;
 - Markdown and evidence remain the authoritative non-blocking fallback when Visualize is unavailable.
 
 **Success metric:** zero approval turns where SpecRail claims a review surface was displayed without host-visible evidence, and fewer approvals made from summaries that omit governed requirements or evidence.
 
 See [`docs/REVIEW-COCKPIT.md`](docs/REVIEW-COCKPIT.md).
 
+### Visual Comparator v2
+
+**Status: Beta · Introduced: `0.8.2-beta.0`**
+
+Frontend approval surfaces use one deterministic comparator contract across the generated Cockpit and `$visualize`:
+
+- Side by side keeps Before / Proposal / After simultaneously inspectable;
+- Slider compares the strongest available canonical pair without hiding which roles are being compared;
+- Overlay exposes alignment and visual drift with adjustable opacity;
+- viewport, route/target, plus capture-scope filters and exact, case-sensitive route + target + viewport + capture-scope grouping prevent unrelated captures from being compared accidentally;
+- the current `UI Target` is compiled as ordered `Route → Target → exact pixel Viewport(s) → Capture` contexts; stale historical contexts are excluded from active Comparator/Visualize/capsule sources and from the canonical visual-evaluator digest;
+- route, target, viewport, capture scope, and comparison mode stay visible as review context;
+- missing required roles are rendered as explicit error states rather than blank frames or broken thumbnails;
+- `$visualize` must emit the v2 comparator structure, visible comparator-source/review-role markers, and route/target/viewport/capture-scope metadata in addition to embedding every canonical evidence ID; a static gallery or cross-context pair cannot be recorded as a successful comparator.
+
+At specification approval the required frontend roles are Before + Proposal. At final approval they are Before + Proposal + After. The generated Cockpit remains a self-contained HTML fallback; native Visualize presentation still requires the real `visualize...` content reference.
+
+**Success metric:** users can verify approved intent and implementation visually without opening evidence files manually, and zero successful Visualize records are static galleries masquerading as the required comparator.
+
+See [`docs/REVIEW-COCKPIT.md`](docs/REVIEW-COCKPIT.md).
+
+### Clean phase context handoffs
+
+**Status: Beta · Introduced: `0.8.2-beta.0`**
+
+SpecRail separates planning, implementation, and independent review **without storing model configuration**:
+
+- the Codex model/reasoning selector is always user-owned; SpecRail never stores, recommends, or validates a model name;
+- planning/refinement uses a bounded repository context so expensive reasoning does not absorb implementation-scale code context prematurely;
+- when the specification reaches Builder, SpecRail compiles an executable implementation capsule and enforces a strong **turn boundary** before coding; `startExecution`/phase completion mechanically reject bypasses rather than trusting agent prose;
+- the boundary is flexible: `same-chat-ok` for small low-risk work, `fresh-chat-recommended` for normal/risky/context-heavy work; either path must explicitly enter the boundary before phase work;
+- a same-chat entry performs a logical authority reset while a fresh-chat entry also removes prior-phase conversation from raw input context;
+- the implementation capsule is optimized for execution by a less-capable model: authority, ordered steps, ACs, Scope Guard, QA Mission, UI proposal/evidence, CodeGraph seeds, Definition of Done, and stop/escalation conditions are explicit;
+- implementation receives at least `standard` repository context and preserves `rigorous` when the approved execution profile requires it;
+- Technical Review gets the same strong/flexible boundary and a separate compact handoff so review does not silently inherit Builder assumptions; Builder ownership is released before the review boundary and review entry acquires its own lease;
+- phase preparation resets active CodeGraph context even when two adjacent phases share the same profile, while the sealed capsule remains stable during justified Builder context expansion;
+- boundary state and capsule content are integrity-checked and governed changes/re-entry invalidate stale boundaries;
+- boundary estimates report model-independent raw prior-phase carryover savings and optionally uncached input-cost savings without pretending to know Codex compaction, billing, or cache hits.
+
+Automatic visible-thread creation may be added only when Codex exposes a stable thread contract. Even then, SpecRail must leave model selection to the user/host rather than introducing its own model mapping.
+
+**Success metric:** planning context stays bounded, every planning→implementation and implementation→review transition stops at a deterministic boundary, less-capable Builders can execute the capsule without reconstructing planning, and fresh-chat handoffs materially reduce raw repeated input context while same-chat remains available for small work.
+
 ### Release metadata integrity
 
-**Status: Beta · Introduced: `0.9.0-beta.0`**
+**Status: Beta · Introduced: `0.8.2-beta.0`**
 
 `package.json` is the canonical package version. Release tooling synchronizes and verifies the portable Agent Plugin manifest and lockfile metadata before tests, packing, or publishing, so `npm version` cannot silently leave package identities on different versions. Public-release tests validate version coherence instead of hard-coding one release number.
 
@@ -188,9 +233,127 @@ Bounded implementation discoveries can be proposed as immutable amendments with 
 
 See [`docs/AMENDMENTS.md`](docs/AMENDMENTS.md).
 
-## Specification intelligence — next accepted direction
+## Accepted implementation order
 
-These capabilities are accepted for the roadmap because they strengthen the deterministic data that later review surfaces consume. They should extend the existing specification, evidence, Scope Guard, Amendment, Readiness, and Cockpit contracts rather than create a parallel workflow.
+Recent real usage changed the priority order. Reliability of the **think → executable capsule → implementation → evidence → review** path now outranks adding more management surfaces. The current sequence is:
+
+1. **Implementation contract quality** — Capsule Quality Gate, Builder Comprehension Preflight, Decision Budget, Executable Acceptance Criteria, and Contract Conformance Monitor.
+2. **Runtime + review reliability** — Preview Session Manager, Visual Comparator v2 hardening, and runtime-aware Doctor checks.
+3. **Context efficiency with real measurement** — phase token telemetry, Adaptive Boundary Recommendation, Capsule Delta, role-specific context cache, and implementation checkpoints.
+4. **Specification Intelligence** — Requirement Source Ledger, adversarial critic, first-class NFRs, failure/change classification, contract compatibility/Impact Radius, and Repository Blueprint/domain vocabulary.
+5. **Safe lifecycle management** — content-aware managed updates plus explicit release/migration/rollback contracts.
+6. **Human attention layer** — Review Inbox / “What needs me?” as a projection over deterministic Readiness and governance contracts, not a Kanban board.
+7. **Experiment automation** — Automatic Experiment Runner only after the contracts being compared are stable enough to make the experiment meaningful.
+
+This order may change again when production usage exposes a higher-value integrity or usability failure.
+
+## Execution reliability — highest priority
+
+### Implementation Capsule Quality Gate
+
+**Status: Planned · Priority: P0**
+
+Compile and validate the Builder capsule before the implementation boundary can be entered. The gate should reject contradictory instructions, missing verification recipes, unresolved material decisions, stale visual targets, invalid evidence references, incomplete Scope Guard information, and missing Definition of Done / QA Mission content.
+
+The output is diagnostic rather than an opaque score: for example `AC-003 has no verification recipe` or `approved UI proposal has no canonical target`.
+
+**Success metric:** a less-capable Builder can execute the capsule without reconstructing planning or asking avoidable clarification questions.
+
+### Builder Comprehension Preflight
+
+**Status: Planned · Priority: P0**
+
+Before editing, Builder emits a small structured execution map: **AC → files/symbols → intended action → verification**. SpecRail compares it mechanically with the capsule, Scope Guard, and canonical evidence. A matching preflight starts implementation automatically; a mismatch blocks before code drift begins.
+
+**Success metric:** misunderstandings are caught before the first material edit rather than during Technical Review.
+
+### Decision Budget
+
+**Status: Planned · Priority: P0**
+
+Classify implementation decisions as `FIXED`, `LOCAL`, or `ESCALATE`. Fixed decisions are governed and immutable, local decisions may be made by Builder without a human gate, and material decisions return to the narrowest specification/amendment path.
+
+**Success metric:** cheaper implementation models spend fewer tokens deciding what authority they have and make fewer unauthorized product/architecture choices.
+
+### Executable Acceptance Criteria
+
+**Status: Planned · Priority: P0**
+
+Extend each effective `AC-*` with a compact execution/verification contract: target, observable expectation, verification method, evidence kind, and failure condition. Text remains human-readable; the structured form lets Builder and QA traverse criteria deterministically.
+
+**Success metric:** every required AC has a concrete implementation/verifiability path before Builder starts.
+
+### Contract Conformance Monitor
+
+**Status: Planned · Priority: P0**
+
+Move important Builder rules from skill prose into runtime enforcement. Detect writes outside Scope Guard, protected-file edits, attempts to complete without required evidence, invalid frontend previews, stale proposals, unapproved material contract changes, and other observable drift while work is still in progress.
+
+**Success metric:** fewer repair loops caused by violations SpecRail could have rejected at the moment they occurred.
+
+## Runtime and review reliability
+
+### Preview Session Manager
+
+**Status: Planned · Priority: P1**
+
+Add a deterministic frontend runtime manager for the task worktree: discover the approved dev/preview command, choose or validate a port, wait for HTTP + target DOM readiness, persist the verified runtime URL, health-check/restart it through the review gate, and stop it when the task no longer needs it.
+
+`file://`, raw `index.html`, and stale/dead preview URLs remain invalid.
+
+**Success metric:** zero frontend approval attempts fail because the user was shown a blank local file or a dead runtime.
+
+### Runtime-aware `specrail doctor`
+
+**Status: Planned · Priority: P1**
+
+Extend Doctor with stale preview sessions, missing visual source files, broken proposal/render links, stale/corrupt boundaries, orphaned leases, handoff digest mismatches, disappeared worktrees, and other execution-runtime faults discovered during recent real usage.
+
+Safe local fixes remain plan-first and approval-controlled.
+
+### Visual Comparator v2 follow-up
+
+**Status: Beta hardening · Priority: P1**
+
+The v2 comparator is implemented in the current beta. Follow-up work is limited to measured usability improvements: keyboard accessibility, richer device grouping, optional pixel-diff/heatmap assistance when source dimensions are compatible, and review-time metrics. Canonical evidence always remains the authority; a visual diff never decides acceptance automatically.
+
+## Context efficiency and measured cost
+
+### Real phase token telemetry
+
+**Status: Planned · Priority: P1**
+
+When the host exposes trustworthy accounting, persist real input, cached-input, output, and model identity per planning / implementation / review phase. Never estimate missing billed usage as fact and never hard-code model prices into workflow state.
+
+**Success metric:** same-chat versus fresh-chat recommendations can be evaluated from actual usage rather than synthetic carryover estimates.
+
+### Adaptive Boundary Recommendation
+
+**Status: Planned · Priority: P1**
+
+Use measured prior-phase context, capsule size, task risk, expected implementation turns, and observed history to recommend `same-chat-ok` or `fresh-chat-recommended`. The user remains free to choose either path and all model selection stays in Codex.
+
+### Capsule Delta after Amendments
+
+**Status: Planned · Priority: P1**
+
+When an approved Amendment changes only part of an implementation contract, generate a small signed delta identifying changed ACs, scope additions/removals, decisions, evidence, and QA implications instead of forcing Builder to ingest a full regenerated capsule unless necessary.
+
+### Role-specific Context Cache
+
+**Status: Planned · Priority: P2**
+
+Persist validated CodeGraph-derived facts/seeds by role and source digest—not prior chat prose—so Planner, Builder, and Reviewer can reuse still-valid repository knowledge without repeating broad discovery.
+
+### Implementation Checkpoints
+
+**Status: Planned · Priority: P2**
+
+For sufficiently large work, run lightweight non-human checkpoints after coherent AC groups: Scope Guard, focused tests, capsule conformance, and evidence readiness. Passing checkpoints do not interrupt the user; drift stops early before it compounds.
+
+## Specification intelligence — priority P2
+
+These capabilities follow execution/runtime hardening because they strengthen the deterministic data consumed by Builder, QA, Cockpit, and the future Review Inbox. They extend existing specification, evidence, Scope Guard, Amendment, and Readiness contracts rather than creating a parallel workflow.
 
 ### Requirement Source Ledger
 
@@ -242,11 +405,16 @@ Make `specrail init` discover run/test commands, architecture, design system, cr
 
 The Blueprint is advisory project context until explicitly accepted into governed project state.
 
+
+## Safe lifecycle management — priority P2
+
 ### Content-aware managed updates
 
 **Status: Planned**
 
 Improve SpecRail self-update/install behavior so managed assets are compared by content, unchanged files are left alone, customized files are identified before replacement, and recoverable backups are created before any managed overwrite. Existing `.ai/` project history remains untouched.
+
+**Beta foundation:** `specrail update` preserves the installed `beta`/`latest` channel by default, updates the global npm package, and refreshes managed Codex assets from the newly installed package. Content-aware diffing and customized-file conflict handling remain planned here.
 
 ### Release, migration, and rollback contract
 
@@ -260,18 +428,8 @@ For application changes classified as breaking, the same contract should connect
 
 ---
 
-## Accepted implementation order
 
-The current priority sequence is:
-
-1. **Specification Intelligence:** Requirement Source Ledger, adversarial critic, first-class NFRs, failure/change classification, contract compatibility/Impact Radius, and Repository Blueprint/domain vocabulary.
-2. **Safe lifecycle management:** content-aware managed updates plus explicit release/migration/rollback contracts.
-3. **Human attention layer:** Review Inbox / “What needs me?” built as a projection over deterministic Readiness and governance contracts, not as a Kanban board.
-4. **Experiment automation:** Automatic Experiment Runner after the specification and human-review contracts are stable enough to compare workflow policies safely.
-
-This order may change when real usage exposes a higher-value integrity or usability problem.
-
-## Human attention layer — after specification intelligence
+## Human attention layer — priority P3
 
 ### Review Inbox / What needs me?
 
@@ -281,11 +439,13 @@ Surface only tasks and decisions requiring human attention, without becoming a K
 
 The Inbox remains a read-only projection; native Codex gates and deterministic CLI transitions own decisions.
 
+## Experiment automation — priority P4
+
 ### Automatic Experiment Runner
 
 **Status: In design**
 
-Orchestrate an approved `fast`/`standard`/`rigorous` comparison end-to-end without manual Replay command choreography. It remains secondary to specification intelligence and human-attention improvements.
+Orchestrate an approved `fast`/`standard`/`rigorous` comparison end-to-end without manual Replay command choreography. It remains secondary to implementation reliability, specification intelligence, and the human-attention layer.
 
 ## Product refinement — validate with real usage
 
@@ -293,12 +453,12 @@ Orchestrate an approved `fast`/`standard`/`rigorous` comparison end-to-end witho
 
 **Status: Beta**
 
-The local read-only MVP was implemented in `0.5.0-beta.2`; `0.9.0-beta.0` hardens how that review is actually presented inside Codex. Current behavior and future improvements are:
+The local read-only MVP was implemented in `0.5.0-beta.2`; `0.8.2-beta.0` hardens how that review is actually presented inside Codex. Current behavior and future improvements are:
 
 - **0.7.0-beta.1:** latest replay comparison, exact reported token metrics, and adaptive Harness recommendation are visible in the Cockpit experiment view;
-- **0.9.0-beta.0:** complete Review Bundle presentation is mandatory before native approval input; generated Cockpit HTML is never treated as proof of display; `$visualize` is the explicit Codex skill path for a native interactive review surface when useful, with the native content reference required as render evidence;
+- **0.8.2-beta.0:** complete Review Bundle presentation is mandatory before native approval input; generated Cockpit HTML is never treated as proof of display; `$visualize` is the explicit Codex skill path for a native interactive review surface when useful, with the native content reference required as render evidence; frontend evidence avoids unresolved local Markdown image links and final UI review opens the served `presentation.previewUrl` rather than a raw worktree `index.html`;
+- **0.8.2-beta.0 Visual Comparator v2:** Side by side / Slider / Overlay, viewport + route/target filters, explicit missing-role states, and structural validation that prevents a static `$visualize` gallery from masquerading as the comparator;
 - richer backend, architecture, contract-impact, NFR, and database evidence explorers;
-- better comparison of multiple desktop/mobile captures;
 - clearer stale-evidence and requirement-provenance explanations;
 - accessibility audits and keyboard-navigation evals;
 - review-time metrics and qualitative rejection analysis;
@@ -307,6 +467,14 @@ The local read-only MVP was implemented in `0.5.0-beta.2`; `0.9.0-beta.0` harden
 The Cockpit remains read-only and derived from governed SpecRail state; native Codex gates own decisions. Visualize improves the review surface but never becomes a substitute for the complete Markdown/evidence contract.
 
 See [`docs/REVIEW-COCKPIT.md`](docs/REVIEW-COCKPIT.md).
+
+### Host-native model handoff automation
+
+**Status: Research**
+
+When Codex Desktop exposes a stable thread-creation contract with verifiable model, reasoning-effort, and working-directory selection, allow SpecRail to turn the existing deterministic planning → implementation → review handoffs into automatic visible-thread transitions while leaving model selection entirely to the Codex selector. The fallback remains the current main-session handoff. Do not adopt a host adapter that silently forks full chat history, chooses a model for the user, or cannot prove which model actually ran.
+
+**Success metric:** switching execution roles becomes one-click/automatic without increasing context duplication, losing the task worktree, or weakening model provenance.
 
 ### Semantic failure clustering
 

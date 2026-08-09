@@ -32,15 +32,26 @@ test('public roadmap and agent rules are canonical and packaged',()=>{
     assert.ok(pkg.files.includes(file),`${file} must be included in npm package files`);
   }
   const roadmap=text('ROADMAP.md');
+  assert.match(roadmap,/## Current beta hardening/i);
+  assert.doesNotMatch(roadmap,/Current release line — `0\.9\.x beta`/i);
   for(const feature of ['Review Cockpit','Readiness / Why blocked','specrail doctor --fix','Replayable Tasksets','Adaptive workflow policy','GitHub Issue → PR → CI → merge']) assert.match(roadmap,new RegExp(feature.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'));
   assert.match(roadmap,/GitHub Issue → PR → CI → merge[\s\S]*Deferred/i);
   assert.match(roadmap,/Signed Delivery Bundle[\s\S]*Deferred/i);
   assert.match(roadmap,/Review Cockpit MVP/i);
+  for(const feature of ['Visual Comparator v2','Implementation Capsule Quality Gate','Builder Comprehension Preflight','Preview Session Manager','Real phase token telemetry','Requirement Source Ledger','Review Inbox']) assert.match(roadmap,new RegExp(feature.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'));
+  assert.ok(roadmap.indexOf('## Execution reliability — highest priority') < roadmap.indexOf('## Specification intelligence — priority P2'));
+  assert.ok(roadmap.indexOf('## Runtime and review reliability') < roadmap.indexOf('## Human attention layer'));
   const agents=text('AGENTS.md');
   assert.match(agents,/Every user-facing behavior change must update/i);
   assert.match(agents,/ROADMAP\.md/);
   assert.match(agents,/Never run `npm publish`/);
   assert.match(agents,/npm run release:check/);
+});
+
+test('source archive command excludes local caches and macOS metadata',()=>{
+  const archive=pkg.scripts.tar;
+  assert.match(archive,/COPYFILE_DISABLE=1/);
+  for(const excluded of [".codegraph","._*",".DS_Store"]) assert.ok(archive.includes(excluded),`source tar must exclude ${excluded}`);
 });
 
 test('README and publishing docs use the canonical scoped package and specrail CLI',()=>{
