@@ -1,25 +1,29 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { acquireTaskLease } from './lease.js';
+import { acquireTaskLease, leaseStatus } from './lease.js';
 import { findTask, loadTask } from './task.js';
 import type { TaskPhase } from './types.js';
 
 export type BoundaryMode = 'same-chat' | 'fresh-chat' | 'unknown';
 export type BoundaryRecommendation = 'same-chat-ok' | 'fresh-chat-recommended';
 export type BoundaryRole = 'implementer' | 'reviewer';
+export type BoundaryChoice = 'continue-current' | 'pause-model-change' | 'fresh-chat';
 
 export interface PhaseBoundaryRecord {
-  schemaVersion: 2;
+  schemaVersion: 3;
   taskId: string;
   phase: TaskPhase;
   role: BoundaryRole;
   handoffDigest: string;
   handoffContentDigest: string;
-  status: 'required' | 'entered';
+  status: 'required' | 'chosen' | 'entered';
   recommendation: BoundaryRecommendation;
   sameChatAllowed: true;
   originSessionId: string | null;
+  choice: BoundaryChoice | null;
+  choiceSessionId: string | null;
+  chosenAt: string | null;
   enteredSessionId: string | null;
   mode: BoundaryMode | null;
   createdAt: string;
@@ -59,9 +63,11 @@ function writeRecord(root: string, record: PhaseBoundaryRecord): PhaseBoundaryRe
   return record;
 }
 function validateRecord(record: PhaseBoundaryRecord): void {
-  if (record.schemaVersion !== 2) throw new Error('Unsupported phase-boundary schema');
+  if (record.schemaVersion !== 3) throw new Error('Unsupported phase-boundary schema');
   if (digest(recordPayload(record)) !== record.recordDigest) throw new Error(`Phase-boundary integrity check failed for ${record.taskId} ${record.phase}`);
   if (!/^[a-f0-9]{64}$/.test(record.handoffDigest) || !/^[a-f0-9]{64}$/.test(record.handoffContentDigest)) throw new Error(`Phase-boundary handoff integrity metadata is invalid for ${record.taskId} ${record.phase}`);
+  if (record.status === 'required' && (record.choice || record.choiceSessionId || record.chosenAt)) throw new Error(`Phase-boundary required state cannot already contain a user choice for ${record.taskId} ${record.phase}`);
+  if (record.status !== 'required' && (!record.choice || !record.choiceSessionId || !record.chosenAt)) throw new Error(`Phase-boundary ${record.status} state is missing the persisted user choice for ${record.taskId} ${record.phase}`);
 }
 function recommendationForTask(task: ReturnType<typeof loadTask>, role: BoundaryRole, handoffWords: number): BoundaryRecommendation {
   const size = String(task.meta.size || '').trim().toLowerCase();
@@ -78,9 +84,9 @@ export function loadPhaseBoundary(root: string, id: string, phase: TaskPhase): P
   const file = fileFor(root, task.meta.id, phase);
   if (!existsSync(file)) return null;
   const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
-  // Runtime boundary v1 was advisory and unsigned. It is safe to discard and
-  // force a new explicit entry rather than silently promote it.
-  if (Number(raw.schemaVersion) === 1) { rmSync(file, { force: true }); return null; }
+  // Older boundary schemas did not persist the explicit native boundary choice.
+  // Requiring the choice again is safer than silently promoting legacy state.
+  if ([1,2].includes(Number(raw.schemaVersion))) { rmSync(file, { force: true }); return null; }
   const record = raw as unknown as PhaseBoundaryRecord;
   validateRecord(record);
   if (record.taskId !== task.meta.id || record.phase !== phase) throw new Error(`Phase-boundary identity mismatch for ${task.meta.id} ${phase}`);
@@ -110,7 +116,7 @@ export function phaseBoundaryStatus(
     invalidatePhaseBoundary(root, task.meta.id, task.meta.phase);
   }
   const record = signed({
-    schemaVersion: 2,
+    schemaVersion: 3,
     taskId: task.meta.id,
     phase: task.meta.phase,
     role,
@@ -120,12 +126,51 @@ export function phaseBoundaryStatus(
     recommendation: recommendationForTask(task, role, handoffWords),
     sameChatAllowed: true,
     originSessionId: options.sessionId ? String(options.sessionId) : null,
+    choice: null,
+    choiceSessionId: null,
+    chosenAt: null,
     enteredSessionId: null,
     mode: null,
     createdAt: now(),
     enteredAt: null
   });
   return writeRecord(root, record);
+}
+
+export function choosePhaseBoundary(
+  root: string,
+  id: string,
+  choice: BoundaryChoice,
+  options: { sessionId?: string | null; handoffDigest?: string | null; handoffContentDigest?: string | null; handoffWords?: number | null } = {}
+): PhaseBoundaryRecord {
+  if (!['continue-current','pause-model-change','fresh-chat'].includes(choice)) throw new Error(`Unknown phase-boundary choice: ${choice}`);
+  const task = loadTask(findTask(root, id));
+  const existing = boundaryRole(task.meta.phase) ? loadPhaseBoundary(root, task.meta.id, task.meta.phase) : null;
+  const current = phaseBoundaryStatus(root, id, {
+    ...options,
+    handoffDigest: options.handoffDigest ?? existing?.handoffDigest ?? null,
+    handoffContentDigest: options.handoffContentDigest ?? existing?.handoffContentDigest ?? null
+  });
+  if (!current) throw new Error('No implementation/review phase boundary is active for this task');
+  const sessionId = String(options.sessionId || '').trim();
+  if (!sessionId) throw new Error('Phase boundary choice requires the stable Codex session ID that presented the native decision');
+  if (current.status === 'chosen') throw new Error('Phase boundary choice is already persisted; do not ask the boundary question again');
+  if (current.status === 'entered' && current.enteredSessionId === sessionId) throw new Error('This Codex session already owns the entered phase boundary; no new boundary choice is required');
+  if (current.status === 'entered' && current.enteredSessionId !== sessionId) {
+    const lease = leaseStatus(root, current.taskId, sessionId);
+    if (lease.conflict) throw new Error(`Phase boundary ownership transfer requires resolving the active task lease owned by ${lease.owner} before recording a new boundary choice`);
+  }
+  const next = signed({
+    ...recordPayload(current),
+    status: 'chosen',
+    choice,
+    choiceSessionId: sessionId,
+    chosenAt: now(),
+    enteredSessionId: null,
+    mode: null,
+    enteredAt: null
+  } as Omit<PhaseBoundaryRecord, 'recordDigest'>);
+  return writeRecord(root, next);
 }
 
 export function enterPhaseBoundary(
@@ -141,9 +186,12 @@ export function enterPhaseBoundary(
     handoffContentDigest: options.handoffContentDigest ?? existing?.handoffContentDigest ?? null
   });
   if (!current) throw new Error('No implementation/review phase boundary is active for this task');
+  if (current.status === 'required') throw new Error('Phase boundary must persist the explicit native user choice before it can be entered');
   const sessionId = String(options.sessionId || '').trim();
   if (!sessionId) throw new Error('Phase boundary entry requires a stable Codex session ID so ownership and same-chat/fresh-chat mode cannot be forged or left ambiguous');
-  const inferredMode: BoundaryMode = current.originSessionId ? (current.originSessionId !== sessionId ? 'fresh-chat' : 'same-chat') : 'unknown';
+  if (current.choice === 'continue-current' && current.choiceSessionId !== sessionId) throw new Error('The user chose to continue with the current Codex session; enter this boundary from the same session or request a new boundary choice');
+  if (current.choice === 'fresh-chat' && current.choiceSessionId === sessionId) throw new Error('The user chose a fresh chat; enter this boundary from a different stable Codex session');
+  const inferredMode: BoundaryMode = current.choiceSessionId ? (current.choiceSessionId !== sessionId ? 'fresh-chat' : 'same-chat') : current.originSessionId ? (current.originSessionId !== sessionId ? 'fresh-chat' : 'same-chat') : 'unknown';
   const next = signed({
     ...recordPayload(current),
     status: 'entered',
@@ -170,5 +218,5 @@ export function assertPhaseBoundaryEntered(root: string, id: string, phase: Task
 
 export function boundaryRecordDigest(record: PhaseBoundaryRecord): string {
   validateRecord(record);
-  return digest({ taskId: record.taskId, phase: record.phase, role: record.role, handoffDigest: record.handoffDigest, handoffContentDigest: record.handoffContentDigest, mode: record.mode, enteredAt: record.enteredAt });
+  return digest({ taskId: record.taskId, phase: record.phase, role: record.role, handoffDigest: record.handoffDigest, handoffContentDigest: record.handoffContentDigest, choice: record.choice, choiceSessionId: record.choiceSessionId, chosenAt: record.chosenAt, mode: record.mode, enteredAt: record.enteredAt });
 }

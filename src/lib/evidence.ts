@@ -404,6 +404,53 @@ function requiredKinds(task: TaskDocument, stage: string): string[] {
     }
     return [...new Set(required)];
 }
+function browserQaContractErrors(task: TaskDocument, qa: EvidenceRecord | undefined): string[] {
+    if (task.meta.route.qa !== 'browser' || !qa) return [];
+    const errors: string[] = [];
+    const attributes = qa.attributes && typeof qa.attributes === 'object' && !Array.isArray(qa.attributes) ? qa.attributes as Record<string, unknown> : {};
+    const verification = attributes.verification && typeof attributes.verification === 'object' && !Array.isArray(attributes.verification) ? attributes.verification as Record<string, unknown> : {};
+    const automated = attributes.automatedVisualQA && typeof attributes.automatedVisualQA === 'object' && !Array.isArray(attributes.automatedVisualQA) ? attributes.automatedVisualQA as Record<string, unknown> : {};
+    const verificationType = String(verification.type || '').trim();
+    const status = String(automated.status || '').trim();
+    const hostBrowser = String(automated.hostBrowser || '').trim();
+    const surfaceClass = String(automated.surfaceClass || '').trim();
+    const attempted = automated.attempted === true;
+    const surface = String(automated.surface || '').trim();
+    const attemptRef = String(automated.attemptRef || '').trim();
+    const targetUrl = String(automated.targetUrl || '').trim();
+    const reason = String(automated.reason || '').trim();
+    if (!['human', 'automated', 'mixed'].includes(verificationType)) errors.push('browser QA report must record verification.type as human, automated, or mixed');
+    if (!['available','unavailable'].includes(hostBrowser)) errors.push('browser QA report must record automatedVisualQA.hostBrowser as available or unavailable');
+    if (!['host-browser','host-without-browser'].includes(surfaceClass)) errors.push('browser QA report must record automatedVisualQA.surfaceClass as host-browser or host-without-browser');
+    if (!['passed', 'failed', 'unavailable'].includes(status)) {
+        errors.push('browser QA report must record automatedVisualQA.status as passed, failed, or unavailable');
+        return errors;
+    }
+    if (hostBrowser === 'unavailable') {
+        if (surfaceClass !== 'host-without-browser') errors.push('automatedVisualQA.surfaceClass must be host-without-browser when the current host exposes no Browser capability');
+        if (status !== 'unavailable') errors.push('automated visual QA cannot pass/fail when the current host reports no Browser capability');
+        if (attempted) errors.push('automatedVisualQA.attempted must be false when the current host has no Browser capability to invoke');
+        if (attemptRef) errors.push('automatedVisualQA.attemptRef must be empty when no host Browser attempt was possible');
+        if (!surface) errors.push('browser QA report must identify the current host surface when Browser capability is unavailable');
+        if (!reason) errors.push('AUTOMATED_VISUAL_QA_UNAVAILABLE must explain why the current host has no Browser capability');
+        else errors.push(`AUTOMATED_VISUAL_QA_UNAVAILABLE: ${reason}`);
+        return errors;
+    }
+    if (surfaceClass !== 'host-browser') errors.push('automatedVisualQA.surfaceClass must be host-browser when hostBrowser=available');
+    if (!attempted) errors.push('browser QA report must record automatedVisualQA.attempted=true after invoking the available host Browser surface');
+    if (!surface) errors.push('browser QA report must identify the attempted host Browser surface; shell/terminal localhost checks are not equivalent to host-browser QA');
+    if (/(?:shell|terminal|curl|wget|powershell|cmd(?:\.exe)?)/i.test(surface)) errors.push('browser QA surface cannot be a shell/terminal transport; localhost shell probes are diagnostic only');
+    if (!attemptRef) errors.push('browser QA report must record automatedVisualQA.attemptRef for the actual host Browser invocation');
+    if (!/^https?:\/\//i.test(targetUrl)) errors.push('browser QA report must record automatedVisualQA.targetUrl as the served HTTP(S) URL opened by the host Browser');
+    if (['passed','failed','unavailable'].includes(status) && !['automated','mixed'].includes(verificationType)) errors.push(`verification.type=${verificationType || 'missing'} is inconsistent with an attempted automated Browser QA result; use automated or mixed`);
+    if (status === 'unavailable') {
+        if (!reason) errors.push('AUTOMATED_VISUAL_QA_UNAVAILABLE must include a concrete host-browser failure reason');
+        else errors.push(`AUTOMATED_VISUAL_QA_UNAVAILABLE: ${reason}`);
+    }
+    if (status === 'failed') errors.push(`AUTOMATED_VISUAL_QA_FAILED${reason ? `: ${reason}` : ''}`);
+    return errors;
+}
+
 function reportMatchesScreenshot(report: any, screenshot: any) {
     const dims = viewportDimensions(screenshot.viewport);
     return report && report.screenshotKind === screenshot.kind && exactContextValue(report.route) === exactContextValue(screenshot.route) && exactContextValue(report.target) === exactContextValue(screenshot.target) && report.capture?.scope === screenshot.captureScope && dims && Number(report.viewport?.width) === dims.width && Number(report.viewport?.height) === dims.height;
@@ -504,5 +551,6 @@ export function validateEvidence(root: string, id: string, stage = 'all') {
         }
     }
     const qa=items.find((x:any)=>x.kind==='qa-report'); if(qa && task.meta.qa_mission_hash && qa.missionHash!==task.meta.qa_mission_hash) errors.push('QA mission hash does not match the approved immutable QA Mission');
+    errors.push(...browserQaContractErrors(task, qa));
     return { valid: missing.length === 0 && errors.length === 0, missing, errors, required };
 }

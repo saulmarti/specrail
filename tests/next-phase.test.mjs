@@ -139,3 +139,28 @@ test('next exposes the exact same readiness contract and required gates block at
   const next=nextAction(root,task.meta.id);
   assert.deepEqual(next.readiness.gates.map(item=>[item.id,item.status]),readiness.gates.map(item=>[item.id,item.status]));
 });
+
+test('next normalizes legacy project config blocks before building runtime visualization',()=>{
+  const root=repo('specrail-legacy-config-');
+  initProject(root,{name:'Legacy config'});readyProjectContext(root);
+  const created=createTask(root,{title:'Legacy-config task',type:'task',surfaces:['backend'],risk:'medium',executionProfile:'standard'});
+  const configPath=path.join(root,'.ai','config.json');
+  const persisted=JSON.parse(readFileSync(configPath,'utf8'));
+  delete persisted.visualize;
+  delete persisted.contextBudget;
+  delete persisted.leases;
+  delete persisted.adaptivePolicy;
+  persisted.version=8;
+  writeFileSync(configPath,`${JSON.stringify(persisted,null,2)}\n`);
+
+  const next=nextAction(root,created.meta.id,{sessionId:'legacy-config-session'});
+  assert.equal(next.task,created.meta.id);
+  assert.equal(next.phase,'product-specifier');
+  assert.equal(next.visualization?.skillInvocation,'$visualize');
+  assert.equal(next.context.policy.maxFiles,16);
+
+  // Loading legacy config is compatibility normalization, not a hidden on-read migration.
+  const disk=JSON.parse(readFileSync(configPath,'utf8'));
+  assert.equal('visualize' in disk,false);
+  assert.equal(disk.version,8);
+});

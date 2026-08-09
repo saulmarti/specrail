@@ -158,7 +158,7 @@ export function writeRuntimeHandoff(root: string, id: string, role: 'implementer
       `4. If satisfying the task requires a material product, scope, architecture, contract, security, migration, or UX decision, STOP and create the appropriate blocker/Amendment instead of improvising.\n\n` +
       `## Required execution sequence\n\n` +
       `1. Read this capsule completely before editing.\n` +
-      `2. Inspect the listed context seeds and allowed files first; expand through CodeGraph only with a concrete implementation reason.\n` +
+      `2. Inspect the listed context seeds and allowed files first; do not proactively search generic Kanban, memory, process, or task-instruction files unless they are listed here or a concrete implementation need requires them. Expand through CodeGraph only with a concrete implementation reason.\n` +
       `3. Implement the smallest coherent change that satisfies every effective AC without touching protected scope.\n` +
       `4. Run the required build/tests and the immutable QA Mission.\n` +
       `${task.meta.surfaces.includes('frontend') ? `5. Run frontend work through its HTTP dev/preview server, capture AFTER evidence from that served URL, and compare Before / Proposal / After through the governed visual flow. Never validate raw index.html or file://.\n6. Record implementation evidence and return the task to independent Technical Review; do not self-approve.\n\n` : `5. Record implementation evidence and return the task to independent Technical Review; do not self-approve.\n\n`}` +
@@ -225,16 +225,18 @@ export function runtimeRecommendation(root: string, id: string, options: { sessi
     : null;
   if (boundary && !existingBoundary) resetContextForPhaseBoundary(root, id, `Phase boundary prepared for ${task.meta.phase}; preserve previous-phase context only through the sealed runtime handoff.`);
   const currentSession=String(options.sessionId||'').trim()||null;
-  const sessionEntryRequired=Boolean(boundary&&(boundary.status==='required'||!currentSession||boundary.enteredSessionId!==currentSession));
+  const sessionEntryRequired=Boolean(boundary&&(boundary.status!=='entered'||!currentSession||boundary.enteredSessionId!==currentSession));
   const stopBeforePhaseWork=sessionEntryRequired;
   const freshSessionRecommended = boundary?.recommendation === 'fresh-chat-recommended';
   const transferRequired=Boolean(boundary?.status==='entered'&&sessionEntryRequired);
   const transitionNotice = sessionEntryRequired && handoff
     ? {
         kind: role === 'implementer' ? 'implementation-handoff' as const : 'review-handoff' as const,
-        title: transferRequired ? 'Phase ownership must be entered in this Codex session' : role === 'implementer' ? 'Implementation boundary ready' : 'Independent review boundary ready',
+        title: transferRequired ? 'Phase ownership must be entered in this Codex session' : boundary?.status==='chosen' ? 'Phase boundary choice recorded; entry required' : role === 'implementer' ? 'Implementation boundary ready' : 'Independent review boundary ready',
         message: transferRequired
           ? `${task.meta.id} is already inside the ${role === 'implementer' ? 'implementation' : 'review'} phase, but that phase boundary belongs to another Codex session (${boundary?.enteredSessionId || 'unknown'}). Do not continue phase work from this chat until this session explicitly enters the boundary; an active lease may require a user-approved takeover.`
+          : boundary?.status==='chosen'
+            ? `The user's native boundary choice is already persisted as ${boundary.choice}. Do not ask the selector again. Enter the ${role === 'implementer' ? 'implementation' : 'review'} boundary in this session before reading generic repository process/Kanban memory or doing phase work, then execute from the compiled capsule.`
           : role === 'implementer'
             ? `Planning is sealed for ${task.meta.id}. End this turn before coding. Next turn you may continue in this chat or open a fresh Codex chat; SpecRail does not choose or store a model; the Codex selector remains authoritative. ${boundary?.recommendation === 'fresh-chat-recommended' ? 'A fresh chat is recommended because it removes the planning conversation from implementation context and lets a less-capable implementer start from the compiled capsule.' : 'This is a small low-risk task, so continuing in the same chat is reasonable; a fresh chat remains available for stronger isolation.'}`
             : `Implementation is sealed for ${task.meta.id}. End this turn before independent review. Next turn you may continue in this chat or open a fresh Codex chat. ${boundary?.recommendation === 'fresh-chat-recommended' ? 'A fresh chat is recommended to remove builder assumptions from reviewer context.' : 'For this small low-risk change, same-chat review is acceptable after entering the review boundary.'}`,
@@ -260,6 +262,8 @@ export function runtimeRecommendation(root: string, id: string, options: { sessi
       status: boundary.status,
       recommendation: boundary.recommendation,
       sameChatAllowed: true,
+      choice: boundary.choice,
+      choiceSessionId: boundary.choiceSessionId,
       mode: boundary.mode,
       originSessionId: boundary.originSessionId,
       enteredSessionId: boundary.enteredSessionId
@@ -273,7 +277,9 @@ export function runtimeRecommendation(root: string, id: string, options: { sessi
           : 'No phase handoff is needed for this system phase.',
     transitionNotice,
     transitionInstruction: transitionNotice && handoff
-      ? `STOP before doing ${role === 'implementer' ? 'implementation' : 'independent review'} work in this turn. Show the transition notice once and end the turn. On the next user turn or in a fresh chat, enter the phase boundary first. Then treat ${handoff.relativePath} as the compiled phase contract. Previous conversational reasoning is non-authoritative. Do not replay the previous chat and do not reread the full canonical task unless the capsule reports truncation, a conflict requires source verification, or a specific missing detail is needed. Expand repository context only through justified CodeGraph reads.`
+      ? boundary?.status==='chosen'
+        ? `The native phase-boundary choice is already persisted as ${boundary.choice}. Do not ask it again. Before reading generic repository process files or doing ${role === 'implementer' ? 'implementation' : 'independent review'} work, enter the phase boundary in this Codex session, then treat ${handoff.relativePath} as the compiled phase contract. Previous conversational reasoning is non-authoritative. Do not replay the previous chat and do not reread generic Kanban/memory/process files unless the capsule names them, a concrete conflict requires source verification, or a specific missing implementation detail requires them.`
+        : `STOP before doing ${role === 'implementer' ? 'implementation' : 'independent review'} work in this turn. Show the transition notice once, persist the exact native boundary choice, and end the turn. On the next user turn or in the selected fresh chat, enter the phase boundary first. Then treat ${handoff.relativePath} as the compiled phase contract. Previous conversational reasoning is non-authoritative. Do not replay the previous chat and do not reread generic Kanban/memory/process files unless the capsule names them, a concrete conflict requires source verification, or a specific missing implementation detail requires them.`
       : null
   };
 }

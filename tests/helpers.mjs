@@ -7,7 +7,9 @@ import { markCodeGraphReadyForTests } from '../dist/src/lib/codegraph.js';
 import { addEvidence } from '../dist/src/lib/evidence.js';
 import { setBlastRadius } from '../dist/src/lib/scope-guard.js';
 import { runtimeRecommendation } from '../dist/src/lib/phase-handoff.js';
-import { enterPhaseBoundary } from '../dist/src/lib/phase-boundary.js';
+import { choosePhaseBoundary, enterPhaseBoundary } from '../dist/src/lib/phase-boundary.js';
+import { specificationPresentation, finalPresentation } from '../dist/src/lib/presentation.js';
+import { recordPresentationAction } from '../dist/src/lib/presentation-state.js';
 export function createFakeCodeGraph({ failSync = false, failStatus = false, incompatibleContract = false } = {}) {
     const dir = mkdtempSync(path.join(tmpdir(), 'fake-codegraph-'));
     const command = path.join(dir, 'codegraph');
@@ -84,5 +86,18 @@ export function setDefaultBlastRadius(root, id, allowedFiles = ['**']) {
 export function enterCurrentPhaseBoundary(root, id, sessionId = 'test-session') {
     const runtime = runtimeRecommendation(root, id, { sessionId });
     if (!runtime.handoffDigest || !runtime.handoffContentDigest) throw new Error('No active phase boundary handoff');
+    choosePhaseBoundary(root, id, 'continue-current', { sessionId, handoffDigest: runtime.handoffDigest, handoffContentDigest: runtime.handoffContentDigest, handoffWords: runtime.handoffWords });
     return enterPhaseBoundary(root, id, { sessionId, handoffDigest: runtime.handoffDigest, handoffContentDigest: runtime.handoffContentDigest, handoffWords: runtime.handoffWords });
+}
+
+export function acknowledgePresentation(root, id, gate = 'spec-approval', sessionId = 'test-session') {
+    const presentation = gate === 'spec-approval' ? specificationPresentation(root, id, sessionId) : finalPresentation(root, id, sessionId);
+    const contract = presentation.presentationContract;
+    let state = contract.acknowledgement;
+    for (const action of contract.fallback.requiredHostActions) {
+        if (!state.pendingActionIds.includes(action.id) && !state.blockingActionIds.includes(action.id)) continue;
+        const outcome = action.type === 'present-image' ? 'presented' : 'offered';
+        state = recordPresentationAction(root, { taskId: id, gate, sessionId, presentationDigest: contract.presentationDigest, actions: contract.fallback.requiredHostActions, actionId: action.id, outcome, detail: action.type === 'open-url' ? 'Clickable Review Cockpit action offered in the host review surface.' : null });
+    }
+    return state;
 }

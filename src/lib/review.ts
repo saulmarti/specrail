@@ -65,14 +65,19 @@ export function writeReviewBundle(root: any, id: any, stage: any = 'spec') {
     if(activeEvals.length) lines.push('## Active regression evals','',...activeEvals.map(item=>`- ${item.id} · ${item.category}: ${item.statement}`),'');
     const evidence = listEvidence(root, id);
     if (evidence.length) {
-        lines.push('## Evidence', '', '> Visual files are intentionally not embedded with local Markdown image URLs. Codex cannot reliably render repository-local image links in chat. The active canonical visual set below is the same set used by presentation attachments/Cockpit; older or out-of-scope visuals remain audit evidence only. Canonical images must be shown through the presentation attachments and, when available, the native `$visualize` Review Cockpit.', '');
+        lines.push('## Evidence', '', '> **Presentation contract:** active canonical visual evidence must be visible to the user through a host-supported review surface before approval. A local path, filename, generated HTML artifact, or textual “Before / Proposal / After” label is audit metadata only and never counts as presented evidence. `$visualize` and the Review Cockpit are enhancements; when host presentation cannot be verified, fall back to directly visible canonical evidence plus an action to open the Cockpit.', '');
         const visualState = activeVisualEvidence(task, evidence, stage);
         if (visualState.active.length) {
-            lines.push('### Active visual review evidence', '');
+            lines.push('### Review Surface — active canonical visuals', '', '| Role / context | Evidence ID | Host presentation |', '|---|---|---|');
+            for (const item of visualState.active) {
+                lines.push(`| **${evidenceDisplay(item).replace(/\|/g,'\\|')}** | \`${item.id}\` | **REQUIRED VISIBLE** |`);
+            }
+            lines.push('', '> The host must render the canonical bytes for every `REQUIRED VISIBLE` evidence item. Do not substitute a filesystem path or attachment filename.', '');
+            lines.push('#### Audit metadata (not presentation)', '');
             for (const item of visualState.active) {
                 const abs = path.resolve(root, '.ai', 'evidence', id, item.path), link = rel(file, abs);
                 const runtime = item.runtimeUrl ? ` · runtime: \`${item.runtimeUrl}\`` : '';
-                lines.push(`- **${evidenceDisplay(item)}** — \`${item.kind}\` · ${item.source}${runtime} · canonical file: \`${link}\``);
+                lines.push(`- \`${item.id}\` · \`${item.kind}\` · ${item.source}${runtime} · canonical file: \`${link}\``);
             }
             lines.push('');
         }

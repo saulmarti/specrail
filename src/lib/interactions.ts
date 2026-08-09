@@ -5,7 +5,8 @@ import { finalPresentation, specificationPresentation } from './presentation.js'
 import { loadProjectConfig } from './project.js';
 import { blockerVisualization, questionsVisualization } from './visualization.js';
 import { pendingAmendments } from './amendments.js';
-import type { NativeInteraction, QuestionOption, TaskQuestion } from './types.js';
+import { runtimeRecommendation } from './phase-handoff.js';
+import type { HostActionInteraction, NativeInteraction, Presentation, QuestionOption, TaskQuestion } from './types.js';
 
 function option(label:string,description=''):QuestionOption{return{label:String(label),description:String(description||label)};}
 function header(value:unknown):string{return String(value||'Decision').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase()).slice(0,30);}
@@ -21,7 +22,17 @@ interface InteractionInput {
 }
 
 interface NoInteraction { tool:null; questions:[]; reason:string; }
-export type InteractionResult = NativeInteraction | NoInteraction;
+export type InteractionResult = NativeInteraction | HostActionInteraction | NoInteraction;
+
+function presentationHostActions(presentation: Presentation): HostActionInteraction | null {
+ if(!presentation.presentationContract.evidence.inlineRequired)return null;
+ const acknowledgement=presentation.presentationContract.acknowledgement;
+ if(acknowledgement.approvalReady)return null;
+ const retryIds=new Set([...acknowledgement.pendingActionIds,...acknowledgement.blockingActionIds]);
+ const actions=presentation.presentationContract.fallback.requiredHostActions.filter(action=>retryIds.has(action.id));
+ const session=presentation.presentationContract.sessionId==='unspecified'?'<stable-codex-session-id>':presentation.presentationContract.sessionId;
+ return{tool:'host_actions',presentation,actions,reason:acknowledgement.status==='blocked'?'Required review evidence was not successfully presented. Retry the blocking host actions before approval.':'Review presentation must be completed and acknowledged before the approval question can be emitted.',recordCommand:`specrail presentation record ${acknowledgement.taskId} --gate ${presentation.presentationContract.gate} --session ${session} --presentation-digest ${presentation.presentationContract.presentationDigest} --action <ACTION_ID> --outcome <presented|opened|offered|failed|unavailable> [--detail ...]`};
+}
 
 export function interactionForTask(root:string,id:string,kind='current',input:InteractionInput={}):InteractionResult{
  const task=loadTask(findTask(root,id));
@@ -57,17 +68,37 @@ export function interactionForTask(root:string,id:string,kind='current',input:In
   const scope=amendment.scopeAdditions.length?amendment.scopeAdditions.map(value=>`- ${value}`).join('\n'):'- Ninguno';
   const markdown=`# ${amendment.id} — ${amendment.title}\n\n**Motivo**\n\n${amendment.reason}\n\n## Cambios solicitados\n\n${changes}\n\n## Nuevos criterios de aceptación\n\n${criteria}\n\n## Ampliación del blast radius\n\n### Archivos permitidos añadidos\n\n${allowed}\n\n### Protecciones retiradas\n\n${protectedRemoved}\n\n### Alcance añadido\n\n${scope}\n\n> La especificación base permanece sellada. Aprobar esta Amendment crea una nueva especificación efectiva; rechazarla conserva la especificación efectiva actual.`;
   const presentation={...base,kind:'specification-amendment-review',title:`${amendment.id} — ${amendment.title}`,markdown,attachments:[{id:amendment.id,kind:'specification-amendment',label:`${amendment.id} — ${amendment.title}`,path:amendmentPath,relativePath:path.relative(path.resolve(root),amendmentPath),mediaType:'application/json',display:'inline' as const},...base.attachments],visualization:null};
+  const hostActions=presentationHostActions(presentation);if(hostActions)return hostActions;
   return{tool:'request_user_input',presentation,questions:[{id:`amendment:${amendment.id}`,header:'Cambio de alcance',question:`Después de revisar ${amendment.id} — ${amendment.title}, ¿qué quieres hacer con este cambio de especificación?`,options:[option('Aprobar cambio','Incorporar esta Amendment a la especificación efectiva y actualizar sus criterios/límites'),option('Rechazar cambio','Mantener la especificación efectiva actual sin este cambio'),option('Revisar / mantener pendiente','No decidir todavía y devolver el cambio para más contexto o refinamiento')],isOther:true}]};
  }
  if(kind==='spec-approval'){
   const legacyReapproval=task.meta.spec_approval==='approved'&&Number(task.meta.spec_integrity_version||1)<2;
-  return{tool:'request_user_input',presentation:specificationPresentation(root,id,sessionId),questions:[{id:'spec-approval',header:'Especificación',question:legacyReapproval?`Esta aprobación de ${task.meta.id} — ${task.meta.title} es anterior al sello de integridad endurecido. Después de revisar la especificación, el blast radius y el contexto de proyecto actuales, ¿confirmas la revalidación?`:`Después de revisar la especificación mostrada arriba para ${task.meta.id} — ${task.meta.title}, ¿está lista para ejecutarse?`,options:legacyReapproval?[option('Reaprobar con sello','Conservar el punto actual del workflow y añadir el nuevo sello de integridad sin recalcular el baseline'),option('Solicitar refinamiento','Volver al Product Specifier para revisar alcance o contexto'),option('Rechazar tarea','Cerrar sin continuar')]:[option('Aprobar especificación','Iniciar el workflow aprobado'),option('Solicitar refinamiento','Volver al Product Specifier con comentarios'),option('Rechazar tarea','Cerrar sin implementar')],isOther:true}]};
+  const presentation=specificationPresentation(root,id,sessionId);const hostActions=presentationHostActions(presentation);if(hostActions)return hostActions;
+  return{tool:'request_user_input',presentation,questions:[{id:'spec-approval',header:'Especificación',question:legacyReapproval?`Esta aprobación de ${task.meta.id} — ${task.meta.title} es anterior al sello de integridad endurecido. Después de revisar la especificación, el blast radius y el contexto de proyecto actuales, ¿confirmas la revalidación?`:`Después de revisar la especificación mostrada arriba para ${task.meta.id} — ${task.meta.title}, ¿está lista para ejecutarse?`,options:legacyReapproval?[option('Reaprobar con sello','Conservar el punto actual del workflow y añadir el nuevo sello de integridad sin recalcular el baseline'),option('Solicitar refinamiento','Volver al Product Specifier para revisar alcance o contexto'),option('Rechazar tarea','Cerrar sin continuar')]:[option('Aprobar especificación','Iniciar el workflow aprobado'),option('Solicitar refinamiento','Volver al Product Specifier con comentarios'),option('Rechazar tarea','Cerrar sin implementar')],isOther:true}]};
+ }
+
+ if(kind==='phase-boundary'){
+  const runtime=runtimeRecommendation(root,id,{sessionId:sessionId??null});
+  if(!runtime.stopBeforePhaseWork||!runtime.boundary)return{tool:null,questions:[],reason:'No phase-boundary decision is currently required'};
+  const implementation=runtime.role==='implementer';
+  const phaseLabel=implementation?'implementación':'revisión independiente';
+  const freshRecommended=runtime.boundary.recommendation==='fresh-chat-recommended';
+  const choiceMap={
+    'Continuar con el modelo actual':'continue-current',
+    'Pausar para cambiar modelo o razonamiento':'pause-model-change',
+    'Abrir un chat nuevo':'fresh-chat'
+  } as const;
+  return{tool:'request_user_input',turnPolicy:{afterSelection:'persist-boundary-choice-and-end-turn',sameTurnPhaseWork:'forbidden',resumePrompt:`Continue ${task.meta.id}`,choiceMap},questions:[{id:'phase-boundary',header:implementation?'Implementation Boundary':'Review Boundary',question:`${task.meta.id} — ${task.meta.title} está sellada para ${phaseLabel}. ¿Cómo quieres continuar? Ninguna opción inicia ${phaseLabel} en este turno.`,options:[
+    option('Continuar con el modelo actual',`Terminar este turno. En el siguiente turno continuar ${task.meta.id} con el modelo/reasoning que ya está seleccionado en Codex.`),
+    option('Pausar para cambiar modelo o razonamiento',`Terminar aquí. Cambia el selector real de Codex y después continúa con: Continue ${task.meta.id}. SpecRail no cambia ni guarda el modelo.`),
+    option('Abrir un chat nuevo',`${freshRecommended?'Recomendado para este boundary. ':''}Abrir un chat nuevo para mayor aislamiento de contexto y continuar allí con: Continue ${task.meta.id}.`)
+  ],isOther:false}]};
  }
  if(kind==='blocker'){
   const visualization=blockerVisualization(root,loadProjectConfig(root),task,sessionId) ?? undefined;
   return{tool:'request_user_input',...(visualization?{visualization}:{}),questions:[{id:'workflow-blocker',header:'Bloqueo',question:`${task.meta.id} — ${task.meta.title} está bloqueada: ${task.meta.block_reason||'Un problema relevante necesita tu decisión.'}`,options:[option('Reintentar fase','Reanudar desde la fase interrumpida'),option('Volver a especificación','Refinar alcance o decisiones antes de continuar'),option('Rechazar tarea','Cerrar sin implementar')],isOther:true}]};
  }
- if(kind==='final-approval')return{tool:'request_user_input',presentation:finalPresentation(root,id,sessionId),questions:[{id:'final-approval',header:'Resultado final',question:`Después de revisar el resultado y las evidencias mostradas arriba para ${task.meta.id} — ${task.meta.title}, ¿aceptas el resultado?`,options:[option('Aprobar resultado','Aceptar el resultado y continuar a su entrega'),option('Solicitar cambios','Volver a la fase adecuada con comentarios'),option('Mantener abierta','Dejarla pendiente de validación')],isOther:true}]};
+ if(kind==='final-approval'){const presentation=finalPresentation(root,id,sessionId);const hostActions=presentationHostActions(presentation);if(hostActions)return hostActions;return{tool:'request_user_input',presentation,questions:[{id:'final-approval',header:'Resultado final',question:`Después de revisar el resultado y las evidencias mostradas arriba para ${task.meta.id} — ${task.meta.title}, ¿aceptas el resultado?`,options:[option('Aprobar resultado','Aceptar el resultado y continuar a su entrega'),option('Solicitar cambios','Volver a la fase adecuada con comentarios'),option('Mantener abierta','Dejarla pendiente de validación')],isOther:true}]};}
  if(kind==='delivery')return{tool:'request_user_input',questions:[{id:'delivery',header:'Entrega',question:`${task.meta.id} — ${task.meta.title} está aprobada. ¿Cómo entregamos los cambios del worktree?`,options:[option('Fusionar localmente','Fusionar la rama de la tarea en su rama base y limpiar el worktree'),option('Confirmar entrega externa','Confirmar que el PR o merge externo ya se completó'),option('Mantener worktree','Conservar la rama y el worktree sin cerrar la tarea')],isOther:false}]};
  throw new Error(`Unknown interaction kind: ${kind}`);
 }

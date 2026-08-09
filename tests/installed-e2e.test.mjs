@@ -50,7 +50,10 @@ test('installed CLI completes a natural backend request with native approval pay
     const spec = json(bin, ['interaction', id, '--kind', 'spec-approval', '--root', repo]);
     assert.equal(spec.tool, 'request_user_input');
     assert.equal(spec.questions[0].options[0].label, 'Aprobar especificación');
-    json(bin, ['spec', 'approve', id, '--session', 'backend-planner', '--root', repo]);
+    const approvedSpec=json(bin, ['spec', 'approve', id, '--session', 'backend-planner', '--root', repo]);
+    assert.equal(approvedSpec.userInputRequired,true);assert.equal(approvedSpec.interaction.turnPolicy.sameTurnPhaseWork,'forbidden');
+    json(bin, ['boundary', 'choose', id, '--choice', 'fresh', '--session', 'backend-planner', '--root', repo]);
+    const boundaryNext=json(bin,['next',id,'--session','backend-builder','--root',repo]);assert.equal(boundaryNext.action,'enter-phase-boundary');assert.equal(boundaryNext.userInputRequired,false);
     json(bin, ['boundary', 'enter', id, '--session', 'backend-builder', '--root', repo]);
     json(bin, ['run', id, '--session', 'backend-builder', '--root', repo]);
     const worktree = json(bin, ['worktree', 'create', id, '--root', repo]);
@@ -62,6 +65,8 @@ test('installed CLI completes a natural backend request with native approval pay
     const reviewFile = path.join(reviewDir, 'technical-review.md');
     writeFileSync(reviewFile, '# Technical Review\n\nNo blocking findings.\n');
     json(bin, ['evidence', 'add', id, '--kind', 'technical-review-report', '--path', reviewFile, '--source', 'technical-review', '--label', 'Technical review', '--tool', 'Codex reviewer', '--root', repo]);
+    const reviewBoundary=json(bin,['next',id,'--session','backend-reviewer','--root',repo]);assert.equal(reviewBoundary.action,'phase-boundary');
+    json(bin, ['boundary', 'choose', id, '--choice', 'current', '--session', 'backend-reviewer', '--root', repo]);
     json(bin, ['boundary', 'enter', id, '--session', 'backend-reviewer', '--root', repo]);
     json(bin, ['phase', 'complete', id, '--session', 'backend-reviewer', '--root', repo]);
     const dir = path.join(repo, '.ai', 'evidence', id, 'backend');

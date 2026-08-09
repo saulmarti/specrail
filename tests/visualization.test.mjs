@@ -114,7 +114,9 @@ test('a rendered result requires the exact Visualize skill, signed plan, content
  assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId:'chat-b',gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:'visualize{\"path\":\"/tmp/different.html\"}',resultText:'Rendered a canonical comparison without inventing facts.',artifactPath:artifact,quality:goodQuality}),/path must match artifactPath/i);
  const contentRef=`visualize${JSON.stringify({path:artifact,title:'SpecRail review'})}`;
  const record=recordVisualizationRun(root,{taskId:id,sessionId:'chat-b',gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:contentRef,resultText:'Rendered a canonical comparison of the approved screenshots and criteria.',artifactPath:artifact,quality:goodQuality});
- assert.equal(record.outcome,'rendered');assert.equal(record.invocationRef,contentRef);assert.match(record.resultDigest,/^[a-f0-9]{64}$/);assert.deepEqual([...record.displayedSourceIds].sort(),[...plan.requiredSourceIds].sort());assert.equal(getVisualizationRun(root,id,'spec-approval','chat-b').provider,'$visualize');
+ assert.equal(record.schemaVersion,4);assert.equal(record.outcome,'rendered');assert.equal(record.invocationRef,contentRef);assert.match(record.resultDigest,/^[a-f0-9]{64}$/);assert.deepEqual([...record.displayedSourceIds].sort(),[...plan.requiredSourceIds].sort());
+ assert.equal(record.artifactPrepared,true);assert.equal(record.referencePrepared,true);assert.equal(record.hostPresentation,'unverified');assert.equal(record.hostPresentationVerified,false);assert.equal(record.fallbackRequired,true);
+ const loadedRun=getVisualizationRun(root,id,'spec-approval','chat-b');assert.equal(loadedRun.provider,'$visualize');assert.equal(loadedRun.hostPresentation,'unverified');assert.equal(loadedRun.fallbackRequired,true);
  const flat=path.join(path.dirname(artifact),'flat.html');writeFileSync(flat,readFileSync(artifact,'utf8').replace('data-specrail-comparator="v2"',''));
  assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId:'chat-b',gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:`visualize${JSON.stringify({path:flat})}`,resultText:'A static evidence gallery must not satisfy the comparator v2 contract.',artifactPath:flat,quality:goodQuality}),/Comparator v2|side-by-side|viewport/i);
  const mislabeled=path.join(path.dirname(artifact),'mislabeled.html');writeFileSync(mislabeled,readFileSync(artifact,'utf8').replace(/data-specrail-review-role="(?:before|proposal|after)"/g,'data-specrail-review-role="supporting"'));
@@ -245,4 +247,15 @@ test('Visual Comparator v2 rejects required canonical images that are directly h
  assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId,gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:`visualize${JSON.stringify({path:wrongCase})}`,resultText:'Attempted comparator with a case-changed canonical evidence ID.',artifactPath:wrongCase,quality:goodQuality}),/missing visible embedded canonical evidence/i);
  const zeroSize=visualArtifact('zero-size-source.html',plan);html=readFileSync(zeroSize,'utf8').replace(`data-specrail-evidence-id="${victim}"`,`data-specrail-evidence-id="${victim}" width="0"`);writeFileSync(zeroSize,html);
  assert.throws(()=>recordVisualizationRun(root,{taskId:id,sessionId,gate:'spec-approval',outcome:'rendered',provider:'$visualize',planDigest:plan.planDigest,sourceDigest:plan.sourceDigest,invocationRef:`visualize${JSON.stringify({path:zeroSize})}`,resultText:'Attempted comparator with a zero-size canonical source.',artifactPath:zeroSize,quality:goodQuality}),/directly visible/i);
+});
+
+test('legacy visualization preference remains user-owned across project normalization',()=>{
+ const root=repo();
+ const configPath=path.join(root,'.ai','config.json');
+ const disk=JSON.parse(readFileSync(configPath,'utf8'));
+ disk.visualize.enabled=false;
+ writeFileSync(configPath,`${JSON.stringify(disk,null,2)}\n`);
+ assert.equal(loadProjectConfig(root).visualize.enabled,false);
+ initProject(root);
+ assert.equal(loadProjectConfig(root).visualize.enabled,false);
 });

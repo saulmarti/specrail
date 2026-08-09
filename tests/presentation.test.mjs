@@ -1,16 +1,18 @@
 // @ts-nocheck
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { initProject } from '../dist/src/lib/project.js';
-import { readyProjectContext, addApprovedImageGenProposal, setDefaultBlastRadius } from './helpers.mjs';
+import { readyProjectContext, addApprovedImageGenProposal, setDefaultBlastRadius, acknowledgePresentation } from './helpers.mjs';
 import { createTask, findTask, loadTask, saveTask, setSection } from '../dist/src/lib/task.js';
-import { startRefinement, completePhase } from '../dist/src/lib/workflow.js';
+import { startRefinement, completePhase, approveSpecification, returnTask } from '../dist/src/lib/workflow.js';
 import { interactionForTask } from '../dist/src/lib/interactions.js';
 import { nextAction } from '../dist/src/lib/next.js';
+import { recordPresentationAction } from '../dist/src/lib/presentation-state.js';
+import { proposeAmendment } from '../dist/src/lib/amendments.js';
 const repo = () => mkdtempSync(path.join(tmpdir(), 'ai-flow-presentation-'));
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z7h8AAAAASUVORK5CYII=', 'base64');
 function prepareFrontendSpec(root) {
@@ -37,8 +39,9 @@ function prepareFrontendSpec(root) {
 }
 test('spec approval includes a complete chat presentation before native input', () => {
     const root = repo(), id = prepareFrontendSpec(root);
-    const interaction = interactionForTask(root, id, 'spec-approval');
-    assert.equal(interaction.tool, 'request_user_input');
+    const interaction = interactionForTask(root, id, 'spec-approval', { sessionId: 'chat-spec-review' });
+    assert.equal(interaction.tool, 'host_actions');
+    assert.equal(interaction.presentation.presentationContract.acknowledgement.approvalReady, false);
     assert.equal(interaction.presentation.requiredBeforeInput, true);
     assert.equal(interaction.presentation.kind, 'specification-review');
     assert.match(interaction.presentation.markdown, /TASK-0001 — Ajustar tamaño del h3/);
@@ -56,7 +59,9 @@ test('spec approval includes a complete chat presentation before native input', 
     assert.ok(interaction.presentation.markdown.includes(bundleText), 'presentation.markdown must contain the complete authoritative Review Bundle');
     assert.doesNotMatch(bundleText, /!\[[^\]]*(?:Homepage actual|Propuesta H3)[^\]]*\]\(/, 'Review Bundle must not emit broken repository-local image Markdown');
     assert.doesNotMatch(interaction.presentation.markdown, /## Evidencias visibles/, 'presentation layer must not append a second evidence listing');
-    assert.match(bundleText, /### Active visual review evidence/);
+    assert.match(bundleText, /### Review Surface — active canonical visuals/);
+    assert.match(bundleText, /REQUIRED VISIBLE/);
+    assert.match(bundleText, /Audit metadata \(not presentation\)/);
     assert.match(bundleText, /\*\*Before · \/ · section#home-spotlight · 1440x1000 · focused-section\*\*/);
     assert.match(bundleText, /\*\*Proposal · \/ · section#home-spotlight · 1440x1000 · focused-section\*\*/);
     assert.match(bundleText, /\*\*Before · \/ · section#home-spotlight · 390x844 · focused-section\*\*/);
@@ -66,6 +71,25 @@ test('spec approval includes a complete chat presentation before native input', 
     assert.ok(interaction.presentation.attachments.every(item => path.isAbsolute(item.path)));
     assert.deepEqual(interaction.presentation.attachments.map(x => x.kind), ['review-cockpit', 'review-bundle', 'frontend-before', 'frontend-before', 'frontend-proposal', 'frontend-proposal', 'ui-design-brief', 'ui-proposal-review', 'ui-design-brief', 'ui-proposal-review']);
     assert.ok(interaction.presentation.attachments.filter(item=>item.kind==='frontend-proposal').every(item=>item.label.includes('/ · section#home-spotlight')&&item.label.includes('focused-section')));
+    assert.deepEqual(interaction.presentation.presentationContract.evidence.requiredAttachmentIds, interaction.presentation.attachments.filter(item=>item.requiredVisible).map(item=>item.id));
+    assert.equal(interaction.presentation.presentationContract.evidence.localPathsAreAuditOnly,true);
+    assert.equal(interaction.presentation.presentationContract.visualize.hostPresentation,'unverified');
+    assert.equal(interaction.presentation.presentationContract.visualize.hostPresentationVerified,false);
+    assert.equal(interaction.presentation.presentationContract.visualize.fallbackRequired,true);
+    assert.equal(interaction.presentation.presentationContract.evidence.requiredSurface,'conversation');
+    assert.equal(interaction.presentation.presentationContract.evidence.onUnavailable,'block-approval');
+    assert.equal(interaction.presentation.presentationContract.cockpit.openActionRequired,true);
+    assert.match(interaction.presentation.presentationContract.cockpit.openUrl,/^file:\/\//);
+    assert.equal(interaction.presentation.attachments[0].openUrl,interaction.presentation.presentationContract.cockpit.openUrl);
+    assert.equal(interaction.presentation.presentationContract.fallback.mode,'inline-evidence-and-cockpit-open-action');
+    const hostActions=interaction.presentation.presentationContract.fallback.requiredHostActions;
+    const imageActions=hostActions.filter(item=>item.type==='present-image');
+    assert.deepEqual(imageActions.map(item=>item.attachmentId),interaction.presentation.presentationContract.evidence.requiredAttachmentIds);
+    assert.ok(imageActions.every(item=>item.surface==='conversation'));
+    const cockpitAction=hostActions.find(item=>item.type==='open-url');
+    assert.equal(cockpitAction.attachmentId,'REVIEW-COCKPIT');assert.equal(cockpitAction.label,'Abrir Review Cockpit');assert.equal(cockpitAction.url,interaction.presentation.presentationContract.cockpit.openUrl);
+    const acknowledged=acknowledgePresentation(root,id,'spec-approval','chat-spec-review');assert.equal(acknowledged.approvalReady,true);
+    const ready=interactionForTask(root,id,'spec-approval',{sessionId:'chat-spec-review'});assert.equal(ready.tool,'request_user_input');assert.match(ready.questions[0].question,/mostrada arriba/i);
 });
 
 test('final approval presentation also embeds the complete final Review Bundle', () => {
@@ -89,13 +113,15 @@ test('final approval presentation also embeds the complete final Review Bundle',
     assert.equal(interaction.presentation.visualization.skillInvocation, '$visualize');
 });
 
-test('next action carries the same review presentation so a new chat can render it', () => {
-    const root = repo(), id = prepareFrontendSpec(root);
-    const next = nextAction(root, id);
-    assert.equal(next.action, 'approve-or-refine-specification');
-    assert.equal(next.interaction.presentation.requiredBeforeInput, true);
-    assert.match(next.interaction.presentation.markdown, /## Scope/);
-    assert.equal(next.interaction.presentation.attachments.length, 10);
+test('next action requires host presentation acknowledgement before the native approval question', () => {
+    const root = repo(), id = prepareFrontendSpec(root), sessionId='chat-next-review';
+    const first = nextAction(root, id, {sessionId});
+    assert.equal(first.action, 'present-review');assert.equal(first.actor,'host');assert.equal(first.userInputRequired,false);assert.equal(first.interaction.tool,'host_actions');
+    assert.equal(first.interaction.presentation.requiredBeforeInput, true);
+    assert.match(first.interaction.presentation.markdown, /## Scope/);
+    assert.equal(first.interaction.presentation.attachments.length, 10);
+    acknowledgePresentation(root,id,'spec-approval',sessionId);
+    const ready=nextAction(root,id,{sessionId});assert.equal(ready.action,'approve-or-refine-specification');assert.equal(ready.userInputRequired,true);assert.equal(ready.interaction.tool,'request_user_input');
 });
 test('orchestrator contract requires the exact SpecRail gate, full Review Bundle, evidence, and Visualize before asking', () => {
     const skill = readFileSync(path.join(process.cwd(), 'skills/ai-flow/SKILL.md'), 'utf8');
@@ -103,15 +129,17 @@ test('orchestrator contract requires the exact SpecRail gate, full Review Bundle
     assert.match(skill, /exact `next\.interaction` \/ `interaction` returned by SpecRail/i);
     assert.match(skill, /complete `interaction\.presentation\.markdown`/i);
     assert.match(skill, /complete authoritative Review Bundle/i);
-    assert.match(skill, /present every host-supported required item/i);
-    assert.match(skill, /must not be re-inlined as Markdown\/file-path images/i);
-    assert.match(skill, /native `visualize` content reference must be visible before the gate questions/i);
+    assert.match(skill, /Every `present-image` action must surface.*inside the conversation/i);
+    assert.match(skill, /opening a file picker, printing a path.*does not count/i);
+    assert.match(skill, /artifactPrepared.*referencePrepared.*not proof of display/i);
     assert.match(skill, /Do not ask for approval/i);
 });
 test('approval prompts explicitly refer to the preview already shown above', () => {
-    const root = repo(), id = prepareFrontendSpec(root);
-    const interaction = interactionForTask(root, id, 'spec-approval');
-    assert.match(interaction.questions[0].question, /mostrada arriba/i);
+    const root = repo(), id = prepareFrontendSpec(root), sessionId='chat-prompt-review';
+    assert.equal(interactionForTask(root,id,'spec-approval',{sessionId}).tool,'host_actions');
+    acknowledgePresentation(root,id,'spec-approval',sessionId);
+    const interaction = interactionForTask(root, id, 'spec-approval', {sessionId});
+    assert.equal(interaction.tool,'request_user_input');assert.match(interaction.questions[0].question, /mostrada arriba/i);
     assert.equal(interaction.presentation.attachments[0].display, 'inline');
     assert.equal(interaction.presentation.attachments[0].mediaType, 'text/html');
     assert.equal(interaction.presentation.attachments[1].mediaType, 'text/markdown');
@@ -119,7 +147,7 @@ test('approval prompts explicitly refer to the preview already shown above', () 
     assert.match(interaction.presentation.attachments[3].mediaType, /^image\//);
     assert.match(interaction.presentation.attachments[4].mediaType, /^image\//);
     assert.match(interaction.presentation.attachments[5].mediaType, /^image\//);
-    for (const index of [2,3,4,5]) assert.equal(interaction.presentation.attachments[index].display, 'attachment');
+    for (const index of [2,3,4,5]) { assert.equal(interaction.presentation.attachments[index].display, 'inline'); assert.equal(interaction.presentation.attachments[index].requiredVisible, true); }
     assert.match(interaction.presentation.attachments[2].label, /^Before · \/ · section#home-spotlight · 1440x1000 · focused-section$/);
     assert.match(interaction.presentation.attachments[3].label, /^Before · \/ · section#home-spotlight · 390x844 · focused-section$/);
     assert.match(interaction.presentation.attachments[4].label, /^Proposal · \/ · section#home-spotlight · 1440x1000 · focused-section$/);
@@ -133,7 +161,7 @@ test('managed activation delegates presentation details to the global skill whil
     assert.match(managed, /never invent request_user_input/i);
     assert.match(managed, /exact SpecRail interaction/i);
     assert.match(managed, /complete Review Bundle/i);
-    assert.match(managed, /emit the native \$visualize reference before the questions/i);
+    assert.match(managed, /\$visualize preparation leaves hostPresentation unverified/i);
     assert.match(managed, /Never implement before specification approval/i);
 });
 
@@ -177,8 +205,81 @@ test('approval presentation does not attach stale frontend visuals outside the c
     assert.equal(frontendVisuals.some(item=>item.target==='section#historical-target'),false);
     assert.equal(frontendVisuals.length,4);
     const bundleText=readFileSync(interaction.presentation.attachments.find(item=>item.kind==='review-bundle').path,'utf8');
-    const activeSection=bundleText.split('### Active visual review evidence')[1]?.split('### Supporting evidence')[0]||'';
+    const activeSection=bundleText.split('### Review Surface — active canonical visuals')[1]?.split('#### Audit metadata (not presentation)')[0]||'';
     assert.doesNotMatch(activeSection,/historical-target/);
     assert.match(bundleText,/### Historical \/ inactive visual evidence/);
     assert.match(bundleText,/section#historical-target/);
+});
+
+
+test('visual approval is mechanically blocked until the current session acknowledges the exact presentation', () => {
+    const root=repo(),id=prepareFrontendSpec(root);
+    assert.throws(()=>approveSpecification(root,id,'Bypass attempt'),/presentation acknowledgement|Approval requires --session/i);
+    acknowledgePresentation(root,id,'spec-approval','review-session-a');
+    assert.throws(()=>approveSpecification(root,id,'Wrong session',{sessionId:'review-session-b'}),/presentation is not ready|presentation acknowledgement/i);
+    const approved=approveSpecification(root,id,'Approved after visible review',{sessionId:'review-session-a'});
+    assert.equal(approved.meta.spec_approval,'approved');
+});
+
+test('presentation acknowledgement is invalidated by changed review content and cannot be reused stale', () => {
+    const root=repo(),id=prepareFrontendSpec(root),sessionId='stale-review-session';
+    const before=interactionForTask(root,id,'spec-approval',{sessionId});
+    const oldDigest=before.presentation.presentationContract.presentationDigest;
+    acknowledgePresentation(root,id,'spec-approval',sessionId);
+    assert.equal(interactionForTask(root,id,'spec-approval',{sessionId}).tool,'request_user_input');
+    const task=loadTask(findTask(root,id));task.body=setSection(task.body,'Scope','- Ajustar únicamente el H3 de Home Spotlight.\n- Mantener tipografía, contenido y espaciado lateral.');saveTask(task);
+    const changed=interactionForTask(root,id,'spec-approval',{sessionId});
+    assert.equal(changed.tool,'host_actions');assert.notEqual(changed.presentation.presentationContract.presentationDigest,oldDigest);assert.equal(changed.presentation.presentationContract.acknowledgement.approvalReady,false);
+});
+
+test('tampering with persisted presentation acknowledgement never grants approval', () => {
+    const root=repo(),id=prepareFrontendSpec(root),sessionId='tamper-review-session';
+    acknowledgePresentation(root,id,'spec-approval',sessionId);
+    const runtimeDir=path.join(root,'.ai','runtime','presentations');const file=path.join(runtimeDir,readdirSync(runtimeDir).find(name=>name.includes(`${id}-spec-approval-`)));
+    const stored=JSON.parse(readFileSync(file,'utf8'));stored.recordDigest='forged';writeFileSync(file,JSON.stringify(stored,null,2)+'\n');
+    const interaction=interactionForTask(root,id,'spec-approval',{sessionId});assert.equal(interaction.tool,'host_actions');assert.equal(interaction.presentation.presentationContract.acknowledgement.approvalReady,false);
+});
+
+test('Cockpit open failure is non-blocking only after every required image is actually presented inline', () => {
+    const root=repo(),id=prepareFrontendSpec(root),sessionId='cockpit-fallback-session';
+    const interaction=interactionForTask(root,id,'spec-approval',{sessionId});const contract=interaction.presentation.presentationContract;
+    let state=contract.acknowledgement;
+    for(const action of contract.fallback.requiredHostActions.filter(item=>item.type==='present-image')) state=recordPresentationAction(root,{taskId:id,gate:'spec-approval',sessionId,presentationDigest:contract.presentationDigest,actions:contract.fallback.requiredHostActions,actionId:action.id,outcome:'presented'});
+    const cockpit=contract.fallback.requiredHostActions.find(item=>item.type==='open-url');state=recordPresentationAction(root,{taskId:id,gate:'spec-approval',sessionId,presentationDigest:contract.presentationDigest,actions:contract.fallback.requiredHostActions,actionId:cockpit.id,outcome:'unavailable',detail:'Host cannot open or expose local URL actions.'});
+    assert.equal(state.approvalReady,true);assert.deepEqual(state.blockingActionIds,[]);assert.ok(state.degradedActionIds.includes(cockpit.id));
+    assert.equal(interactionForTask(root,id,'spec-approval',{sessionId}).tool,'request_user_input');
+});
+
+test('CLI forwards the stable session to final approval so acknowledged visual gates can complete', () => {
+    const cliSource=readFileSync(path.join(process.cwd(),'src','cli.ts'),'utf8');
+    assert.match(cliSource,/approveFinal\(root, arg\(2\), flags\.note, \{ sessionId: flags\.session \}\)/);
+});
+
+test('CLI presentation acknowledgement is required before a visual amendment can be decided', () => {
+    const root=repo(),id=prepareFrontendSpec(root),sessionId='chat-amendment-review';
+    acknowledgePresentation(root,id,'spec-approval',sessionId);
+    approveSpecification(root,id,'Approve base specification',{sessionId});
+    const amendment=proposeAmendment(root,id,{title:'Keep the H3 compact on tablet',reason:'The approved visual rule must also cover the intermediate viewport.',changes:['Apply the approved H3 hierarchy at the tablet breakpoint.'],acceptanceCriteria:['The H3 remains fully visible at the tablet breakpoint.']});
+    const cli=path.join(process.cwd(),'dist','src','cli.js');
+    const premature=spawnSync(process.execPath,[cli,'amendment','approve',id,amendment.id,'--root',root,'--session',sessionId],{encoding:'utf8'});
+    assert.notEqual(premature.status,0);assert.match(`${premature.stderr}${premature.stdout}`,/presentation is not ready|presentation acknowledgement/i);
+    const statusRun=spawnSync(process.execPath,[cli,'presentation','status',id,'--root',root,'--gate','spec-approval','--session',sessionId],{encoding:'utf8'});
+    assert.equal(statusRun.status,0,statusRun.stderr);const status=JSON.parse(statusRun.stdout);assert.equal(status.acknowledgement.approvalReady,false);assert.ok(status.actions.some(action=>action.type==='present-image'));
+    const stale=spawnSync(process.execPath,[cli,'presentation','record',id,'--root',root,'--gate','spec-approval','--session',sessionId,'--presentation-digest','0'.repeat(64),'--action',status.actions[0].id,'--outcome','presented'],{encoding:'utf8'});
+    assert.notEqual(stale.status,0);assert.match(`${stale.stderr}${stale.stdout}`,/stale presentation digest/i);
+    for(const action of status.actions){
+      const args=[cli,'presentation','record',id,'--root',root,'--gate','spec-approval','--session',sessionId,'--presentation-digest',status.presentationDigest,'--action',action.id,'--outcome',action.type==='present-image'?'presented':'offered'];
+      const recorded=spawnSync(process.execPath,args,{encoding:'utf8'});assert.equal(recorded.status,0,recorded.stderr);
+    }
+    const ready=spawnSync(process.execPath,[cli,'next',id,'--root',root,'--session',sessionId],{encoding:'utf8'});assert.equal(ready.status,0,ready.stderr);const next=JSON.parse(ready.stdout);assert.equal(next.interaction.tool,'request_user_input');assert.match(next.interaction.questions[0].id,/amendment:/);
+    const approved=spawnSync(process.execPath,[cli,'amendment','approve',id,amendment.id,'--root',root,'--session',sessionId],{encoding:'utf8'});assert.equal(approved.status,0,approved.stderr);assert.equal(JSON.parse(approved.stdout).status,'approved');
+});
+
+test('generic refine/return transitions cannot bypass explicit user approval gates', () => {
+    const root=repo();initProject(root,{name:'Gate bypass protection'});readyProjectContext(root);
+    const task=createTask(root,{title:'Backend approval gate',type:'task',surfaces:['backend']});startRefinement(root,task.meta.id);
+    let loaded=loadTask(findTask(root,task.meta.id));loaded.body=setSection(loaded.body,'Need','Expose a stable health result.');loaded.body=setSection(loaded.body,'Product Value','Let operators confirm availability.');loaded.body=setSection(loaded.body,'Users','Operators.');loaded.body=setSection(loaded.body,'Scope','One read-only health endpoint.');loaded.body=setSection(loaded.body,'Out of Scope','No persistence changes.');loaded.body=setSection(loaded.body,'Acceptance Criteria','- AC-001: GET /health returns 200.');loaded.meta.route.design=false;loaded.meta.route.architecture=false;loaded.meta.route.database=false;saveTask(loaded);setDefaultBlastRadius(root,task.meta.id);completePhase(root,task.meta.id);
+    assert.throws(()=>startRefinement(root,task.meta.id),/user decision gate|request-changes/i);
+    const atFinal=loadTask(findTask(root,task.meta.id));atFinal.meta.status='awaiting_final_approval';atFinal.meta.phase='final-approval';atFinal.meta.waiting_for='user';saveTask(atFinal);
+    assert.throws(()=>returnTask(root,task.meta.id,'builder','bypass'),/user decision gate/i);
 });

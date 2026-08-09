@@ -12,7 +12,7 @@ import type { Attachment, ProjectConfig, TaskDocument, TaskQuestion, Visualizati
 const PHASES = ['product-specifier','ux-ui-designer','technical-architecture','spec-approval','builder','technical-reviewer','qa-engineer','final-customer','final-approval','delivery','done'] as const;
 
 function clean(value: unknown): string { return String(value ?? '').trim(); }
-function enabled(config: ProjectConfig): boolean { return config.visualize.enabled !== false; }
+function enabled(config: ProjectConfig): boolean { return config.visualize?.enabled !== false; }
 function surface(task: TaskDocument, name: string): boolean { return task.meta.surfaces.some(item => item.toLowerCase() === name); }
 function section(task: TaskDocument, name: string): string { return clean(getSection(task.body, name)); }
 
@@ -46,7 +46,7 @@ function plan(input: PlanInput): VisualizationPlan | null {
   const payload = {
     ...input.payload,
     gate: input.gate,
-    priorRun: previous ? { outcome: previous.outcome, recordedAt: previous.recordedAt, resultDigest: previous.resultDigest } : null
+    priorRun: previous ? { outcome: previous.outcome, artifactPrepared: previous.artifactPrepared, referencePrepared: previous.referencePrepared, hostPresentation: previous.hostPresentation, hostPresentationVerified: previous.hostPresentationVerified, fallbackRequired: previous.fallbackRequired, recordedAt: previous.recordedAt, resultDigest: previous.resultDigest } : null
   };
   const sourceDigest = computeVisualizationSourceDigest(input.root, sources, payload);
   const base = {

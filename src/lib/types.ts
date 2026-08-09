@@ -118,6 +118,20 @@ export interface NativeInteraction {
   questions: NativeQuestion[];
   presentation?: Presentation;
   visualization?: VisualizationPlan;
+  turnPolicy?: {
+    afterSelection: 'persist-boundary-choice-and-end-turn';
+    sameTurnPhaseWork: 'forbidden';
+    resumePrompt: string;
+    choiceMap: Record<string, 'continue-current' | 'pause-model-change' | 'fresh-chat'>;
+  };
+}
+
+export interface HostActionInteraction {
+  tool: 'host_actions';
+  presentation: Presentation;
+  actions: PresentationHostAction[];
+  reason: string;
+  recordCommand: string;
 }
 
 export interface TaskQuestion {
@@ -192,6 +206,49 @@ export interface Attachment {
   captureScope?: string | null;
   runtimeUrl?: string | null;
   sha256?: string | null;
+  reviewRole?: 'before' | 'proposal' | 'after' | 'supporting' | null;
+  requiredVisible?: boolean;
+  openUrl?: string | null;
+}
+
+export type PresentationHostAction =
+  | { id: string; type: 'present-image'; surface: 'conversation'; attachmentId: string; label: string; reviewRole: 'before' | 'proposal' | 'after' | 'supporting'; mediaType: string; blocking: true; }
+  | { id: string; type: 'open-url'; surface: 'browser'; attachmentId: 'REVIEW-COCKPIT'; label: string; url: string; blocking: false; };
+
+export type PresentationActionOutcome = 'pending' | 'presented' | 'opened' | 'offered' | 'failed' | 'unavailable';
+
+export interface PresentationActionAcknowledgement {
+  actionId: string;
+  type: PresentationHostAction['type'];
+  outcome: PresentationActionOutcome;
+  detail: string | null;
+  acknowledgedAt: string | null;
+}
+
+export interface PresentationAcknowledgementState {
+  schemaVersion: 1;
+  taskId: string;
+  gate: 'spec-approval' | 'final-approval';
+  sessionId: string;
+  presentationDigest: string;
+  status: 'pending' | 'ready' | 'blocked';
+  approvalReady: boolean;
+  pendingActionIds: string[];
+  blockingActionIds: string[];
+  completedActionIds: string[];
+  degradedActionIds: string[];
+  actions: PresentationActionAcknowledgement[];
+}
+
+export interface PresentationContract {
+  gate: 'spec-approval' | 'final-approval';
+  sessionId: string;
+  presentationDigest: string;
+  evidence: { inlineRequired: boolean; requiredAttachmentIds: string[]; localPathsAreAuditOnly: true; requiredSurface: 'conversation'; onUnavailable: 'block-approval'; };
+  visualize: { artifactPrepared: boolean; referencePrepared: boolean; hostPresentation: 'unverified'; hostPresentationVerified: false; fallbackRequired: boolean; };
+  cockpit: { artifactPrepared: boolean; hostPresentation: 'unverified'; hostPresentationVerified: false; openActionRequired: true; attachmentId: 'REVIEW-COCKPIT'; openUrl: string; };
+  acknowledgement: PresentationAcknowledgementState;
+  fallback: { required: boolean; mode: 'inline-evidence-and-cockpit-open-action'; requiredHostActions: PresentationHostAction[]; };
 }
 
 export interface Presentation {
@@ -204,6 +261,7 @@ export interface Presentation {
   previewUrl: string | null;
   attachments: Attachment[];
   visualization: VisualizationPlan | null;
+  presentationContract: PresentationContract;
 }
 
 export type VisualizationAvailability = 'unknown' | 'available' | 'unavailable';
@@ -276,7 +334,7 @@ export interface VisualizationCapabilityRecord {
 }
 
 export interface VisualizationRunRecord {
-  schemaVersion: 3;
+  schemaVersion: 4;
   taskId: string;
   sessionId: string;
   gate: string;
@@ -289,6 +347,11 @@ export interface VisualizationRunRecord {
   artifactPath: string | null;
   displayedSourceIds: string[];
   quality: VisualizationQuality | null;
+  artifactPrepared: boolean;
+  referencePrepared: boolean;
+  hostPresentation: 'unverified';
+  hostPresentationVerified: false;
+  fallbackRequired: boolean;
   recordedAt: string;
 }
 
@@ -443,9 +506,11 @@ export interface RuntimeRecommendation {
   handoffEstimatedTokens: number | null;
   handoffTruncated: boolean;
   boundary: null | {
-    status: 'required' | 'entered';
+    status: 'required' | 'chosen' | 'entered';
     recommendation: 'same-chat-ok' | 'fresh-chat-recommended';
     sameChatAllowed: true;
+    choice: 'continue-current' | 'pause-model-change' | 'fresh-chat' | null;
+    choiceSessionId: string | null;
     mode: 'same-chat' | 'fresh-chat' | 'unknown' | null;
     originSessionId: string | null;
     enteredSessionId: string | null;

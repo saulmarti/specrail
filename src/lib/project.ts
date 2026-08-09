@@ -44,7 +44,7 @@ export function findProjectRoot(start = process.cwd()): string {
 
 export function initProject(root: string, options: {name?:string} = {}): ProjectConfig {
   const projectRoot = path.resolve(root),ai = path.join(projectRoot, '.ai');
-  for (const directory of ['project','tasks/inbox','tasks/refining','tasks/ready','tasks/active','tasks/blocked','tasks/review','tasks/done','evidence','decisions','reviews','runtime/leases','runtime/context','runtime/capabilities','runtime/visualizations','runtime/traces','runtime/failures','runtime/repairs','runtime/slices','runtime/constitution','metrics','evals/candidates','evals/active','replays','amendments','scope']) mkdirSync(path.join(ai, directory), { recursive: true });
+  for (const directory of ['project','tasks/inbox','tasks/refining','tasks/ready','tasks/active','tasks/blocked','tasks/review','tasks/done','evidence','decisions','reviews','runtime/leases','runtime/context','runtime/capabilities','runtime/visualizations','runtime/presentations','runtime/traces','runtime/failures','runtime/repairs','runtime/slices','runtime/constitution','metrics','evals/candidates','evals/active','replays','amendments','scope']) mkdirSync(path.join(ai, directory), { recursive: true });
   const configPath = path.join(ai, 'config.json'),existing = readJsonObject(configPath);
   const existingCodegraph=(existing.codegraph&&typeof existing.codegraph==='object')?existing.codegraph as Record<string,unknown>:{};
   const existingContextBudget=(existing.contextBudget&&typeof existing.contextBudget==='object')?existing.contextBudget as Record<string,unknown>:{};
@@ -67,8 +67,8 @@ export function initProject(root: string, options: {name?:string} = {}): Project
     subagents: { maxParallel: 3, maxDepth: 1, defaultAccess: 'read-only', writeRequiresApprovedNonOverlappingSubtasks: true, ...((existing.subagents&&typeof existing.subagents==='object')?existing.subagents as Record<string,unknown>:{}) },
     evidence: { ...((existing.evidence&&typeof existing.evidence==='object')?existing.evidence as Record<string,unknown>:{}), requireRealArtifacts: true, embedVisualsInMarkdown: false },
     visualize: {
-      ...((existing.visualize&&typeof existing.visualize==='object')?existing.visualize as Record<string,unknown>:{}),
-      enabled: true, capability:'visualize', discovery:'codex-skill-catalog', skill:'visualize', invocation:'$visualize', mode:'adaptive', maxPerGate:1,
+      enabled: ((existing.visualize&&typeof existing.visualize==='object') ? (existing.visualize as Record<string,unknown>).enabled : undefined) !== false,
+      capability:'visualize', discovery:'codex-skill-catalog', skill:'visualize', invocation:'$visualize', mode:'adaptive', maxPerGate:1,
       fallback:'markdown-and-attachments', sourceOfTruth:'markdown', qualityGate:'risk-based'
     },
     repairs: { profiles: { fast: 2, standard: 3, rigorous: 4 }, stopAndAsk: true, ...((existing.repairs&&typeof existing.repairs==='object')?existing.repairs as Record<string,unknown>:{}) },
@@ -96,8 +96,70 @@ export function initProject(root: string, options: {name?:string} = {}): Project
   return config;
 }
 
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+/**
+ * Return the effective current project configuration without mutating legacy
+ * `.ai/config.json` files. Older projects may legitimately predate newer
+ * optional policy blocks (for example `visualize`). Runtime readers must see
+ * current defaults while preserving every explicit user-owned value.
+ */
+export function normalizeProjectConfig(root: string, value: unknown): ProjectConfig {
+  const projectRoot = path.resolve(root);
+  const existing = objectValue(value);
+  const codegraph = objectValue(existing.codegraph);
+  const preflight = objectValue(codegraph.preflight);
+  const contextBudget = objectValue(existing.contextBudget);
+  const profiles = objectValue(contextBudget.profiles);
+  const visualize = objectValue(existing.visualize);
+
+  return {
+    ...existing,
+    version: Number.isFinite(Number(existing.version)) ? Number(existing.version) : 14,
+    name: typeof existing.name === 'string' && existing.name.trim() ? existing.name : path.basename(projectRoot),
+    projectRoot: typeof existing.projectRoot === 'string' && existing.projectRoot.trim() ? existing.projectRoot : projectRoot,
+    codegraph: {
+      mode: 'mcp', required: true, command: 'codegraph serve --mcp', supportedContract: 'codegraph-cli-v1',
+      ...codegraph,
+      preflight: {
+        missing: 'codegraph init PROJECT --index', existing: 'codegraph sync PROJECT', recovery: 'codegraph index PROJECT --force --quiet', validate: 'codegraph status PROJECT',
+        ...preflight
+      }
+    } as ProjectConfig['codegraph'],
+    context: Object.keys(objectValue(existing.context)).length ? objectValue(existing.context) as ProjectConfig['context'] : { status: 'pending', initializedAt: null, updatedAt: null },
+    subagents: { maxParallel: 3, maxDepth: 1, defaultAccess: 'read-only', writeRequiresApprovedNonOverlappingSubtasks: true, ...objectValue(existing.subagents) },
+    evidence: { requireRealArtifacts: true, embedVisualsInMarkdown: false, ...objectValue(existing.evidence) },
+    visualize: {
+      enabled: true, capability: 'visualize', discovery: 'codex-skill-catalog', skill: 'visualize', invocation: '$visualize', mode: 'adaptive', maxPerGate: 1,
+      fallback: 'markdown-and-attachments', sourceOfTruth: 'markdown', qualityGate: 'risk-based',
+      ...visualize
+    } as ProjectConfig['visualize'],
+    repairs: { profiles: { fast: 2, standard: 3, rigorous: 4 }, stopAndAsk: true, ...objectValue(existing.repairs) },
+    quality: { propertyTesting: 'risk-based', mutationTesting: 'risk-based', ...objectValue(existing.quality) },
+    observability: { mode: 'risk-based', ...objectValue(existing.observability) },
+    failures: { evalThreshold: 2, requireUserApproval: true, ...objectValue(existing.failures) },
+    metrics: { enabled: true, telemetry: false, ...objectValue(existing.metrics) },
+    leases: { ttlMinutes: 30, releaseAtUserGate: true, ...objectValue(existing.leases) } as ProjectConfig['leases'],
+    adaptivePolicy: { enabled: true, minSamplesPerHarness: 3, lowRiskAcceptanceDelta: 0.05, tokenCoverageThreshold: 0.6, ...objectValue(existing.adaptivePolicy) } as ProjectConfig['adaptivePolicy'],
+    contextBudget: {
+      fullRepositoryScan: false, expansionRequiresReason: true,
+      ...contextBudget,
+      profiles: {
+        fast: { initialFiles: 8, maxFiles: 16, codegraphDepth: 1, maxDepth: 2, handoffMaxWords: 180, maxAutomaticExpansions: 2 },
+        standard: { initialFiles: 12, maxFiles: 28, codegraphDepth: 2, maxDepth: 3, handoffMaxWords: 300, maxAutomaticExpansions: 3 },
+        rigorous: { initialFiles: 18, maxFiles: 45, codegraphDepth: 3, maxDepth: 4, handoffMaxWords: 450, maxAutomaticExpansions: 4 },
+        ...profiles
+      } as ProjectConfig['contextBudget']['profiles']
+    } as ProjectConfig['contextBudget']
+  } as ProjectConfig;
+}
+
 export function loadProjectConfig(root: string): ProjectConfig {
-  return JSON.parse(readFileSync(path.join(path.resolve(root), '.ai/config.json'), 'utf8')) as ProjectConfig;
+  const projectRoot = path.resolve(root);
+  const parsed = JSON.parse(readFileSync(path.join(projectRoot, '.ai/config.json'), 'utf8')) as unknown;
+  return normalizeProjectConfig(projectRoot, parsed);
 }
 export function projectContextStatus(root: string): ProjectConfig['context'] { const config=loadProjectConfig(root);return config.context||{status:'pending'}; }
 export function validateProjectContext(root: string): {valid:boolean;errors:string[];required:string[]} {

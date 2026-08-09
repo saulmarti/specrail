@@ -41,6 +41,7 @@ test('Review Cockpit is generated from real task artifacts as a self-contained r
   const html=readFileSync(result.path,'utf8');
   assert.equal(result.stage,'spec');
   assert.match(result.relativePath,/\.ai\/reviews\/TASK-0001-spec-cockpit\.html$/);
+  assert.match(result.openUrl,/^file:\/\//);assert.ok(result.openUrl.includes('TASK-0001-spec-cockpit.html'));assert.equal(result.openActionRequired,true);
   assert.match(html,/SpecRail Review Cockpit/);
   assert.match(html,/Before \/ proposal \/ after/);
   assert.match(html,/data-specrail-comparator="v2"/);
@@ -82,8 +83,8 @@ test('approval presentation attaches the interactive Cockpit before Markdown and
   assert.equal(interaction.presentation.attachments[0].kind,'review-cockpit');
   assert.equal(interaction.presentation.attachments[0].mediaType,'text/html');
   assert.equal(interaction.presentation.attachments[0].display,'inline');
-  assert.match(interaction.presentation.markdown,/generado un Review Cockpit HTML/i);
-  assert.match(interaction.presentation.markdown,/Generarlo no significa que Codex lo haya abierto o mostrado/i);
+  assert.match(interaction.presentation.markdown,/SpecRail genera además un Review Cockpit/i);
+  assert.match(interaction.presentation.markdown,/su generación no prueba que el host lo haya abierto o mostrado/i);
   assert.match(interaction.presentation.markdown,/Review Bundle completo.*autoritativo/i);
   assert.doesNotMatch(interaction.presentation.markdown,/interactive Review Cockpit\.html —/i);
 });
@@ -91,7 +92,10 @@ test('approval presentation attaches the interactive Cockpit before Markdown and
 test('Cockpit generation never claims host presentation succeeded',()=>{
   const root=repo(),id=preparedSpec(root);
   const cockpit=writeReviewCockpit(root,id,'spec');
-  assert.equal(cockpit.hostPresentation,'not-verified');
+  assert.equal(cockpit.hostPresentation,'unverified');
+  assert.equal(cockpit.hostPresentationVerified,false);
+  assert.equal(cockpit.openActionRequired,true);
+  assert.match(cockpit.openUrl,/^file:\/\//);assert.match(cockpit.presentationHint,/openUrl.*explicit browser fallback/i);
   assert.match(cockpit.presentationHint,/does not confirm/i);
   assert.match(cockpit.presentationHint,/opened|rendered|displayed/i);
 });

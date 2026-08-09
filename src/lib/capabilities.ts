@@ -334,8 +334,13 @@ export function recordVisualizationRun(root: string, input: RecordVisualizationR
     }
   }
 
+  const artifactPrepared=Boolean(artifactPath);
+  const referencePrepared=Boolean(invocationRef);
+  // SpecRail can validate a generated artifact/reference, but it cannot currently
+  // observe the host UI well enough to prove the user actually saw it. Keep this
+  // explicit and require the normal review fallback whenever presentation is unverified.
   const record: VisualizationRunRecord = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     taskId: safeSegment(input.taskId),
     sessionId: safeSegment(input.sessionId),
     gate: safeSegment(input.gate),
@@ -348,6 +353,11 @@ export function recordVisualizationRun(root: string, input: RecordVisualizationR
     artifactPath,
     displayedSourceIds,
     quality,
+    artifactPrepared,
+    referencePrepared,
+    hostPresentation: 'unverified',
+    hostPresentationVerified: false,
+    fallbackRequired: true,
     recordedAt: new Date().toISOString()
   };
   atomicJson(visualizationRunPath(root, record.taskId, record.gate, record.sessionId), record);
@@ -361,7 +371,7 @@ export function getVisualizationRun(root: string, taskId: string, gate: string, 
   const outcome = stored.outcome;
   if (outcome !== 'pending' && outcome !== 'rendered' && outcome !== 'fallback' && outcome !== 'failed') return null;
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     taskId: stored.taskId,
     sessionId: stored.sessionId,
     gate: stored.gate,
@@ -374,6 +384,11 @@ export function getVisualizationRun(root: string, taskId: string, gate: string, 
     artifactPath: typeof stored.artifactPath === 'string' ? stored.artifactPath : null,
     displayedSourceIds: Array.isArray(stored.displayedSourceIds) ? stored.displayedSourceIds.filter((item): item is string => typeof item === 'string') : [],
     quality: stored.quality && typeof stored.quality === 'object' ? stored.quality as VisualizationQuality : null,
+    artifactPrepared: stored.artifactPrepared === true || typeof stored.artifactPath === 'string',
+    referencePrepared: stored.referencePrepared === true || typeof stored.invocationRef === 'string',
+    hostPresentation: 'unverified',
+    hostPresentationVerified: false,
+    fallbackRequired: true,
     recordedAt: typeof stored.recordedAt === 'string' ? stored.recordedAt : new Date(0).toISOString()
   };
 }

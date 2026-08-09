@@ -52,7 +52,9 @@ test('a new chat can resume an approved task by title and obtains the exact pers
     const next = nextAction(root, 'favoritos a artistas');
     assert.equal(next.task, task.meta.id);
     assert.equal(next.phase, 'builder');
-    assert.equal(next.actor, 'ai-flow-builder');
+    assert.equal(next.actor, 'user');
+    assert.equal(next.action, 'phase-boundary');
+    assert.equal(next.userInputRequired, true);
 });
 test('closed tasks are not selected by a vague title when an open task matches, but explicit IDs still work', () => {
     const root = repo();

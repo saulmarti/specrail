@@ -36,6 +36,7 @@ export function nextAction(root:string,id:string,options:NextOptions={}){
  const evalCandidates=listEvalCandidates(root).filter(candidate=>candidate.status==='candidate'&&candidate.taskIds.includes(task.meta.id));
  const activeEvals=applicableActiveEvals(root,{phase:task.meta.phase,surfaces:task.meta.surfaces});
  if(interaction?.tool==='request_user_input'&&evalCandidates.length){const candidate=evalCandidates[0]!;(interaction as NativeInteraction).questions.push({id:`eval:${candidate.id}`,header:'Regresión',question:`Este fallo se ha repetido ${candidate.occurrences} veces. ¿Quieres convertirlo en una evaluación permanente?`,options:[{label:'Aprobar evaluación',description:'Activar la regresión para futuras tareas'},{label:'Descartar',description:'No convertir este patrón en una evaluación'},{label:'Decidir más tarde',description:'Mantenerlo como candidato'}],isOther:true});}
+ if(interaction?.tool==='host_actions'){actor='host';action='present-review';}
  const runtime=runtimeRecommendation(root,task.meta.id,{sessionId:options.sessionId ?? null});
  // runtimeRecommendation may prepare a new phase boundary and deliberately reset
  // active CodeGraph context after compiling its seeds into the sealed handoff.
@@ -46,7 +47,12 @@ export function nextAction(root:string,id:string,options:NextOptions={}){
  const legacyIntegrity=task.meta.spec_approval==='approved'&&Number(task.meta.spec_integrity_version||1)<2;
  if(legacyIntegrity&&!amendments.length&&!lease.conflict&&!['done','rejected'].includes(task.meta.status)){actor='user';action='reapprove-hardened-specification';interaction=interactionForTask(root,id,'spec-approval',{sessionId:options.sessionId});}
  const evidence={preApproval:validateEvidence(root,id,'pre-approval'),final:validateEvidence(root,id,'final')};
- if(runtime.stopBeforePhaseWork&&action==='continue'&&!interaction&&!deps.length&&!amendments.length&&!lease.conflict)action='phase-boundary';
+ const boundaryCanPreempt=action==='continue'||(task.meta.status==='blocked'&&action==='wait-for-user');
+ if(runtime.stopBeforePhaseWork&&boundaryCanPreempt&&!deps.length&&!amendments.length&&!lease.conflict){
+  if(runtime.boundary?.status==='chosen'){action='enter-phase-boundary';actor='system';}
+  else{action='phase-boundary';actor='user';interaction=interactionForTask(root,id,'phase-boundary',{sessionId:options.sessionId});}
+ }
+ const userInputRequired=interaction?.tool==='request_user_input';
  const visualization=workflowVisualization(root,loadProjectConfig(root),task,{dependencies:deps,evidence,context:contextInfo,action,actor},options.sessionId ?? undefined);
- return{task:task.meta.id,status:task.meta.status,projectContext:projectContext.status,phase:task.meta.phase,readiness,actor,recommendedSkill:SKILL[task.meta.phase]||null,action,dependencies:deps,interaction,evalCandidates,activeEvals:activeEvals.map(item=>({id:item.id,category:item.category,statement:item.statement,path:item.path})),lease,context:contextInfo,evidence,runtime,visualization};
+ return{task:task.meta.id,status:task.meta.status,projectContext:projectContext.status,phase:task.meta.phase,readiness,actor,recommendedSkill:SKILL[task.meta.phase]||null,action,userInputRequired,dependencies:deps,interaction,evalCandidates,activeEvals:activeEvals.map(item=>({id:item.id,category:item.category,statement:item.statement,path:item.path})),lease,context:contextInfo,evidence,runtime,visualization};
 }

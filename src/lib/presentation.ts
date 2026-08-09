@@ -6,7 +6,9 @@ import { writeReviewBundle } from './review.js';
 import { writeReviewCockpit } from './cockpit.js';
 import { loadProjectConfig } from './project.js';
 import { finalVisualization, specificationVisualization } from './visualization.js';
-import type { Attachment, EvidenceRecord, Presentation, TaskDocument, TaskRoute } from './types.js';
+import { getVisualizationRun } from './capabilities.js';
+import { presentationAcknowledgementState, presentationDigest as computePresentationDigest } from './presentation-state.js';
+import type { Attachment, EvidenceRecord, Presentation, PresentationHostAction, TaskDocument, TaskRoute } from './types.js';
 
 const SPEC_SECTIONS: Array<[string,string]> = [
  ['Need','Necesidad'],['Product Value','Valor para el usuario'],['Users','Usuarios'],['Scope','Alcance'],['UI Target','Objetivo visual'],['Out of Scope','Fuera de alcance'],
@@ -42,7 +44,7 @@ function evidenceForStage(root: string,id: string,stage: 'specification'|'final'
  const visualOrder={before:0,proposal:1,after:2} as const;
  const visuals=[...canonicalVisuals.values()].sort((a,b)=>{const ra=a.kind.includes('proposal')?'proposal':a.kind.includes('after')?'after':'before';const rb=b.kind.includes('proposal')?'proposal':b.kind.includes('after')?'after':'before';return visualOrder[ra]-visualOrder[rb]||String(a.viewport||'').localeCompare(String(b.viewport||''));});
  const selected=[...visuals,...nonVisuals];
- return selected.map(item=>{const file=evidencePath(root,id,item),type=mediaType(file),role=visualRole(item.kind);return{id:item.id,kind:item.kind,label:presentationLabel(item),source:item.source,tool:item.tool,route:item.route,viewport:item.viewport,target:item.target,captureScope:item.captureScope,runtimeUrl:item.runtimeUrl??null,path:file,mediaType:type,display:role?'attachment':'inline',sha256:item.sha256};});
+ return selected.map(item=>{const file=evidencePath(root,id,item),type=mediaType(file),role=visualRole(item.kind);const requiredVisible=type.startsWith('image/');return{id:item.id,kind:item.kind,label:presentationLabel(item),source:item.source,tool:item.tool,route:item.route,viewport:item.viewport,target:item.target,captureScope:item.captureScope,runtimeUrl:item.runtimeUrl??null,path:file,mediaType:type,display:requiredVisible?'inline':'attachment',sha256:item.sha256,reviewRole:role?role.toLowerCase() as 'before'|'proposal'|'after':'supporting',requiredVisible};});
 }
 function sectionsMarkdown(task: TaskDocument,sections: Array<[string,string]>): string {return sections.map(([source,title])=>{const content=cleanSection(getSection(task.body,source));return content?`## ${title}\n\n${content}`:'';}).filter(Boolean).join('\n\n');}
 function previewUrlFor(items: Attachment[], specification: boolean): string | null {
@@ -55,14 +57,30 @@ function build(root: string,id: string,kind: 'specification-review'|'final-resul
  const specification=kind==='specification-review';
  const bundle=writeReviewBundle(root,id,specification?'spec':'final');
  const cockpit=writeReviewCockpit(root,id,specification?'spec':'final');
- const cockpitDocument: Attachment={id:'REVIEW-COCKPIT',kind:'review-cockpit',label:`${task.meta.id} — interactive Review Cockpit.html`,source:'specrail-review-cockpit',tool:'SpecRail',route:null,viewport:null,path:cockpit.path,mediaType:'text/html',display:'inline',sha256:cockpit.sourceDigest};
+ const cockpitDocument: Attachment={id:'REVIEW-COCKPIT',kind:'review-cockpit',label:`${task.meta.id} — interactive Review Cockpit.html`,source:'specrail-review-cockpit',tool:'SpecRail',route:null,viewport:null,path:cockpit.path,mediaType:'text/html',display:'inline',sha256:cockpit.sourceDigest,openUrl:cockpit.openUrl};
  const bundleDocument: Attachment={id:'REVIEW-BUNDLE',kind:'review-bundle',label:`${task.meta.id} — ${specification?'specification':'final'} review.md`,source:'specrail-review-bundle',tool:'SpecRail',route:null,viewport:null,path:bundle.path,mediaType:'text/markdown',display:'inline',sha256:null};
  const attachments=[cockpitDocument,bundleDocument,...evidenceForStage(root,id,specification?'specification':'final')];
  const heading=specification?'Especificación lista para validar':'Resultado listo para validar';
  const bundleMarkdown=readFileSync(bundle.path,'utf8').trim();
- const markdown=[`> **${heading}.** SpecRail ha generado un Review Cockpit HTML en \`${cockpit.relativePath}\`. Generarlo no significa que Codex lo haya abierto o mostrado. Cuando la skill \`$visualize\` esté disponible, úsala como superficie interactiva nativa del Review Cockpit. El Review Bundle completo que sigue es autoritativo y debe mostrarse íntegramente en chat antes de pedir aprobación. Las imágenes canónicas se presentan mediante attachments/Visualize; no se duplican como enlaces Markdown locales porque Codex no los renderiza de forma fiable.`,bundleMarkdown].filter(Boolean).join('\n\n');
+ const markdown=[`> **${heading}.** El Review Bundle completo que sigue es autoritativo y debe mostrarse íntegramente antes de pedir aprobación. Toda evidencia con \`requiredVisible=true\` debe presentarse directamente en una superficie visible del host; una ruta local, un nombre de archivo o un HTML generado nunca satisfacen por sí solos “mostrar evidencia”. Los paths son únicamente metadata de auditoría. SpecRail genera además un Review Cockpit, pero su generación no prueba que el host lo haya abierto o mostrado.`,bundleMarkdown].filter(Boolean).join('\n\n');
  const config=loadProjectConfig(root);
- return{kind,requiredBeforeInput:true,title:`${task.meta.id} — ${task.meta.title}`,markdown,taskPath:task.path,taskRelativePath:taskRelativePath(root,task.path),previewUrl:previewUrlFor(attachments,specification),attachments,visualization:specification?specificationVisualization(root,config,task,attachments,sessionId):finalVisualization(root,config,task,attachments,sessionId)};
+ const visualization=specification?specificationVisualization(root,config,task,attachments,sessionId):finalVisualization(root,config,task,attachments,sessionId);
+ const gate=specification?'spec-approval' as const:'final-approval' as const;
+ const run=getVisualizationRun(root,task.meta.id,gate,sessionId);
+ const requiredAttachmentIds=attachments.filter(item=>item.requiredVisible&&item.id).map(item=>String(item.id));
+ const requiredHostActions:PresentationHostAction[]=attachments.filter(item=>item.requiredVisible&&item.id).map(item=>({id:`present:${String(item.id)}`,type:'present-image',surface:'conversation',attachmentId:String(item.id),label:item.label,reviewRole:item.reviewRole||'supporting',mediaType:item.mediaType,blocking:true}));
+ requiredHostActions.push({id:'cockpit:open-or-offer',type:'open-url',surface:'browser',attachmentId:'REVIEW-COCKPIT',label:'Abrir Review Cockpit',url:cockpit.openUrl,blocking:false});
+ const presentationDigest=computePresentationDigest({taskId:task.meta.id,gate,actions:requiredHostActions,attachments});
+ const acknowledgement=presentationAcknowledgementState(root,{taskId:task.meta.id,gate,sessionId:sessionId??null,presentationDigest,actions:requiredHostActions});
+ const presentationContract={
+   gate,sessionId:String(sessionId||'').trim()||'unspecified',presentationDigest,
+   evidence:{inlineRequired:requiredAttachmentIds.length>0,requiredAttachmentIds,localPathsAreAuditOnly:true as const,requiredSurface:'conversation' as const,onUnavailable:'block-approval' as const},
+   visualize:{artifactPrepared:run?.artifactPrepared===true,referencePrepared:run?.referencePrepared===true,hostPresentation:'unverified' as const,hostPresentationVerified:false as const,fallbackRequired:true},
+   cockpit:{artifactPrepared:true,hostPresentation:'unverified' as const,hostPresentationVerified:false as const,openActionRequired:true as const,attachmentId:'REVIEW-COCKPIT' as const,openUrl:cockpit.openUrl},
+   acknowledgement,
+   fallback:{required:true,mode:'inline-evidence-and-cockpit-open-action' as const,requiredHostActions}
+ };
+ return{kind,requiredBeforeInput:true,title:`${task.meta.id} — ${task.meta.title}`,markdown,taskPath:task.path,taskRelativePath:taskRelativePath(root,task.path),previewUrl:previewUrlFor(attachments,specification),attachments,visualization,presentationContract};
 }
 export function specificationPresentation(root:string,id:string,sessionId?:string|null):Presentation{return build(root,id,'specification-review',sessionId);}
 export function finalPresentation(root:string,id:string,sessionId?:string|null):Presentation{return build(root,id,'final-result-review',sessionId);}

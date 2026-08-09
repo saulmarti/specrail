@@ -128,7 +128,7 @@ test('approval presentation never confuses generated Cockpit HTML with host-visi
     assert.match(primary, /generation and host presentation as different states/i);
     assert.match(primary, /never claim it is open, rendered, attached, or visible/i);
     assert.match(primary, /complete `interaction\.presentation\.markdown`/i);
-    assert.match(primary, /preferred native in-conversation Review Cockpit renderer/i);
+    assert.match(primary, /mandatory fallback.*requiredVisible.*REVIEW-COCKPIT/i);
     assert.match(managed, /Generated Cockpit HTML is not proof of display/i);
     assert.match(managed, /complete Review Bundle/i);
 });
@@ -159,6 +159,17 @@ test('frontend preview contracts forbid raw index.html and local-image rendering
     assert.match(primary, /presentation\.previewUrl/i);
     assert.match(primary, /data:image|data URI/i);
     assert.match(primary, /broken image placeholder|broken evidence/i);
-    assert.match(managed, /data URIs/i);
+    assert.match(managed, /local paths never count as shown evidence/i);
     assert.match(managed, /presentation\.previewUrl/i);
+});
+
+test('a failed next command cannot be bypassed with readiness diagnostics', () => {
+  const primary=readFileSync(path.join(root,'skills','ai-flow','SKILL.md'),'utf8');
+  const managed=readFileSync(path.join(root,'src','lib','managed-installation.ts'),'utf8');
+  assert.match(primary,/next.*runtime blocker/i);
+  assert.match(managed,/next.*blocks routing/i);
+  for (const text of [primary,managed]) {
+    assert.match(text,/readiness.*diagnostic/i);
+    assert.match(text,/never replace|never.*replace/i);
+  }
 });

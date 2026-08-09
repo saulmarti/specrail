@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { contextStatus } from './context.js';
 import { listEvidence, matchesAnyExpectedVisualContext } from './evidence.js';
 import { taskMetrics } from './metrics.js';
@@ -26,18 +27,21 @@ export interface CockpitCheck {
 }
 
 export interface CockpitResult {
-  schemaVersion: 1;
+  schemaVersion: 2;
   taskId: string;
   stage: Exclude<CockpitStage, 'auto'>;
   path: string;
   relativePath: string;
+  openUrl: string;
   readiness: { score: number; passed: number; total: number; label: string };
   blockers: string[];
   checks: CockpitCheck[];
   nextAction: string;
   sourceDigest: string;
   generatedAt: string;
-  hostPresentation: 'not-verified';
+  hostPresentation: 'unverified';
+  hostPresentationVerified: false;
+  openActionRequired: true;
   presentationHint: string;
 }
 
@@ -284,18 +288,21 @@ export function writeReviewCockpit(root: string, id: string, requestedStage: Coc
   mkdirSync(path.dirname(target), { recursive: true });
   writeFileSync(target, renderHtml({ task, stage, checks, blockers, readiness: ready, metrics, repairs, context, trace, evidence, visuals, nextAction: action, sourceDigest, replayComparison, harnessRecommendation, acceptance, scopeGuard, amendments }));
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     taskId: task.meta.id,
     stage,
     path: target,
     relativePath: path.relative(projectRoot, target).split(path.sep).join('/'),
+    openUrl: pathToFileURL(target).href,
     readiness: ready,
     blockers,
     checks,
     nextAction: action,
     sourceDigest,
     generatedAt: new Date().toISOString(),
-    hostPresentation: 'not-verified',
-    presentationHint: 'Cockpit HTML was generated locally. This does not confirm that the current host opened, rendered, attached, or displayed it.'
+    hostPresentation: 'unverified',
+    hostPresentationVerified: false,
+    openActionRequired: true,
+    presentationHint: 'Cockpit HTML was generated locally. This does not confirm that the current host opened, rendered, attached, or displayed it. Use openUrl as the explicit browser fallback action instead of asking the user to navigate to a filesystem path.'
   };
 }

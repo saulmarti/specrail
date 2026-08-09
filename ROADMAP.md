@@ -41,10 +41,11 @@ Specification and final approval gates now carry one deterministic presentation 
 - the orchestrator must show the complete Review Bundle and supported evidence before forwarding the exact native questions returned by SpecRail;
 - generating Review Cockpit HTML never proves that the user has seen it; generated and host-visible states remain distinct;
 - in Codex, the installed `visualize` skill is invoked explicitly as `$visualize` when an interactive review materially helps; SpecRail never invents a `visualize.render` tool, asks the user to type `/visualize`, or calls private plugin scripts directly;
-- a Visualize result counts as rendered only when a native `visualize...` content reference points at the actual task-owned HTML fragment outside the repository, every required canonical visual is an embedded `data:image/...;base64,...` `<img>` carrying its own evidence ID, and the signed visualization/evaluation contract remains valid;
-- frontend visual evidence is presented through host-supported attachments, Cockpit embedding, or Visualize data URIs rather than repository-local Markdown image links, so broken local thumbnails are never treated as reviewed evidence;
+- a Visualize `outcome: rendered` now means the task-owned HTML fragment and native `visualize...` reference were validated against the signed plan; it does not claim that the host UI displayed them; `artifactPrepared`, `referencePrepared`, `hostPresentation`, and `hostPresentationVerified` stay distinct;
+- active canonical visual evidence is marked `requiredVisible` and maps to explicit blocking `present-image` conversation actions; visual gates first return `host_actions`, and a session/digest-bound acknowledgment must resolve those actions before SpecRail emits or accepts the native decision; local paths and generated HTML are audit metadata only, and inability to present a required image blocks approval instead of degrading to paths;
+- the generated Review Cockpit exposes an exact `file://` `openUrl` and the fallback maps it to a non-blocking `open-url` browser action; `opened` is recorded only after a real open and `offered` only after the actionable URL is exposed, so “Cockpit generated” never ends as only `/tmp/...html` or `.ai/...` text;
 - before/after frontend captures and the user-facing preview are tied to the served `http(s)` runtime that produced them; raw `index.html`, `file://`, and filesystem-path previews are invalid for approval, and the gate exposes the verified runtime as `presentation.previewUrl`;
-- Markdown and evidence remain the authoritative non-blocking fallback when Visualize is unavailable.
+- Markdown and evidence remain authoritative; the direct fallback is required whenever Visualize/Cockpit host presentation is unverified, not only when Visualize is unavailable.
 
 **Success metric:** zero approval turns where SpecRail claims a review surface was displayed without host-visible evidence, and fewer approvals made from summaries that omit governed requirements or evidence.
 
@@ -80,7 +81,8 @@ SpecRail separates planning, implementation, and independent review **without st
 - the Codex model/reasoning selector is always user-owned; SpecRail never stores, recommends, or validates a model name;
 - planning/refinement uses a bounded repository context so expensive reasoning does not absorb implementation-scale code context prematurely;
 - when the specification reaches Builder, SpecRail compiles an executable implementation capsule and enforces a strong **turn boundary** before coding; `startExecution`/phase completion mechanically reject bypasses rather than trusting agent prose;
-- the boundary is flexible: `same-chat-ok` for small low-risk work, `fresh-chat-recommended` for normal/risky/context-heavy work; either path must explicitly enter the boundary before phase work;
+- `spec approve` exposes `approved`, `userInputRequired`, and the native boundary `interaction` at the top level; the explicit choices are current selector, pause to change model/reasoning, or fresh chat, and none may implement in the approval turn;
+- the boundary is flexible: `same-chat-ok` for small low-risk work, `fresh-chat-recommended` for normal/risky/context-heavy work; the native choice is persisted first, and only the next continuation may explicitly enter the already-chosen boundary before phase work;
 - a same-chat entry performs a logical authority reset while a fresh-chat entry also removes prior-phase conversation from raw input context;
 - the implementation capsule is optimized for execution by a less-capable model: authority, ordered steps, ACs, Scope Guard, QA Mission, UI proposal/evidence, CodeGraph seeds, Definition of Done, and stop/escalation conditions are explicit;
 - implementation receives at least `standard` repository context and preserves `rigorous` when the approved execution profile requires it;

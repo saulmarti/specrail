@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync } from
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { initProject } from '../dist/src/lib/project.js';
-import { readyProjectContext, addApprovedImageGenProposal, setDefaultBlastRadius, enterCurrentPhaseBoundary } from './helpers.mjs';
+import { readyProjectContext, addApprovedImageGenProposal, setDefaultBlastRadius, enterCurrentPhaseBoundary, acknowledgePresentation } from './helpers.mjs';
 import { createTask, findTask, loadTask, saveTask, setSection } from '../dist/src/lib/task.js';
 import { addEvidence, validateEvidence, expectedVisualContexts, visualEvidenceDigest } from '../dist/src/lib/evidence.js';
 import { startRefinement, completePhase, approveSpecification, startExecution } from '../dist/src/lib/workflow.js';
@@ -186,7 +186,8 @@ test('frontend route requires before, proposal, after, QA, customer, learning, a
     completePhase(root, task.meta.id);
     addApprovedImageGenProposal(root, task.meta.id, { target: 'section#homepage-hero' });
     completePhase(root, task.meta.id);
-    approveSpecification(root, task.meta.id);
+    acknowledgePresentation(root,task.meta.id,'spec-approval','frontend-spec-approval');
+    approveSpecification(root, task.meta.id, 'Approved by user', {sessionId:'frontend-spec-approval'});
     enterCurrentPhaseBoundary(root, task.meta.id, 'frontend-builder');
     startExecution(root, task.meta.id, { sessionId: 'frontend-builder' });
     completePhase(root, task.meta.id, { sessionId: 'frontend-builder' });
@@ -198,7 +199,7 @@ test('frontend route requires before, proposal, after, QA, customer, learning, a
     addEvidence(root, task.meta.id, { kind: 'frontend-after', path: after, source: 'browser-capture', label: 'After', tool: 'Codex browser', route: '/', viewport: '1440x1000', target: 'section#homepage-hero', captureScope: 'focused-section', runtimeUrl: 'http://127.0.0.1:4173/' });
     const afterAudit = file(root, task.meta.id, 'frontend', 'after-layout.json', JSON.stringify({ schemaVersion: 1, screenshotKind: 'frontend-after', route: '/', target: 'section#homepage-hero', viewport: { width: 1440, height: 1000 }, capture: { scope: 'focused-section', targetFound: true, targetVisible: true, targetCoverage: 0.7 }, checks: { horizontalOverflow: false, textClipping: false, overlappingElements: false, unreadableText: false }, measurements: [{ selector: 'section#homepage-hero', clientWidth: 800, scrollWidth: 800, clientHeight: 400, scrollHeight: 400 }] }));
     addEvidence(root, task.meta.id, { kind: 'ui-after-validation', path: afterAudit, source: 'browser-layout-validation', label: 'After audit', tool: 'Chrome DevTools' });
-    addEvidence(root, task.meta.id, { kind: 'qa-report', path: qa, source: 'qa-validation', label: 'QA', tool: 'Codex browser' });
+    addEvidence(root, task.meta.id, { kind: 'qa-report', path: qa, source: 'qa-validation', label: 'QA', tool: 'Codex browser', attributes: { verification: { type: 'mixed' }, automatedVisualQA: { hostBrowser: 'available', surfaceClass: 'host-browser', attempted: true, status: 'passed', surface: 'chatgpt-desktop-@Browser', attemptRef: 'browser-call-pass-1', targetUrl: 'http://127.0.0.1:4173/' } } });
     completePhase(root, task.meta.id, { sessionId: 'frontend-reviewer' });
     assert.equal(loadTask(findTask(root, task.meta.id)).meta.phase, 'final-customer');
     assert.equal(validateEvidence(root, task.meta.id, 'final').valid, false);
@@ -209,6 +210,55 @@ test('frontend route requires before, proposal, after, QA, customer, learning, a
     assert.equal(validateEvidence(root, task.meta.id, 'final').valid, true);
 });
 //# sourceMappingURL=evidence-reality.test.js.map
+test('browser QA distinguishes human verification from automated host-browser availability', () => {
+    const root=repo();initProject(root,{name:'Browser QA contract'});
+    const task=createTask(root,{title:'Browser QA',type:'task',surfaces:['frontend']});
+    const qa=file(root,task.meta.id,'qa','browser-unavailable.md','# QA\n\nHuman inspection passed, but the host browser could not run.');
+    addEvidence(root,task.meta.id,{kind:'qa-report',path:qa,source:'qa-validation',label:'QA',tool:'Codex',attributes:{verification:{type:'mixed'},automatedVisualQA:{hostBrowser:'available',surfaceClass:'host-browser',attempted:true,status:'unavailable',surface:'chatgpt-desktop-@Browser',attemptRef:'browser-call-unavailable-1',targetUrl:'http://127.0.0.1:4173/',reason:'Host Browser failed to connect to the live localhost runtime.'}}});
+    const result=validateEvidence(root,task.meta.id,'qa');
+    assert.match(result.errors.join('; '),/AUTOMATED_VISUAL_QA_UNAVAILABLE: Host Browser failed/i);
+    assert.equal(result.valid,false);
+});
+
+test('a shell localhost failure cannot masquerade as host-browser visual QA', () => {
+    const root=repo();initProject(root,{name:'Browser surface contract'});
+    const task=createTask(root,{title:'Browser surface',type:'task',surfaces:['frontend']});
+    const qa=file(root,task.meta.id,'qa','shell-only.md','# QA\n\nTerminal localhost access failed.');
+    addEvidence(root,task.meta.id,{kind:'qa-report',path:qa,source:'qa-validation',label:'QA',tool:'Codex',attributes:{verification:{type:'automated'},automatedVisualQA:{hostBrowser:'available',surfaceClass:'host-browser',attempted:true,status:'unavailable',surface:'agent-shell-sandbox',attemptRef:'shell-probe-1',targetUrl:'http://127.0.0.1:4173/',reason:'Sandboxed curl could not access localhost.'}}});
+    const result=validateEvidence(root,task.meta.id,'qa');
+    assert.match(result.errors.join('; '),/surface cannot be a shell\/terminal transport/i);
+});
+
+
+
+test('automated Browser PASS cannot be recorded as human-only verification', () => {
+    const root=repo();initProject(root,{name:'Browser QA coherence'});
+    const task=createTask(root,{title:'Browser QA coherence',type:'task',surfaces:['frontend']});
+    const qa=file(root,task.meta.id,'qa','browser-pass-human.md','# QA\n\nBrowser automation passed but the verification type is incorrectly human-only.');
+    addEvidence(root,task.meta.id,{kind:'qa-report',path:qa,source:'qa-validation',label:'QA',tool:'Codex',attributes:{verification:{type:'human'},automatedVisualQA:{hostBrowser:'available',surfaceClass:'host-browser',attempted:true,status:'passed',surface:'chatgpt-desktop-@Browser',attemptRef:'browser-call-pass-human',targetUrl:'http://127.0.0.1:4173/'}}});
+    const result=validateEvidence(root,task.meta.id,'qa');
+    assert.equal(result.valid,false);assert.match(result.errors.join('; '),/verification\.type=human is inconsistent with an attempted automated Browser QA result/i);
+});
+
+test('browser QA requires a concrete host-browser class, invocation reference, and served target URL', () => {
+    const root=repo();initProject(root,{name:'Browser QA provenance'});
+    const task=createTask(root,{title:'Browser QA provenance',type:'task',surfaces:['frontend']});
+    const qa=file(root,task.meta.id,'qa','browser-missing-provenance.md','# QA\n\nClaimed Browser pass without a concrete invocation reference or served target.');
+    addEvidence(root,task.meta.id,{kind:'qa-report',path:qa,source:'qa-validation',label:'QA',tool:'Codex',attributes:{verification:{type:'automated'},automatedVisualQA:{hostBrowser:'available',surfaceClass:'host-without-browser',attempted:true,status:'passed',surface:'chatgpt-desktop-@Browser',attemptRef:'',targetUrl:'file:///tmp/index.html'}}});
+    const result=validateEvidence(root,task.meta.id,'qa'),errors=result.errors.join('; ');
+    assert.equal(result.valid,false);assert.match(errors,/surfaceClass must be host-browser/i);assert.match(errors,/attemptRef/i);assert.match(errors,/targetUrl.*HTTP\(S\)/i);
+});
+
+test('current Codex host without Browser is recorded separately from a failed Browser attempt and remains blocking', () => {
+    const root=repo();initProject(root,{name:'Host Browser unavailable'});
+    const task=createTask(root,{title:'CLI browser capability',type:'task',surfaces:['frontend']});
+    const qa=file(root,task.meta.id,'qa','host-browser-unavailable.md','# QA\n\nCurrent Codex host surface has no Browser capability.');
+    addEvidence(root,task.meta.id,{kind:'qa-report',path:qa,source:'qa-validation',label:'QA',tool:'Codex CLI',attributes:{verification:{type:'human'},automatedVisualQA:{hostBrowser:'unavailable',surfaceClass:'host-without-browser',attempted:false,status:'unavailable',surface:'codex-cli',reason:'Current Codex CLI surface does not expose Browser.'}}});
+    const result=validateEvidence(root,task.meta.id,'qa');
+    assert.equal(result.valid,false);assert.match(result.errors.join('; '),/AUTOMATED_VISUAL_QA_UNAVAILABLE: Current Codex CLI surface does not expose Browser/i);
+    assert.equal(result.errors.some(error=>/attempted host browser surface/i.test(error)),false,result.errors.join('; '));
+});
+
 test('declared capture scope is part of the exact visual evidence context', () => {
     const root=repo();initProject(root,{name:'Capture exactness'});readyProjectContext(root);
     const task=createTask(root,{title:'Exact capture scope',type:'task',surfaces:['frontend'],size:'small',risk:'low'});startRefinement(root,task.meta.id);readySpec(root,task.meta.id);

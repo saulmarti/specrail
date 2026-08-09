@@ -6,7 +6,7 @@ import { initProject, findProjectRoot, resolveRepositoryRoot, projectContextStat
 import { createTask, listTasks, findTask, loadTask, saveTask, setSection, patchTask, addDependency, createSubtask, resolveTaskReference } from './lib/task.js';
 import { addQuestion, answerQuestion, listQuestions } from './lib/questions.js';
 import { addEvidence, listEvidence, validateEvidence, visualEvidenceDigest } from './lib/evidence.js';
-import { startRefinement, completePhase, approveSpecification, requestSpecChanges, rejectTask, startExecution, blockTask, resumeTask, returnTask, approveFinal, rejectFinal, completeDelivery } from './lib/workflow.js';
+import { startRefinement, completePhase, approveSpecification, requestSpecChanges, rejectTask, startExecution, blockTask, resumeTask, returnTask, approveFinal, rejectFinal, completeDelivery, approveAmendmentDecision, rejectAmendmentDecision } from './lib/workflow.js';
 import { createWorktree, checkpointWorktree, removeWorktree } from './lib/worktree.js';
 import { doctor, doctorFixPlan, applyDoctorFixes } from './lib/doctor.js';
 import { nextAction } from './lib/next.js';
@@ -36,11 +36,14 @@ import { createReplay, replayStatus, startReplayVariant, completeReplayVariant, 
 import { recommendHarness } from './lib/policy.js';
 import { acceptanceCoverage } from './lib/acceptance.js';
 import { setBlastRadius, scopeGuardStatus } from './lib/scope-guard.js';
-import { proposeAmendment, listAmendments, approveAmendment, rejectAmendment } from './lib/amendments.js';
+import { proposeAmendment, listAmendments } from './lib/amendments.js';
 import { inferUpdateChannel, updateSpecRail, type UpdateChannel } from './lib/update.js';
-import { enterPhaseBoundary } from './lib/phase-boundary.js';
+import { choosePhaseBoundary, enterPhaseBoundary } from './lib/phase-boundary.js';
 import { estimatePhaseBoundary } from './lib/boundary-metrics.js';
 import { runtimeRecommendation } from './lib/phase-handoff.js';
+import { finalPresentation, specificationPresentation } from './lib/presentation.js';
+import { recordPresentationAction, type PresentationGate } from './lib/presentation-state.js';
+import type { PresentationActionOutcome } from './lib/types.js';
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PACKAGE_META = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')) as { version?: string };
 const VERSION = PACKAGE_META.version || '0.0.0';
@@ -207,12 +210,13 @@ async function main() {
             root = findProjectRoot(rootFrom(flags));
             if (arg(1) === 'approve') {
                 const approved = approveSpecification(root, arg(2), flags.note, { sessionId: flags.session });
-                output({ ...taskSummary(approved), next: nextAction(root, approved.meta.id, { sessionId: flags.session ? String(flags.session) : null }) }, true);
+                const next = nextAction(root, approved.meta.id, { sessionId: flags.session ? String(flags.session) : null });
+                output({ ...taskSummary(approved), approved: true, userInputRequired: next.userInputRequired, interaction: next.interaction, next }, true);
             }
             else if (arg(1) === 'changes')
-                output(taskSummary(requestSpecChanges(root, arg(2), requireFlag(flags, 'note'))), true);
+                output(taskSummary(requestSpecChanges(root, arg(2), requireFlag(flags, 'note'), { sessionId: flags.session })), true);
             else if (arg(1) === 'reject')
-                output(taskSummary(rejectTask(root, arg(2), flags.note)), true);
+                output(taskSummary(rejectTask(root, arg(2), flags.note, { sessionId: flags.session })), true);
             else if (arg(1) === 'lint') {
                 const task = loadTask(findTask(root, arg(2)));
                 output(lintSpecification(task, { stage: flags.stage || 'approval' }), true);
@@ -244,9 +248,9 @@ async function main() {
         case 'final':
             root = findProjectRoot(rootFrom(flags));
             if (arg(1) === 'approve')
-                output(taskSummary(approveFinal(root, arg(2), flags.note)), true);
+                output(taskSummary(approveFinal(root, arg(2), flags.note, { sessionId: flags.session })), true);
             else if (arg(1) === 'reject')
-                output(taskSummary(rejectFinal(root, arg(2), requireFlag(flags, 'note'), flags['return-to'] || 'builder')), true);
+                output(taskSummary(rejectFinal(root, arg(2), requireFlag(flags, 'note'), flags['return-to'] || 'builder', { sessionId: flags.session })), true);
             else
                 throw new Error('Unknown final command');
             break;
@@ -281,8 +285,8 @@ async function main() {
             root=findProjectRoot(rootFrom(flags));
             if(arg(1)==='propose') { const value=flags.file?jsonValue(flags.file):{title:requireFlag(flags,'title'),reason:requireFlag(flags,'reason'),changes:surfaces(requireFlag(flags,'changes')),acceptanceCriteria:surfaces(flags['acceptance-criteria']),allowedFiles:surfaces(flags['allowed-files']),protectedFilesRemoved:surfaces(flags['unprotect-files']),scopeAdditions:surfaces(flags['scope-additions'])}; output(proposeAmendment(root,arg(2),value),true); }
             else if(arg(1)==='list') output(listAmendments(root,arg(2)),true);
-            else if(arg(1)==='approve') output(approveAmendment(root,arg(2),arg(3),flags.note||'Approved by user'),true);
-            else if(arg(1)==='reject') output(rejectAmendment(root,arg(2),arg(3),flags.note||'Rejected by user'),true);
+            else if(arg(1)==='approve') output(approveAmendmentDecision(root,arg(2),arg(3),flags.note||'Approved by user',{sessionId:flags.session?String(flags.session):undefined}),true);
+            else if(arg(1)==='reject') output(rejectAmendmentDecision(root,arg(2),arg(3),flags.note||'Rejected by user',{sessionId:flags.session?String(flags.session):undefined}),true);
             else throw new Error('Use: specrail amendment propose|list|approve|reject TASK [AMD-ID]');
             break;
         }
@@ -307,6 +311,14 @@ async function main() {
             const sub = arg(1);
             if (sub === 'status') {
                 output(runtimeRecommendation(root, taskId, { sessionId: flags.session }), true);
+            } else if (sub === 'choose') {
+                const runtime = runtimeRecommendation(root, taskId, { sessionId: flags.session });
+                if (!runtime.handoffDigest) throw new Error('No active implementation/review boundary for this task');
+                if (!flags.session) throw new Error('Boundary choose requires --session <stable-codex-session-id>');
+                const rawChoice=String(requireFlag(flags,'choice'));
+                const choice=rawChoice==='current'?'continue-current':rawChoice==='pause'?'pause-model-change':rawChoice==='fresh'?'fresh-chat':rawChoice;
+                const boundary = choosePhaseBoundary(root, taskId, choice as 'continue-current'|'pause-model-change'|'fresh-chat', { sessionId: flags.session, handoffDigest: runtime.handoffDigest, handoffContentDigest: runtime.handoffContentDigest, handoffWords: runtime.handoffWords });
+                output({ boundary, runtime: runtimeRecommendation(root, taskId, { sessionId: flags.session }) }, true);
             } else if (sub === 'enter') {
                 const runtime = runtimeRecommendation(root, taskId, { sessionId: flags.session });
                 if (!runtime.handoffDigest) throw new Error('No active implementation/review boundary for this task');
@@ -320,7 +332,7 @@ async function main() {
                     implementationTurns: flags.turns === undefined ? null : Number(flags.turns),
                     inputCostPerMillion: flags['input-cost-per-million'] === undefined ? null : Number(flags['input-cost-per-million'])
                 }), true);
-            } else throw new Error('Use: specrail boundary status|enter|estimate TASK [--session ID]');
+            } else throw new Error('Use: specrail boundary status|choose|enter|estimate TASK [--session ID]');
             break;
         }
         case 'context': {
@@ -434,6 +446,26 @@ async function main() {
             break;
         }
 
+        case 'presentation': {
+            root = findProjectRoot(rootFrom(flags));
+            const sub = arg(1);
+            const taskId = arg(2) || requireFlag(flags, 'task');
+            const rawGate = String(flags.gate || 'spec-approval');
+            const gate: PresentationGate = rawGate === 'spec' ? 'spec-approval' : rawGate === 'final' ? 'final-approval' : rawGate as PresentationGate;
+            if (!['spec-approval','final-approval'].includes(gate)) throw new Error('Presentation gate must be spec-approval or final-approval');
+            const sessionId = flags.session ? String(flags.session) : null;
+            const presentation = gate === 'spec-approval' ? specificationPresentation(root, taskId, sessionId) : finalPresentation(root, taskId, sessionId);
+            const contract = presentation.presentationContract;
+            if (sub === 'status') {
+                output({ taskId, gate, presentationDigest: contract.presentationDigest, acknowledgement: contract.acknowledgement, actions: contract.fallback.requiredHostActions }, true);
+            } else if (sub === 'record') {
+                if (!sessionId) throw new Error('Presentation record requires --session <stable-codex-session-id>');
+                const suppliedDigest = String(requireFlag(flags, 'presentation-digest'));
+                if (suppliedDigest !== contract.presentationDigest) throw new Error('Stale presentation digest; fetch the current presentation status and execute its host actions');
+                output(recordPresentationAction(root, { taskId, gate, sessionId, presentationDigest: contract.presentationDigest, actions: contract.fallback.requiredHostActions, actionId: String(requireFlag(flags, 'action')), outcome: String(requireFlag(flags, 'outcome')) as PresentationActionOutcome, detail: flags.detail ? String(flags.detail) : null }), true);
+            } else throw new Error('Use: specrail presentation status|record TASK --gate spec-approval|final-approval --session ID');
+            break;
+        }
         case 'qa': {
             root=findProjectRoot(rootFrom(flags));const task=loadTask(findTask(root,arg(2)||arg(1)));
             if(arg(1)==='mission') output({taskId:task.meta.id,text:qaMissionText(task),hash:qaMissionHash(task),approvedHash:task.meta.qa_mission_hash,valid:validateQAMission(task).length===0,errors:validateQAMission(task)},true);
@@ -527,8 +559,9 @@ async function main() {
             } else output(doctor(root, process.env.AI_FLOW_HOME ? path.resolve(process.env.AI_FLOW_HOME) : undefined), true);
             break;
         default: console.log(`specrail commands:\n  init, preflight, intake, project status|complete|learn, create, list, resolve, status, readiness, why-blocked, next, interaction, patch, refine\n  section set, question add|answer|list, phase complete\n  spec approve|changes|reject|lint, run, block, resume, return
-  lease status|acquire|take|release, boundary status|enter|estimate TASK, context status|request, review bundle|cockpit, cockpit TASK\n  evidence add|list|validate, acceptance coverage, scope set|status, amendment propose|list|approve|reject, dependency add, subtask create\n  worktree create|checkpoint|remove, final approve|reject, delivery merge|external|keep
+  lease status|acquire|take|release, boundary status|choose|enter|estimate TASK, context status|request, review bundle|cockpit, cockpit TASK\n  evidence add|list|validate, acceptance coverage, scope set|status, amendment propose|list|approve|reject, dependency add, subtask create\n  worktree create|checkpoint|remove, final approve|reject, delivery merge|external|keep
   capability visualize status|record [--skill visualize], visualization status|record|validate-plan
+  presentation status|record TASK --gate spec-approval|final-approval --session ID
   qa mission, failure record|list, eval list|approve|dismiss, repair status|reset
   metrics, trace [TASK]|validate TASK, constitution list|add|check, quality, operations, slice status|create|materialize
   replay create|status|start|complete|compare|event|scenarios|cleanup

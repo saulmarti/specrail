@@ -5,13 +5,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { initProject, loadProjectConfig } from '../dist/src/lib/project.js';
-import { readyProjectContext, addApprovedImageGenProposal, setDefaultBlastRadius } from './helpers.mjs';
+import { readyProjectContext, addApprovedImageGenProposal, setDefaultBlastRadius, acknowledgePresentation } from './helpers.mjs';
 import { createTask, findTask, loadTask, saveTask, setSection } from '../dist/src/lib/task.js';
 import { startRefinement, completePhase, approveSpecification, startExecution, blockTask, resumeTask } from '../dist/src/lib/workflow.js';
 import { contextStatus, requestContextExpansion } from '../dist/src/lib/context.js';
 import { nextAction } from '../dist/src/lib/next.js';
 import { runtimeRecommendation } from '../dist/src/lib/phase-handoff.js';
-import { enterPhaseBoundary, loadPhaseBoundary } from '../dist/src/lib/phase-boundary.js';
+import { choosePhaseBoundary, enterPhaseBoundary, loadPhaseBoundary } from '../dist/src/lib/phase-boundary.js';
 import { estimatePhaseBoundary } from '../dist/src/lib/boundary-metrics.js';
 import { acquireTaskLease, leaseStatus } from '../dist/src/lib/lease.js';
 import { addEvidence } from '../dist/src/lib/evidence.js';
@@ -27,11 +27,19 @@ function backendAtSpecApproval(root){
   completePhase(root,t.meta.id);return t.meta.id;
 }
 function backendAtBuilder(root){const id=backendAtSpecApproval(root);approveSpecification(root,id);return id;}
+
+function chooseBoundary(root,id,runtime,choice,sessionId){
+  return choosePhaseBoundary(root,id,choice,{sessionId,handoffDigest:runtime.handoffDigest,handoffContentDigest:runtime.handoffContentDigest,handoffWords:runtime.handoffWords});
+}
+function chooseAndEnter(root,id,runtime,{choice='continue-current',choiceSessionId,entrySessionId=choiceSessionId}={}){
+  chooseBoundary(root,id,runtime,choice,choiceSessionId);
+  return enterPhaseBoundary(root,id,{sessionId:entrySessionId,handoffDigest:runtime.handoffDigest,handoffContentDigest:runtime.handoffContentDigest,handoffWords:runtime.handoffWords});
+}
 function frontendAtBuilder(root){
   initProject(root,{name:'Visual handoff'});readyProjectContext(root);
   const task=createTask(root,{title:'Refine hero hierarchy',type:'task',surfaces:['frontend'],size:'small',risk:'low'});startRefinement(root,task.meta.id);let t=loadTask(findTask(root,task.meta.id));
   for(const[h,v]of [['Need','Reduce hero heading dominance while preserving content.'],['Product Value','Visitors scan the primary action more easily.'],['Users','Desktop and mobile visitors.'],['Scope','Change only the homepage hero heading presentation.'],['UI Target','- Route: `/`\n- Target: `section#homepage-hero`\n- Viewport: `1440x1000`\n- Capture: focused section'],['Out of Scope','Navigation, footer, backend, and copy.'],['Acceptance Criteria','- The hero heading and CTA remain fully readable without clipping or overflow.'],['UX/UI Proposal','Implement the approved visual proposal exactly on the hero target.'],['Implementation Plan','Apply the approved proposal and verify the same target in the served app.']])t.body=setSection(t.body,h,v);
-  t.meta.route.design=true;t.meta.route.architecture=false;t.meta.route.database=false;saveTask(t);setDefaultBlastRadius(root,t.meta.id);completePhase(root,t.meta.id);addApprovedImageGenProposal(root,t.meta.id,{target:'section#homepage-hero'});completePhase(root,t.meta.id);approveSpecification(root,t.meta.id);return t.meta.id;
+  t.meta.route.design=true;t.meta.route.architecture=false;t.meta.route.database=false;saveTask(t);setDefaultBlastRadius(root,t.meta.id);completePhase(root,t.meta.id);addApprovedImageGenProposal(root,t.meta.id,{target:'section#homepage-hero'});completePhase(root,t.meta.id);acknowledgePresentation(root,t.meta.id,'spec-approval','visual-planner');approveSpecification(root,t.meta.id,'Approved by user',{sessionId:'visual-planner'});return t.meta.id;
 }
 
 test('project config never stores model selection or model routing defaults',()=>{
@@ -111,7 +119,7 @@ test('high-risk independent review expands context without inheriting builder ch
 test('phase boundary requires explicit session-bound entry and allows same-chat continuation',()=>{
   const root=repo(),id=backendAtBuilder(root),first=nextAction(root,id,{sessionId:'planning-thread'});
   assert.equal(first.runtime.stopBeforePhaseWork,true);assert.equal(first.runtime.boundary.status,'required');
-  const entered=enterPhaseBoundary(root,id,{sessionId:'planning-thread',handoffDigest:first.runtime.handoffDigest,handoffWords:first.runtime.handoffWords});
+  const entered=chooseAndEnter(root,id,first.runtime,{choice:'continue-current',choiceSessionId:'planning-thread'});
   assert.equal(entered.status,'entered');assert.equal(entered.mode,'same-chat');
   const resumed=nextAction(root,id,{sessionId:'planning-thread'});
   assert.equal(resumed.runtime.stopBeforePhaseWork,false);assert.equal(resumed.runtime.boundary.status,'entered');assert.equal(resumed.runtime.boundary.mode,'same-chat');assert.equal(resumed.runtime.transitionNotice,null);
@@ -121,8 +129,9 @@ test('phase boundary requires explicit session-bound entry and allows same-chat 
 
 test('phase boundary entry and execution require the stable entering session and mode cannot be forged',()=>{
   const root=repo(),id=backendAtBuilder(root),first=nextAction(root,id,{sessionId:'planner-session'});
-  assert.throws(()=>enterPhaseBoundary(root,id,{handoffDigest:first.runtime.handoffDigest,handoffContentDigest:first.runtime.handoffContentDigest,handoffWords:first.runtime.handoffWords}),/requires a stable Codex session ID/i);
-  enterPhaseBoundary(root,id,{sessionId:'builder-session',handoffDigest:first.runtime.handoffDigest,handoffContentDigest:first.runtime.handoffContentDigest,handoffWords:first.runtime.handoffWords});
+  assert.throws(()=>enterPhaseBoundary(root,id,{handoffDigest:first.runtime.handoffDigest,handoffContentDigest:first.runtime.handoffContentDigest,handoffWords:first.runtime.handoffWords}),/persist the explicit native user choice/i);
+  assert.throws(()=>chooseBoundary(root,id,first.runtime,'fresh-chat',null),/requires the stable Codex session ID/i);
+  chooseAndEnter(root,id,first.runtime,{choice:'fresh-chat',choiceSessionId:'planner-session',entrySessionId:'builder-session'});
   assert.throws(()=>startExecution(root,id),/requires the stable Codex session ID that entered it/i);
   assert.throws(()=>startExecution(root,id,{sessionId:'different-session'}),/entered by another session/i);
   assert.doesNotThrow(()=>startExecution(root,id,{sessionId:'builder-session'}));
@@ -130,7 +139,7 @@ test('phase boundary entry and execution require the stable entering session and
 
 test('fresh chat is inferred from a new stable session and gets the same deterministic capsule',()=>{
   const root=repo(),id=backendAtBuilder(root),first=nextAction(root,id,{sessionId:'planner-session'});
-  const entered=enterPhaseBoundary(root,id,{sessionId:'implementer-session',handoffDigest:first.runtime.handoffDigest,handoffWords:first.runtime.handoffWords});
+  const entered=chooseAndEnter(root,id,first.runtime,{choice:'fresh-chat',choiceSessionId:'planner-session',entrySessionId:'implementer-session'});
   assert.equal(entered.mode,'fresh-chat');
   const resumed=nextAction(root,id,{sessionId:'implementer-session'});
   assert.equal(resumed.runtime.stopBeforePhaseWork,false);assert.equal(resumed.runtime.boundary.mode,'fresh-chat');assert.equal(resumed.runtime.handoffDigest,first.runtime.handoffDigest);
@@ -143,7 +152,7 @@ test('small low-risk work still stops at the phase boundary but does not force o
 
 test('builder context expansion does not re-arm an entered boundary or rewrite the sealed capsule',()=>{
   const root=repo(),id=backendAtBuilder(root),first=nextAction(root,id,{sessionId:'planner'});
-  enterPhaseBoundary(root,id,{sessionId:'builder',handoffDigest:first.runtime.handoffDigest,handoffContentDigest:first.runtime.handoffContentDigest,handoffWords:first.runtime.handoffWords});
+  chooseAndEnter(root,id,first.runtime,{choice:'fresh-chat',choiceSessionId:'planner',entrySessionId:'builder'});
   startExecution(root,id,{sessionId:'builder'});
   const expanded=requestContextExpansion(root,id,{reason:'Inspect one concrete helper required by the approved handler implementation.',files:['src/helper.ts'],symbols:['healthHelper'],depth:1});
   assert.equal(expanded.status,'approved');
@@ -153,17 +162,20 @@ test('builder context expansion does not re-arm an entered boundary or rewrite t
 
 test('workflow mechanically rejects Builder execution until the boundary is entered',()=>{
   const root=repo(),id=backendAtBuilder(root),next=nextAction(root,id,{sessionId:'builder'});
-  assert.equal(next.action,'phase-boundary');assert.equal(next.actor,'ai-flow-builder');assert.equal(next.runtime.boundary.status,'required');
+  assert.equal(next.action,'phase-boundary');assert.equal(next.actor,'user');assert.equal(next.userInputRequired,true);assert.equal(next.interaction.tool,'request_user_input');assert.equal(next.runtime.boundary.status,'required');
   assert.throws(()=>startExecution(root,id,{sessionId:'builder'}),/phase boundary.*explicitly entered/i);
+  chooseBoundary(root,id,next.runtime,'continue-current','builder');
+  const afterChoice=nextAction(root,id,{sessionId:'builder'});assert.equal(afterChoice.action,'enter-phase-boundary');assert.equal(afterChoice.userInputRequired,false);assert.equal(afterChoice.runtime.boundary.status,'chosen');assert.match(afterChoice.runtime.transitionInstruction,/Do not ask it again/i);
   enterPhaseBoundary(root,id,{sessionId:'builder',handoffDigest:next.runtime.handoffDigest,handoffContentDigest:next.runtime.handoffContentDigest,handoffWords:next.runtime.handoffWords});
   assert.doesNotThrow(()=>startExecution(root,id,{sessionId:'builder'}));
 });
 
 test('phase boundary entry is lease-safe: a conflicting owner cannot leave a false entered record',()=>{
   const root=repo(),id=backendAtBuilder(root),first=nextAction(root,id,{sessionId:'planner'});
+  chooseBoundary(root,id,first.runtime,'fresh-chat','planner');
   acquireTaskLease(root,id,{sessionId:'other-writer',phase:'builder'});
   assert.throws(()=>enterPhaseBoundary(root,id,{sessionId:'builder',handoffDigest:first.runtime.handoffDigest,handoffContentDigest:first.runtime.handoffContentDigest,handoffWords:first.runtime.handoffWords}),/locked by another session/i);
-  const record=loadPhaseBoundary(root,id,'builder');assert.equal(record.status,'required');assert.equal(record.enteredSessionId,null);
+  const record=loadPhaseBoundary(root,id,'builder');assert.equal(record.status,'chosen');assert.equal(record.enteredSessionId,null);
 });
 
 test('phase boundary state is integrity checked and edited runtime JSON cannot forge entry',()=>{
@@ -174,7 +186,7 @@ test('phase boundary state is integrity checked and edited runtime JSON cannot f
 
 test('approved amendments invalidate an entered implementation boundary and require a newly compiled capsule',()=>{
   const root=repo(),id=backendAtBuilder(root),first=nextAction(root,id,{sessionId:'planner'});
-  enterPhaseBoundary(root,id,{sessionId:'builder',handoffDigest:first.runtime.handoffDigest,handoffContentDigest:first.runtime.handoffContentDigest,handoffWords:first.runtime.handoffWords});
+  chooseAndEnter(root,id,first.runtime,{choice:'fresh-chat',choiceSessionId:'planner',entrySessionId:'builder'});
   const amendment=proposeAmendment(root,id,{title:'Bounded helper change',reason:'The approved handler needs one supporting file discovered during implementation.',changes:['Permit one supporting helper.'],allowedFiles:['src/helper.ts']});
   approveAmendment(root,id,amendment.id,'Approved bounded implementation change');
   const changed=nextAction(root,id,{sessionId:'builder'});
@@ -191,10 +203,10 @@ test('architecture and database rendered artifacts are included as canonical imp
 
 test('Builder lease is released before independent review and a fresh reviewer acquires ownership through its boundary',()=>{
   const root=repo(),id=backendAtBuilder(root),builder=nextAction(root,id,{sessionId:'planning'}).runtime;
-  enterPhaseBoundary(root,id,{sessionId:'builder-chat',handoffDigest:builder.handoffDigest,handoffContentDigest:builder.handoffContentDigest,handoffWords:builder.handoffWords});startExecution(root,id,{sessionId:'builder-chat'});completePhase(root,id,{sessionId:'builder-chat'});
+  chooseAndEnter(root,id,builder,{choice:'fresh-chat',choiceSessionId:'planning',entrySessionId:'builder-chat'});startExecution(root,id,{sessionId:'builder-chat'});completePhase(root,id,{sessionId:'builder-chat'});
   assert.equal(leaseStatus(root,id,'review-chat').active,false);
   const review=nextAction(root,id,{sessionId:'review-chat'});assert.equal(review.action,'phase-boundary');assert.equal(review.runtime.boundary.status,'required');assert.equal(review.lease.conflict,false);
-  enterPhaseBoundary(root,id,{sessionId:'review-chat',handoffDigest:review.runtime.handoffDigest,handoffContentDigest:review.runtime.handoffContentDigest,handoffWords:review.runtime.handoffWords});
+  chooseAndEnter(root,id,review.runtime,{choice:'continue-current',choiceSessionId:'review-chat'});
   const lease=leaseStatus(root,id,'review-chat');assert.equal(lease.active,true);assert.equal(lease.owner,'review-chat');assert.equal(lease.lease.phase,'technical-reviewer');
 });
 
@@ -202,21 +214,25 @@ test('spec approve CLI prepares the implementation boundary in the approval sess
   const root=repo(),id=backendAtSpecApproval(root),cli=path.join(process.cwd(),'dist','src','cli.js');
   const result=spawnSync(process.execPath,[cli,'spec','approve',id,'--session','approval-session','--root',root],{encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);const output=JSON.parse(result.stdout);
-  assert.equal(output.phase,'builder');assert.equal(output.next.action,'phase-boundary');assert.equal(output.next.runtime.stopBeforePhaseWork,true);assert.equal(output.next.runtime.boundary.originSessionId,'approval-session');assert.equal(output.next.runtime.transitionNotice.resumePrompt,`Continue ${id}`);
+  assert.equal(output.phase,'builder');assert.equal(output.approved,true);assert.equal(output.userInputRequired,true);assert.equal(output.interaction.tool,'request_user_input');assert.equal(output.next.action,'phase-boundary');assert.equal(output.next.userInputRequired,true);assert.equal(output.next.runtime.stopBeforePhaseWork,true);assert.equal(output.next.runtime.boundary.originSessionId,'approval-session');assert.equal(output.next.runtime.transitionNotice.resumePrompt,`Continue ${id}`);
+  assert.deepEqual(output.interaction.questions[0].options.map(item=>item.label),['Continuar con el modelo actual','Pausar para cambiar modelo o razonamiento','Abrir un chat nuevo']);
+  assert.match(output.interaction.questions[0].question,/Ninguna opción inicia implementación en este turno/i);
+  assert.equal(output.interaction.turnPolicy.afterSelection,'persist-boundary-choice-and-end-turn');assert.equal(output.interaction.turnPolicy.sameTurnPhaseWork,'forbidden');assert.equal(output.interaction.turnPolicy.resumePrompt,`Continue ${id}`);assert.equal(output.interaction.turnPolicy.choiceMap['Continuar con el modelo actual'],'continue-current');
 });
 
 test('a different Codex session must explicitly re-enter an already-entered phase boundary before work continues',()=>{
   const root=repo(),id=backendAtBuilder(root),first=nextAction(root,id,{sessionId:'planner'}).runtime;
-  enterPhaseBoundary(root,id,{sessionId:'builder-a',handoffDigest:first.handoffDigest,handoffContentDigest:first.handoffContentDigest,handoffWords:first.handoffWords});startExecution(root,id,{sessionId:'builder-a'});
-  const other=nextAction(root,id,{sessionId:'builder-b'});assert.equal(other.runtime.sessionEntryRequired,true);assert.equal(other.runtime.stopBeforePhaseWork,true);assert.match(other.runtime.transitionNotice.title,/ownership.*Codex session/i);
+  chooseAndEnter(root,id,first,{choice:'fresh-chat',choiceSessionId:'planner',entrySessionId:'builder-a'});startExecution(root,id,{sessionId:'builder-a'});
+  const other=nextAction(root,id,{sessionId:'builder-b'});assert.equal(other.runtime.sessionEntryRequired,true);assert.equal(other.runtime.stopBeforePhaseWork,true);assert.match(other.runtime.transitionNotice.title,/ownership.*Codex session/i);assert.equal(other.action,'resolve-task-lease');
+  assert.throws(()=>chooseBoundary(root,id,other.runtime,'continue-current','builder-b'),/requires resolving the active task lease/i);
   assert.throws(()=>completePhase(root,id,{sessionId:'builder-b'}),/entered by another session|locked by another session/i);
 });
 
 test('a blocked Builder cannot be resumed by another session until that session enters the phase boundary',()=>{
   const root=repo(),id=backendAtBuilder(root),first=nextAction(root,id,{sessionId:'planner'}).runtime;
-  enterPhaseBoundary(root,id,{sessionId:'builder-a',handoffDigest:first.handoffDigest,handoffContentDigest:first.handoffContentDigest,handoffWords:first.handoffWords});startExecution(root,id,{sessionId:'builder-a'});blockTask(root,id,'External dependency temporarily failed.');
+  chooseAndEnter(root,id,first,{choice:'fresh-chat',choiceSessionId:'planner',entrySessionId:'builder-a'});startExecution(root,id,{sessionId:'builder-a'});blockTask(root,id,'External dependency temporarily failed.');
   assert.throws(()=>resumeTask(root,id,{sessionId:'builder-b'}),/entered by another session/i);
-  const runtime=nextAction(root,id,{sessionId:'builder-b'}).runtime;enterPhaseBoundary(root,id,{sessionId:'builder-b',handoffDigest:runtime.handoffDigest,handoffContentDigest:runtime.handoffContentDigest,handoffWords:runtime.handoffWords});
+  const transfer=nextAction(root,id,{sessionId:'builder-b'});assert.equal(transfer.action,'phase-boundary');chooseBoundary(root,id,transfer.runtime,'continue-current','builder-b');const runtime=nextAction(root,id,{sessionId:'builder-b'}).runtime;enterPhaseBoundary(root,id,{sessionId:'builder-b',handoffDigest:runtime.handoffDigest,handoffContentDigest:runtime.handoffContentDigest,handoffWords:runtime.handoffWords});
   assert.doesNotThrow(()=>resumeTask(root,id,{sessionId:'builder-b'}));assert.equal(leaseStatus(root,id,'builder-b').owner,'builder-b');
 });
 
@@ -234,5 +250,8 @@ test('CLI exposes boundary status, explicit entry, and model-independent token e
   const estimate=run(['boundary','estimate',id,'--history-tokens','20000','--turns','4']);assert.equal(estimate.scenarios[0].sameChatCarryoverTokens,80000);assert.ok(estimate.scenarios[0].savedInputTokens>0);
   const missingSession=spawnSync(process.execPath,[cli,'boundary','enter',id,'--root',root],{encoding:'utf8'});assert.notEqual(missingSession.status,0);assert.match(missingSession.stderr,/requires --session/i);
   const forgedMode=spawnSync(process.execPath,[cli,'boundary','enter',id,'--session','builder-cli','--mode','same-chat','--root',root],{encoding:'utf8'});assert.notEqual(forgedMode.status,0);assert.match(forgedMode.stderr,/mode is inferred.*cannot be supplied/i);
+  const beforeChoice=spawnSync(process.execPath,[cli,'boundary','enter',id,'--session','builder-cli','--root',root],{encoding:'utf8'});assert.notEqual(beforeChoice.status,0);assert.match(beforeChoice.stderr,/persist the explicit native user choice/i);
+  const chosen=run(['boundary','choose',id,'--choice','fresh','--session','planner-cli']);assert.equal(chosen.boundary.status,'chosen');assert.equal(chosen.boundary.choice,'fresh-chat');assert.equal(chosen.runtime.stopBeforePhaseWork,true);
+  const pending=nextAction(root,id,{sessionId:'builder-cli'});assert.equal(pending.action,'enter-phase-boundary');assert.equal(pending.userInputRequired,false);
   const entered=run(['boundary','enter',id,'--session','builder-cli']);assert.equal(entered.boundary.status,'entered');assert.equal(entered.boundary.mode,'fresh-chat');assert.equal(entered.runtime.stopBeforePhaseWork,false);
 });
