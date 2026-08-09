@@ -80,7 +80,7 @@ test('CLI update defaults to the installed channel and supports explicit channel
   const beta = spawnSync(process.execPath, ['dist/src/cli.js', 'update', '--dry-run', '--json'], { cwd: root, encoding: 'utf8' });
   assert.equal(beta.status, 0, beta.stderr);
   const betaPlan = JSON.parse(beta.stdout);
-  assert.equal(betaPlan.channel, pkg.version.includes('-beta.') ? 'beta' : 'latest');
+  assert.equal(betaPlan.channel, pkg.version.includes('-beta') ? 'beta' : 'latest');
 
   const latest = spawnSync(process.execPath, ['dist/src/cli.js', 'update', '--latest', '--dry-run', '--json'], { cwd: root, encoding: 'utf8' });
   assert.equal(latest.status, 0, latest.stderr);

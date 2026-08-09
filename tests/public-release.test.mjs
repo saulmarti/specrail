@@ -11,15 +11,13 @@ const pkg=JSON.parse(text('package.json'));
 const plugin=JSON.parse(text('plugin.json'));
 const lock=JSON.parse(text('package-lock.json'));
 
-test('public beta metadata matches the maintainer and release channel',()=>{
+test('public metadata matches the maintainer and release channel',()=>{
   assert.equal(pkg.name,'@saulmarti/specrail');
-  assert.match(pkg.version,/^\d+\.\d+\.\d+-beta\.\d+$/);
   assert.deepEqual(pkg.author,{name:'Saúl Martí',email:'me@saulmarti.dev'});
   assert.equal(pkg.repository.url,'git+https://github.com/saulmarti/specrail.git');
   assert.equal(pkg.bugs.url,'https://github.com/saulmarti/specrail/issues');
   assert.equal(pkg.homepage,'https://github.com/saulmarti/specrail#readme');
   assert.equal(pkg.license,'MIT');
-  assert.equal(pkg.publishConfig.tag,'beta');
   assert.equal(pkg.publishConfig.access,'public');
   assert.equal(plugin.version,pkg.version);
   assert.equal(lock.version,pkg.version);
