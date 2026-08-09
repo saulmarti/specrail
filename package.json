@@ -36,7 +36,7 @@
   ],
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && tsc -p tsconfig.json",
+    "build": "npm run clean && tsc -p tsconfig.json && node scripts/ensure-cli-executable.mjs",
     "test": "npm run build && node --test tests/*.test.mjs",
     "check": "npm run version:check && npm test && node --check dist/src/cli.js",
     "evals": "npm run build && node --test tests/visualization-evals.test.mjs",
@@ -53,7 +53,8 @@
     "release:beta": "npm run release:check && npm version prerelease --preid=beta && npm publish --access public --tag beta",
     "version:sync": "node scripts/sync-version.mjs",
     "version:check": "node scripts/sync-version.mjs --check",
-    "tar": "COPYFILE_DISABLE=1 tar --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='.ai' --exclude='.codegraph' --exclude='._*' --exclude='*/._*' --exclude='.DS_Store' --exclude='*/.DS_Store' --exclude='*.zip' --exclude='*.tgz' -czf ~/Desktop/specrail-current.tgz ."
+    "tar": "COPYFILE_DISABLE=1 tar --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='.ai' --exclude='.codegraph' --exclude='._*' --exclude='*/._*' --exclude='.DS_Store' --exclude='*/.DS_Store' --exclude='*.zip' --exclude='*.tgz' -czf ~/Desktop/specrail-current.tgz .",
+    "prepare": "npm run build"
   },
   "engines": {
     "node": ">=22.0.0"
