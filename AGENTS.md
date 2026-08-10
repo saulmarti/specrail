@@ -29,13 +29,15 @@ When instructions conflict, stop and surface the conflict rather than silently c
 - Markdown and repository artifacts remain the source of truth.
 - No mandatory SpecRail cloud, account, database, or remote coordinator.
 - No implementation before specification approval under the active autonomy policy. Guided requires explicit human approval; Autonomous/Headless may cross only mechanically clean gates.
-- No final completion before real evidence, final approval under the active autonomy policy, and deterministic delivery. External publication/deployment still requires explicit user authorization.
+- No final completion before real evidence, final approval under the active autonomy policy, and deterministic delivery **unless the user explicitly overrides a specific gate or explicitly orders the task closed**. User governance overrides are exceptional, user-authorized only, immutable/auditable, and must record that normal completion guarantees were waived; agents and autonomy may never create them on their own. External publication/deployment still requires explicit user authorization.
 - Never assume a host tool, plugin, MCP, or command name exists. Discover and validate capabilities, and provide a non-blocking fallback where safe.
 - Codex Visualize is exposed by the installed `visualize` skill. When a signed plan needs an interactive review and that skill is available, invoke it explicitly as `$visualize`; `/visualize` is only the composer shortcut. Never invoke bundled plugin-cache scripts directly or claim a visualization was shown until the native `visualize` content reference is visibly emitted.
 - Preserve existing `.ai/` projects and the `ai-flow` command alias unless a documented migration is approved.
 - Do not turn SpecRail into a task board or duplicate GitHub/Jira/Azure DevOps.
 - New agents, gates, or review passes require a measurable customer-value hypothesis.
 - Review Cockpit is a derived read-only artifact; decisions must remain in deterministic CLI/native Codex gates.
+
+- **User sovereignty is terminal, not conversationally recursive.** If the user explicitly says to close/finish a task despite a known blocker, use the deterministic user-governance close override once and stop re-presenting the same blocker. If the user explicitly says to skip a named review/QA/evidence/delivery step, record the corresponding one-shot waiver and route past it. Never answer an explicit override with repeated variants of ‘formal closure cannot execute because X is required’. If the request is ambiguous, one confirmation is allowed; after explicit confirmation, execute the override. The override must require current-turn user authorization and remain visible in task audit/readiness state.
 
 ## Engineering rules
 

@@ -14,6 +14,8 @@ import { choosePhaseBoundary } from './phase-boundary.js';
 import { finalProductOwnerRequired, finalProductOwnerReviewStatus, productIntelligenceContextStatus, productOwnerRequired, productOwnerReviewStatus, targetAudienceRequired, targetAudienceReviewStatus } from './product-intelligence.js';
 import { autonomyPolicy } from './autonomy-policy.js';
 import { concurrencyRecommendation, concurrencyTaskAuthorityStatus } from './concurrency.js';
+import { activeRevision, revisionPreservesArtifact } from './revisions.js';
+import { hasUserWaiver } from './user-overrides.js';
 
 const SKILL:Partial<Record<TaskPhase,string>>={'product-specifier':'ai-flow-product-specifier','ux-ui-designer':'ai-flow-ux-ui-designer','technical-architecture':'ai-flow-technical-reviewer','builder':'ai-flow-builder','technical-reviewer':'ai-flow-technical-reviewer','qa-engineer':'ai-flow-qa-engineer'};
 function skillForPhase(root:string,phase:TaskPhase):string|null{if(phase==='final-customer')return targetAudienceRequired(root)?'ai-flow-target-audience':'ai-flow-final-customer';return SKILL[phase]||null;}
@@ -21,6 +23,7 @@ function skillForPhase(root:string,phase:TaskPhase):string|null{if(phase==='fina
 export interface NextOptions { sessionId?:string|null|undefined; }
 export function nextAction(root:string,id:string,options:NextOptions={}){
  const task=loadTask(findTask(root,id));
+ const revision=activeRevision(root,task.meta.id);
  const deps=unfinishedDependencies(root,task).map(x=>x.meta.id);
  const concurrency=concurrencyRecommendation(root,task.meta.id);
  const concurrencyAuthority=concurrencyTaskAuthorityStatus(root,task.meta.id,options.sessionId ?? null);
@@ -57,11 +60,12 @@ export function nextAction(root:string,id:string,options:NextOptions={}){
  }
  if((task.meta.open_questions>0||task.meta.waiting_for==='user')&&action==='continue'){actor='user';action='wait-for-user';interaction=interactionForTask(root,id,'current',{sessionId:options.sessionId});}
  if(task.meta.phase==='spec-approval'){actor='user';action='approve-or-refine-specification';interaction=interactionForTask(root,id,'spec-approval',{sessionId:options.sessionId});}
- const finalProductOwner=task.meta.phase==='final-approval'&&finalProductOwnerRequired(root)?finalProductOwnerReviewStatus(root,task.meta.id):null;
+ const finalProductOwner=task.meta.phase==='final-approval'&&finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?finalProductOwnerReviewStatus(root,task.meta.id):null;
  if(task.meta.phase==='final-approval'){
   if(finalProductOwner){
    const guidedAcknowledgement=policy.level==='guided'&&Boolean(finalProductOwner.review)&&finalProductOwner.integrityValid&&!finalProductOwner.stale&&!finalProductOwner.review?.humanDecision;
-   if(finalProductOwner.stale){actor='ai-flow-product-owner';action='refresh-final-product-owner-review';interaction=null;}
+   if(finalProductOwner.stale&&revisionPreservesArtifact(root,id,'product-owner')&&revision?.status==='validated'){actor='user';action='approve-or-reject-final-result';interaction=interactionForTask(root,id,'final-approval',{sessionId:options.sessionId});}
+   else if(finalProductOwner.stale){actor='ai-flow-product-owner';action='refresh-final-product-owner-review';interaction=null;}
    else if(finalProductOwner.needsHumanJudgment){actor='user';action='resolve-final-product-owner-recommendation';interaction=interactionForTask(root,id,'final-product-owner-decision',{sessionId:options.sessionId});}
    else if(guidedAcknowledgement){actor='user';action='review-final-product-owner-opinion';interaction=interactionForTask(root,id,'final-product-owner-decision',{sessionId:options.sessionId});}
    else if(!finalProductOwner.valid){actor='ai-flow-product-owner';action='final-product-owner-review';interaction=null;}

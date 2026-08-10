@@ -235,6 +235,32 @@ Bounded implementation discoveries can be proposed as immutable amendments with 
 
 See [`docs/AMENDMENTS.md`](docs/AMENDMENTS.md).
 
+### Incremental Revision Loop / Selective Revalidation
+
+**Status: Beta · Implemented in current `0.10.x` development tree**
+
+Bounded feedback discovered from the implemented result stays inside the same task as immutable `REV-*` records. The default loop is Builder delta → targeted post-implementation validation → Final Approval. Revision feedback does not consume repair budget, receives a compact Revision Delta Capsule instead of a regenerated full implementation capsule, and preserves Technical Review / QA Mission / Target Audience / Product Owner artifacts unless the change invalidates them.
+
+Small revisions are explicitly **implement-first**: no new test plan or permanent regression test is required before the requested delta is visible and stable enough to judge. Existing tests may run afterwards when directly relevant and cheap; permanent coverage is decided after stabilization.
+
+Builder completions create deterministic `GEN-*` implementation generations and affected evidence must prove the current generation. This permits safe reuse of unaffected evidence without allowing stale affected screenshots/tests/QA artifacts to pass. Material architecture, migration, security, new product-flow/capability, or breaking-contract changes fail closed into Amendments/full governed review.
+
+The final incremental-governance hardening is implemented: `REV-*` v3 seals a revision-start workspace baseline, computes a provisional route from request/files/explicit semantic signals, then recomputes the authoritative route from the actual files changed by Builder. `classification` is now explanatory metadata only; new labels require no routing code. Material deltas discovered only after implementation fail closed before targeted validation. Revision routing remains backed by the declarative artifact dependency graph and can start from any post-approval execution/review point. User waivers are gate metadata (`waivable`) rather than a duplicated override target list, so future workflow gates inherit one consistent authority model.
+
+**Success metric:** median bounded final-review iteration reaches the user again through one implementation pass plus only directly affected validation, without replaying product/architecture/reviewer context or increasing accepted stale-evidence risk.
+
+See [`docs/REVISIONS.md`](docs/REVISIONS.md).
+
+### User Governance Overrides / no-loop closure
+
+**Status: Beta · Implemented in current `0.10.x` development tree**
+
+Explicit user authority can terminate or waive workflow ceremony without making agents generally permissive. `OVR-*` records capture current-turn user-authorized `close` or named gate waivers. A close request is terminal and auditable; a skipped validation/review step is removed from subsequent routing/readiness so SpecRail does not repeatedly re-block on the same requirement. Normal agents and Autonomous/Headless execution cannot mint these overrides themselves.
+
+**Success metric:** after one explicit user instruction to close anyway or skip a named gate, the same gate is surfaced as a blocker zero additional times; the task history still distinguishes verified completion from user-waived completion.
+
+See [`docs/USER-GOVERNANCE-OVERRIDES.md`](docs/USER-GOVERNANCE-OVERRIDES.md).
+
 ## Accepted implementation order
 
 Recent real usage changed the priority order. Reliability of the **think → executable capsule → implementation → evidence → review** path now outranks adding more management surfaces. The current sequence is:
@@ -384,9 +410,9 @@ Use measured prior-phase context, capsule size, task risk, expected implementati
 
 ### Capsule Delta after Amendments
 
-**Status: Planned · Priority: P1**
+**Status: Partially implemented · Priority: P1**
 
-When an approved Amendment changes only part of an implementation contract, generate a small signed delta identifying changed ACs, scope additions/removals, decisions, evidence, and QA implications instead of forcing Builder to ingest a full regenerated capsule unless necessary.
+`REV-*` bounded refinements now use a compact, integrity-sensitive Revision Delta Capsule and selective evidence invalidation. The remaining work is to extend the same delta principle to approved Amendments that alter only part of the implementation contract, identifying changed ACs, scope additions/removals, decisions, evidence, and QA implications instead of forcing Builder to ingest a full regenerated capsule unless necessary.
 
 ### Role-specific Context Cache
 

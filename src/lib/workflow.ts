@@ -25,7 +25,11 @@ import { assertPresentationReady } from './presentation-state.js';
 import { checkConstitution, listConstitution } from './constitution.js';
 import { decideFinalProductOwnerReview, decideTargetAudienceReview, finalProductOwnerRequired, finalProductOwnerReviewStatus, invalidateFinalProductOwnerReview, invalidateProductOwnerReview, productIntelligenceEnabled, productOwnerRequired, productOwnerReviewStatus, targetAudienceRequired, targetAudienceReviewStatus } from './product-intelligence.js';
 import { autonomyPolicy } from './autonomy-policy.js';
+import { activeRevision, acceptRevision, cancelActiveRevision, createRevision, markRevisionImplemented, markRevisionValidated, nextRevisionPhase, revisionAllowsPreservedFinalProductOwner } from './revisions.js';
+import { advanceImplementationGeneration } from './implementation-generation.js';
 import { assertConcurrencyMutationAuthority, assertConcurrencyReservation, concurrencyPlansForTask, releaseConcurrencyTaskReservation } from './concurrency.js';
+import { hasUserWaiver, recordUserOverride, type UserOverrideTarget } from './user-overrides.js';
+import { workflowGate } from './workflow-gates.js';
 import type { JsonValue, TaskDocument, TaskPhase } from './types.js';
 
 function session(options: Record<string, unknown> = {}): string | null {
@@ -54,22 +58,27 @@ function setAwaitingSpec(task: TaskDocument): void {
   task.meta.status = 'awaiting_spec_approval'; task.meta.phase = 'spec-approval'; task.meta.waiting_for = 'user';
   appendLog(task, 'Specification is linted and ready for user approval.');
 }
-function nextPreApproval(task: TaskDocument): TaskPhase {
-  if (task.meta.route.design && !task.meta.completed_design) return 'ux-ui-designer';
-  if ((task.meta.route.architecture || task.meta.route.database) && !task.meta.completed_architecture) return 'technical-architecture';
+function nextPreApproval(root:string, task: TaskDocument): TaskPhase {
+  if (task.meta.route.design && !task.meta.completed_design && !hasUserWaiver(root,task.meta.id,'design')) return 'ux-ui-designer';
+  if ((task.meta.route.architecture || task.meta.route.database) && !task.meta.completed_architecture && !hasUserWaiver(root,task.meta.id,'technical-architecture')) return 'technical-architecture';
   return 'spec-approval';
 }
-function needsTargetAudience(root: string, task: TaskDocument): boolean { return Boolean(task.meta.route.final_customer || (task.meta.route.target_audience && targetAudienceRequired(root))); }
+function needsTargetAudience(root: string, task: TaskDocument): boolean { return !hasUserWaiver(root,task.meta.id,'target-audience') && Boolean(task.meta.route.final_customer || (task.meta.route.target_audience && targetAudienceRequired(root))); }
 function nextAfterApproval(root: string, task: TaskDocument): TaskPhase {
   if (task.meta.route.implementation) return 'builder';
-  if (task.meta.route.qa !== 'none') return 'qa-engineer';
+  if (task.meta.route.qa !== 'none' && !hasUserWaiver(root,task.meta.id,'qa')) return 'qa-engineer';
   if (needsTargetAudience(root, task)) return 'final-customer';
   return 'final-approval';
 }
 function nextAfterBuilder(root: string, task: TaskDocument): TaskPhase {
-  if (task.meta.route.technical_review !== 'none') return 'technical-reviewer';
-  if (task.meta.route.qa !== 'none') return 'qa-engineer';
+  if (task.meta.route.technical_review !== 'none' && !hasUserWaiver(root,task.meta.id,'technical-review')) return 'technical-reviewer';
+  if (task.meta.route.qa !== 'none' && !hasUserWaiver(root,task.meta.id,'qa')) return 'qa-engineer';
   if (needsTargetAudience(root, task)) return 'final-customer';
+  return 'final-approval';
+}
+function nextAfterTechnicalReview(root:string, task:TaskDocument):TaskPhase {
+  if(task.meta.route.qa!=='none'&&!hasUserWaiver(root,task.meta.id,'qa'))return 'qa-engineer';
+  if(needsTargetAudience(root,task))return 'final-customer';
   return 'final-approval';
 }
 function statusForPhase(phase: TaskPhase) {
@@ -157,30 +166,49 @@ export function completePhase(root: string, id: string, options: Record<string, 
         if(autonomyPolicy(root).level==='guided'&&productReview.review&&!productReview.review.humanDecision) throw new Error('Guided autonomy requires the user to review and acknowledge the Product Owner opinion before specification work continues');
       }
       task=ensureStrategySections(ensureQAMissionContent(task));
-      validateSpec(task,'product');const next=nextPreApproval(task);if(next==='spec-approval')setAwaitingSpec(task);else{task.meta.phase=next;task.meta.status='refining';appendLog(task,`Product specification completed; next phase: ${next}.`);}break;
+      validateSpec(task,'product');const next=nextPreApproval(root,task);if(next==='spec-approval')setAwaitingSpec(task);else{task.meta.phase=next;task.meta.status='refining';appendLog(task,`Product specification completed; next phase: ${next}.`);}break;
     }
     case 'ux-ui-designer':{
       const validation=validateEvidence(root,id,'pre-approval');if(!validation.valid)throw new Error(`Missing required evidence: ${[...validation.missing,...validation.errors].join(', ')}`);
-      task.meta.completed_design=true;const next=nextPreApproval(task);if(next==='spec-approval')setAwaitingSpec(task);else{task.meta.phase=next;appendLog(task,`Design proposal completed; next phase: ${next}.`);}break;
+      task.meta.completed_design=true;const next=nextPreApproval(root,task);if(next==='spec-approval')setAwaitingSpec(task);else{task.meta.phase=next;appendLog(task,`Design proposal completed; next phase: ${next}.`);}break;
     }
     case 'technical-architecture':{
       const validation=validateEvidence(root,id,'pre-approval');if(!validation.valid)throw new Error(`Missing required evidence: ${[...validation.missing,...validation.errors].join(', ')}`);
       task.meta.completed_architecture=true;setAwaitingSpec(task);break;
     }
-    case 'builder': { const next=nextAfterBuilder(root,task);if(next==='technical-reviewer')invalidatePhaseBoundary(root,task.meta.id,'technical-reviewer');task.meta.phase=next;task.meta.status=statusForPhase(task.meta.phase);appendLog(task,`Builder completed; next phase: ${task.meta.phase}.`);break; }
+    case 'builder': {
+      const revision=activeRevision(root,task.meta.id);
+      const generation=advanceImplementationGeneration(root,task,revision?.id||null);
+      if(revision){
+        markRevisionImplemented(root,task.meta.id,generation.id,generation.digest);
+        const next=nextRevisionPhase(root,task.meta.id);
+        task.meta.phase=next;task.meta.status=statusForPhase(next);task.meta.waiting_for=next==='final-approval'?'user':'none';
+        if(next==='technical-reviewer')invalidatePhaseBoundary(root,task.meta.id,'technical-reviewer');
+        appendLog(task,`Builder completed ${revision.id} as ${generation.id}; artifact dependencies require ${next}.`);break;
+      }
+      const next=nextAfterBuilder(root,task);if(next==='technical-reviewer')invalidatePhaseBoundary(root,task.meta.id,'technical-reviewer');task.meta.phase=next;task.meta.status=statusForPhase(task.meta.phase);appendLog(task,`Builder completed as ${generation.id}; next phase: ${task.meta.phase}.`);break; }
     case 'technical-reviewer':{
       ensureConstitutionEvidence(root,task);
       const validation=validateEvidence(root,id,'technical-review');if(!validation.valid)throw new Error(`Missing required evidence: ${[...validation.missing,...validation.errors].join(', ')}`);
-      task.meta.phase=task.meta.route.qa!=='none'?'qa-engineer':needsTargetAudience(root,task)?'final-customer':'final-approval';task.meta.status=statusForPhase(task.meta.phase);task.meta.waiting_for=task.meta.phase==='final-approval'?(finalProductOwnerRequired(root)?'none':'user'):'none';appendLog(task,`Technical review completed; next phase: ${task.meta.phase}.`);break;
+      const revision=activeRevision(root,task.meta.id);
+      task.meta.phase=revision?nextRevisionPhase(root,task.meta.id,'technical-reviewer'):nextAfterTechnicalReview(root,task);
+      task.meta.status=statusForPhase(task.meta.phase);task.meta.waiting_for=task.meta.phase==='final-approval'?(revision?'user':(finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?'none':'user')):'none';appendLog(task,revision?`${revision.id} technical-review artifact refreshed; next required revision phase: ${task.meta.phase}.`:`Technical review completed; next phase: ${task.meta.phase}.`);break;
     }
     case 'qa-engineer':{
-      const validation=validateEvidence(root,id,'qa');if(!validation.valid)throw new Error(`Missing required evidence: ${[...validation.missing,...validation.errors].join(', ')}`);
-      task.meta.phase=needsTargetAudience(root,task)?'final-customer':'final-approval';task.meta.status=statusForPhase(task.meta.phase);task.meta.waiting_for=task.meta.phase==='final-approval'?(finalProductOwnerRequired(root)?'none':'user'):'none';appendLog(task,`QA completed; next phase: ${task.meta.phase}.`);break;
+      const revision=activeRevision(root,task.meta.id);
+      const validation=validateEvidence(root,id,revision?'revision':'qa');if(!validation.valid)throw new Error(`Missing required evidence: ${[...validation.missing,...validation.errors].join(', ')}`);
+      if(revision){
+        const next=nextRevisionPhase(root,task.meta.id,'qa-engineer');
+        if(next==='final-approval')markRevisionValidated(root,task.meta.id);
+        task.meta.phase=next;task.meta.status=statusForPhase(next);task.meta.waiting_for=next==='final-approval'?'user':'none';
+        appendLog(task,next==='final-approval'?`${revision.id} passed all dependency-selected validation; preserved artifacts remain authoritative and final user review is next.`:`${revision.id} QA artifact refreshed; next dependency-selected phase: ${next}.`);break;
+      }
+      task.meta.phase=needsTargetAudience(root,task)?'final-customer':'final-approval';task.meta.status=statusForPhase(task.meta.phase);task.meta.waiting_for=task.meta.phase==='final-approval'?(finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?'none':'user'):'none';appendLog(task,`QA completed; next phase: ${task.meta.phase}.`);break;
     }
     case 'final-customer':{
       const validation=validateEvidence(root,id,'final');if(!validation.valid)throw new Error(`Missing required evidence: ${[...validation.missing,...validation.errors].join(', ')}`);
       if (targetAudienceRequired(root)) { const audience=targetAudienceReviewStatus(root,id); if(!audience.valid)throw new Error(audience.detail); }
-      task.meta.phase='final-approval';task.meta.status='awaiting_final_approval';task.meta.waiting_for=finalProductOwnerRequired(root)?'none':'user';appendLog(task,finalProductOwnerRequired(root)?'Target Audience validation completed; final Product Owner outcome review is required before approval.':'Target Audience validation completed; task awaits user approval.');break;
+      task.meta.phase='final-approval';task.meta.status='awaiting_final_approval';task.meta.waiting_for=finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?'none':'user';appendLog(task,finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?'Target Audience validation completed; final Product Owner outcome review is required before approval.':'Target Audience validation completed; task awaits user approval.');break;
     }
     default:throw new Error(`Phase cannot be completed: ${task.meta.phase}`);
   }
@@ -314,22 +342,73 @@ export function resolveFinalProductOwnerDecision(root:string,id:string,decision:
 
 export function approveFinal(root:string,id:string,note='Accepted by user',options:Record<string,unknown>={}){
   const task=loadTask(findTask(root,id));if(task.meta.status!=='awaiting_final_approval'||task.meta.phase!=='final-approval')throw new Error('Task is not awaiting final approval');
-  if(finalProductOwnerRequired(root)){
+  if(finalProductOwnerRequired(root)&&!hasUserWaiver(root,id,'final-product-owner')){
     const finalOwner=finalProductOwnerReviewStatus(root,id);
-    if(!finalOwner.valid)throw new Error(finalOwner.detail);
-    if(autonomyPolicy(root).level==='guided'&&finalOwner.review&&!finalOwner.review.humanDecision)throw new Error('Guided autonomy requires the user to review and acknowledge the final Product Owner outcome opinion before final approval');
+    const preservedByRevision=revisionAllowsPreservedFinalProductOwner(root,id)&&Boolean(finalOwner.review);
+    if(!finalOwner.valid&&!preservedByRevision)throw new Error(finalOwner.detail);
+    if(!preservedByRevision&&autonomyPolicy(root).level==='guided'&&finalOwner.review&&!finalOwner.review.humanDecision)throw new Error('Guided autonomy requires the user to review and acknowledge the final Product Owner opinion before final approval');
   }
-  if(approvalActor(options)==='user')assertGatePresentationReady(root,task,'final-approval',options);
-  ensureApprovedSpecUnchanged(root,task);const coverage=acceptanceCoverage(root,id);if(!coverage.complete)throw new Error(`Acceptance coverage incomplete: ${coverage.uncovered.join(', ')||coverage.invalidReferences.join(', ')}`);
-  const scope=scopeGuardStatus(root,id);if(scope.applicable&&!scope.valid)throw new Error(`Scope Guard failed: ${scope.detail}`);if(!task.meta.learning_recorded)throw new Error('Durable project learning must be recorded before final approval');
-  const evidence=validateEvidence(root,id,'final');if(!evidence.valid)throw new Error(`Missing required evidence: ${[...evidence.missing,...evidence.errors].join(', ')}`);
+  if(approvalActor(options)==='user'&&!hasUserWaiver(root,id,'host-presentation'))assertGatePresentationReady(root,task,'final-approval',options);
+  ensureApprovedSpecUnchanged(root,task);
+  if(!hasUserWaiver(root,id,'acceptance-coverage')){const coverage=acceptanceCoverage(root,id);if(!coverage.complete)throw new Error(`Acceptance coverage incomplete: ${coverage.uncovered.join(', ')||coverage.invalidReferences.join(', ')}`);}
+  if(!hasUserWaiver(root,id,'scope-guard')){const scope=scopeGuardStatus(root,id);if(scope.applicable&&!scope.valid)throw new Error(`Scope Guard failed: ${scope.detail}`);}
+  if(!hasUserWaiver(root,id,'project-learning')&&!task.meta.learning_recorded)throw new Error('Durable project learning must be recorded before final approval');
+  if(!hasUserWaiver(root,id,'final-evidence')){const evidence=validateEvidence(root,id,'final');if(!evidence.valid)throw new Error(`Missing required evidence: ${[...evidence.missing,...evidence.errors].join(', ')}`);}
+  const revision=activeRevision(root,id);if(revision){acceptRevision(root,id);task.meta.active_revision_id=null;}
   task.meta.final_approval='approved';task.meta.final_approved_at=new Date().toISOString();
   if(task.meta.worktree_path&&task.meta.worktree_branch){task.meta.status='awaiting_delivery';task.meta.phase='delivery';task.meta.waiting_for='user';task.meta.delivery_status='pending';appendLog(task,`Final result approved by ${approvalActor(options)}. Delivery decision required. ${note}`);}
   else{task.meta.status='done';task.meta.phase='done';task.meta.waiting_for='none';task.meta.delivery_status='not_required';appendLog(task,`Final result approved by ${approvalActor(options)}. ${note}`);}
   releaseTaskLease(root,task.meta.id,{force:true});const saved=saveTask(task);trace(root,saved,'final-approved',{note},options);taskMetrics(root,id);return saved;
 }
 export function completeDelivery(root:string,id:string,action:string,options:Record<string,unknown>={}){const task=loadTask(findTask(root,id));if(task.meta.status!=='awaiting_delivery'||task.meta.phase!=='delivery')throw new Error('Task is not awaiting delivery');if(action==='keep-open'){appendLog(task,'Delivery kept open by user; worktree preserved.');return saveTask(task);}if(action==='merge-local'){mergeWorktree(root,task.meta.worktree_path,task.meta.worktree_branch,task.meta.worktree_base);}else if(action==='confirm-external'){removeWorktree(root,task.meta.worktree_path,task.meta.worktree_branch);}else throw new Error(`Unknown delivery action: ${action}`);task.meta.delivery_status='completed';task.meta.delivered_at=new Date().toISOString();task.meta.delivery_action=action;task.meta.status='done';task.meta.phase='done';task.meta.waiting_for='none';releaseTaskLease(root,task.meta.id,{force:true});appendLog(task,`Delivery completed: ${action}.`);const saved=saveTask(task);trace(root,saved,'delivery-completed',{action},options);taskMetrics(root,id);return saved;}
-export function rejectFinal(root:string,id:string,note:string,returnTo:TaskPhase='builder',options:Record<string,unknown>={}){const task=loadTask(findTask(root,id));if(task.meta.status!=='awaiting_final_approval')throw new Error('Task is not awaiting final approval');assertGatePresentationReady(root,task,'final-approval',options);const allowed:TaskPhase[]=['product-specifier','ux-ui-designer','technical-architecture','builder','technical-reviewer','qa-engineer'];if(!allowed.includes(returnTo))throw new Error(`Invalid return phase: ${returnTo}`);task.meta.final_approval='changes_requested';const mayContinue=registerReturn(root,task,returnTo,note,options);if(!mayContinue)return saveTask(task);task.meta.phase=returnTo;task.meta.status=statusForPhase(returnTo);task.meta.waiting_for='none';if(returnTo==='builder'||returnTo==='technical-reviewer')invalidatePhaseBoundary(root,task.meta.id,returnTo);releaseTaskLease(root,task.meta.id,{force:true});appendLog(task,`User rejected final result and returned to ${returnTo}: ${note}`);const saved=saveTask(task);trace(root,saved,'user-rejection',{gate:'final',note,returnTo},options);return saved;}
+export function startIncrementalRevision(root:string,id:string,note:string,input:{classification?:string;changeSignals?:string[];affectedFiles?:string[];affectedAcceptanceCriteria?:string[];allowedFiles?:string[]}={},options:Record<string,unknown>={}){
+  assertConcurrencyMutationAuthority(root,id,session(options));const task=loadTask(findTask(root,id));
+  if(['done','rejected'].includes(task.meta.status))throw new Error('Closed task cannot start an incremental revision');
+  if(task.meta.spec_approval!=='approved')throw new Error('Incremental revision requires an approved specification');
+  ensureApprovedSpecUnchanged(root,task);
+  const sourcePhase=task.meta.phase;
+  if(sourcePhase==='spec-approval'||['product-specifier','ux-ui-designer','technical-architecture'].includes(sourcePhase))throw new Error('Incremental revision is only available after specification approval has entered execution/review; refine the specification instead');
+  if(sourcePhase==='final-approval')assertGatePresentationReady(root,task,'final-approval',options);
+  const revisionInput:any={request:note,sourceGate:sourcePhase,userAuthorized:options.userAuthorized===true||sourcePhase==='final-approval'||sourcePhase==='final-customer'};if(input.classification!==undefined)revisionInput.classification=input.classification;if(input.changeSignals!==undefined)revisionInput.changeSignals=input.changeSignals;if(input.affectedFiles!==undefined)revisionInput.affectedFiles=input.affectedFiles;if(input.affectedAcceptanceCriteria!==undefined)revisionInput.affectedAcceptanceCriteria=input.affectedAcceptanceCriteria;if(input.allowedFiles!==undefined)revisionInput.allowedFiles=input.allowedFiles;
+  const revision=createRevision(root,id,revisionInput);
+  const current=loadTask(findTask(root,id));
+  if(['final-approval','delivery'].includes(sourcePhase))current.meta.final_approval='changes_requested';
+  if(sourcePhase==='delivery'){current.meta.delivery_status='revision_requested';current.meta.delivered_at=null;current.meta.delivery_action=null;}
+  current.meta.phase='builder';current.meta.status='ready';current.meta.waiting_for='none';current.meta.block_reason=null;invalidatePhaseBoundary(root,current.meta.id,'builder');releaseTaskLease(root,current.meta.id,{force:true});
+  appendLog(current,`Feedback from ${sourcePhase} routed through incremental ${revision.id}; artifact dependency analysis selected only ${revision.requiredPhases?.join(' → ')||'targeted validation'} after Builder.`);const saved=saveTask(current);trace(root,saved,'user-revision',{gate:sourcePhase,revisionId:revision.id,note,invalidatedArtifacts:revision.invalidatedArtifacts||[]},options);return saved;
+}
+export function rejectFinal(root:string,id:string,note:string,returnTo:TaskPhase='builder',options:Record<string,unknown>={}){
+  if(returnTo==='builder'&&options.incremental!==false){const input:any={};if(typeof options.revisionClass==='string')input.classification=options.revisionClass;if(Array.isArray(options.revisionSignals))input.changeSignals=options.revisionSignals.map(String);if(Array.isArray(options.affectedFiles))input.affectedFiles=options.affectedFiles.map(String);if(Array.isArray(options.affectedAcceptanceCriteria))input.affectedAcceptanceCriteria=options.affectedAcceptanceCriteria.map(String);if(Array.isArray(options.allowedFiles))input.allowedFiles=options.allowedFiles.map(String);return startIncrementalRevision(root,id,note,input,options);}
+  const task=loadTask(findTask(root,id));if(task.meta.status!=='awaiting_final_approval')throw new Error('Task is not awaiting final approval');assertGatePresentationReady(root,task,'final-approval',options);const allowed:TaskPhase[]=['product-specifier','ux-ui-designer','technical-architecture','builder','technical-reviewer','qa-engineer'];if(!allowed.includes(returnTo))throw new Error(`Invalid return phase: ${returnTo}`);task.meta.final_approval='changes_requested';const mayContinue=registerReturn(root,task,returnTo,note,options);if(!mayContinue)return saveTask(task);task.meta.phase=returnTo;task.meta.status=statusForPhase(returnTo);task.meta.waiting_for='none';if(returnTo==='builder'||returnTo==='technical-reviewer')invalidatePhaseBoundary(root,task.meta.id,returnTo);releaseTaskLease(root,task.meta.id,{force:true});appendLog(task,`User rejected final result and returned to ${returnTo}: ${note}`);const saved=saveTask(task);trace(root,saved,'user-rejection',{gate:'final',note,returnTo},options);return saved;}
+
+
+export function waiveWorkflowStep(root:string,id:string,target:UserOverrideTarget,reason:string,options:Record<string,unknown>={}){
+  const task=loadTask(findTask(root,id));if(['done','rejected'].includes(task.meta.status))throw new Error('Closed task does not need a workflow override');
+  const gate=workflowGate(target);if(!gate||!gate.waivable)throw new Error(`Workflow gate is not user-waivable: ${target}`);
+  const override=recordUserOverride(root,id,{kind:'waive',target,reason},options);
+  if(gate.terminalOnWaive&&gate.phase===task.meta.phase){
+    task.meta.delivery_status='skipped_by_user';task.meta.delivery_action='user-override';task.meta.status='done';task.meta.phase='done';task.meta.waiting_for='none';releaseTaskLease(root,task.meta.id,{force:true});appendLog(task,`User governance override ${override.id} skipped ${gate.label} and closed the task: ${reason}`);const saved=saveTask(task);trace(root,saved,'user-governance-override',{overrideId:override.id,kind:'waive',target,reason},options);return saved;
+  }
+  let next:TaskPhase|null=null;
+  if(gate.phase===task.meta.phase){
+    if(task.meta.phase==='ux-ui-designer'){task.meta.completed_design=true;next=nextPreApproval(root,task);}
+    else if(task.meta.phase==='technical-architecture'){task.meta.completed_architecture=true;next='spec-approval';}
+    else if(task.meta.phase==='technical-reviewer')next=nextAfterTechnicalReview(root,task);
+    else if(task.meta.phase==='qa-engineer')next=needsTargetAudience(root,task)?'final-customer':'final-approval';
+    else if(task.meta.phase==='final-customer')next='final-approval';
+  }
+  if(next){
+    if(next==='spec-approval')setAwaitingSpec(task);else{task.meta.phase=next;task.meta.status=statusForPhase(next);task.meta.waiting_for=next==='final-approval'?'user':'none';}
+    releaseTaskLease(root,task.meta.id,{force:true});
+  }
+  appendLog(task,`User governance override ${override.id} waived ${gate.label}: ${reason}${next?`; next phase: ${next}`:''}`);const saved=saveTask(task);trace(root,saved,'user-governance-override',{overrideId:override.id,kind:'waive',target,reason},options);return saved;
+}
+
+export function closeTaskByUserOverride(root:string,id:string,reason:string,options:Record<string,unknown>={}){
+  let task=loadTask(findTask(root,id));if(['done','rejected'].includes(task.meta.status))return task;
+  const override=recordUserOverride(root,id,{kind:'close',target:'task',reason},options);cancelActiveRevision(root,id,`Task closed by ${override.id}`);task=loadTask(findTask(root,id));
+  task.meta.final_approval='overridden';task.meta.final_approved_at=new Date().toISOString();task.meta.delivery_status=task.meta.worktree_path?'skipped_by_user':'not_required';task.meta.delivery_action='user-override';task.meta.status='done';task.meta.phase='done';task.meta.waiting_for='none';task.meta.block_reason=null;releaseTaskLease(root,task.meta.id,{force:true});releaseConcurrencyTaskReservation(root,task.meta.id,{sessionId:session(options),force:true});appendLog(task,`Task closed by explicit user governance override ${override.id}. Normal completion gates were not asserted complete. ${reason}`);const saved=saveTask(task);trace(root,saved,'user-governance-override',{overrideId:override.id,kind:'close',target:'task',reason},options);taskMetrics(root,id);return saved;
+}
 
 export function approveAmendmentDecision(root:string,id:string,amendmentId:string,note='Approved by user',options:Record<string,unknown>={}){
   const task=loadTask(findTask(root,id));

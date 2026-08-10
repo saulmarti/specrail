@@ -204,6 +204,36 @@ specrail amendment list TASK-0042
 
 See [`docs/AMENDMENTS.md`](docs/AMENDMENTS.md).
 
+### Small post-approval changes use an Incremental Revision Loop
+
+When the user sees the implemented result and asks for a bounded refinement at any post-approval execution/review point, SpecRail keeps the same task and records an immutable `REV-*` instead of replaying planning or creating a new task. `REV-*` v3 derives its route from semantic change signals and a declarative artifact dependency graph: **revision context → provisional signals → Builder delta → actual changed files → final signals → invalidated artifacts → only their producer/validator phases → Final Approval**. Unaffected governed artifacts remain authoritative.
+
+Revisions are deliberately **implement-first**. SpecRail does not require a new test plan or a speculative permanent test before implementing a small refinement whose desired result is still being discovered. After implementation it requires the cheapest direct evidence for the affected delta; existing tests may run when cheap and relevant, and permanent regression coverage is decided after the behavior stabilizes. Revision feedback also does not consume the repair budget.
+
+At revision start SpecRail seals a lightweight workspace baseline. When Builder finishes, it compares that baseline with the real workspace delta and recalculates impact from the files actually changed; `classification` is descriptive only and never controls routing. If the actual delta reveals architecture/data/security/product/contract materiality, the fast path fails closed. Each Builder pass then advances an implementation generation (`GEN-*`). Implementation-dependent evidence is bound to that generation, so affected evidence from an older implementation cannot prove the new revision while unrelated evidence remains reusable.
+
+```bash
+specrail revision status TASK-0042
+specrail revision list TASK-0042
+```
+
+Material architecture/data/security/product-flow/contract changes fail closed and must use an Amendment or return to the appropriate governed phase. See [`docs/REVISIONS.md`](docs/REVISIONS.md).
+
+### Explicit user overrides do not loop on a gate
+
+SpecRail remains fail-closed for agents and autonomy, but an explicit user instruction such as **“close this task anyway”** or **“skip final visual evidence”** is authoritative workflow input. SpecRail records an immutable `OVR-*` User Governance Override instead of repeatedly answering that formal closure is impossible. A terminal close marks the task as closed-with-override without pretending the skipped evidence/review passed; a named waiver makes `next`/Readiness stop surfacing that same step as a blocker.
+
+Overrides require explicit current-turn user authorization and are never created autonomously. Ambiguous intent may be confirmed once; after explicit confirmation the override executes once. Separate worktree delivery is not silently merged when a task is force-closed.
+
+```bash
+specrail override list TASK-0042
+specrail override waive TASK-0042 --step final-evidence --reason "User accepts without another capture" --user-authorized
+# Waivable step names are derived from the workflow-gate registry; `design` and `technical-architecture` are supported too.
+specrail override close TASK-0042 --reason "User explicitly requested closure" --user-authorized
+```
+
+See [`docs/USER-GOVERNANCE-OVERRIDES.md`](docs/USER-GOVERNANCE-OVERRIDES.md).
+
 ### Every task has an immutable QA mission
 
 Before approval, Product Specifier defines:
@@ -537,6 +567,9 @@ specrail status TASK-0001
 specrail readiness TASK-0001 --json
 specrail why-blocked TASK-0001 --json
 specrail next TASK-0001 --json
+specrail override list TASK-0001
+specrail override waive TASK-0001 --step final-evidence --reason "..." --user-authorized
+specrail override close TASK-0001 --reason "..." --user-authorized
 specrail autonomy status TASK-0001
 specrail autonomy set guided|autonomous|headless
 specrail product intelligence status

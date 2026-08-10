@@ -75,6 +75,11 @@ export interface TaskMeta {
   target_audience_review_digest?: string | null;
   target_audience_origin_session_id?: string | null;
   target_audience_forbidden_session_ids?: string[];
+  implementation_generation?: number;
+  implementation_generation_id?: string | null;
+  implementation_digest?: string | null;
+  implementation_revision_id?: string | null;
+  active_revision_id?: string | null;
   created_at: string;
   updated_at: string;
   [key: string]: unknown;
@@ -180,6 +185,9 @@ export interface EvidenceRecord {
   captureScope: string | null;
   runtimeUrl?: string | null;
   missionHash?: string | null;
+  implementationGeneration?: string | null;
+  implementationDigest?: string | null;
+  revisionId?: string | null;
   attributes?: Record<string, JsonValue>;
   size: number;
   sha256: string;
@@ -205,6 +213,9 @@ export interface EvidenceInput {
   captureScope?: string;
   runtimeUrl?: string;
   missionHash?: string;
+  implementationGeneration?: string;
+  implementationDigest?: string;
+  revisionId?: string;
   attributes?: Record<string, JsonValue>;
 }
 

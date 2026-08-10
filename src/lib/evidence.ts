@@ -8,6 +8,9 @@ import { qaMissionHash } from './qa.js';
 import { qualityPolicy } from './quality.js';
 import { operationalPolicy } from './observability.js';
 import { listConstitution } from './constitution.js';
+import { IMPLEMENTATION_DEPENDENT_EVIDENCE_KINDS, evidenceGenerationMatches } from './implementation-generation.js';
+import { activeRevision, revisionRequiredEvidenceKinds } from './revisions.js';
+import { hasUserWaiver } from './user-overrides.js';
 const VISUAL_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg']);
 const VISUAL_KINDS = new Set(['frontend-before', 'frontend-proposal', 'frontend-after', 'frontend-mobile-before', 'frontend-mobile-proposal', 'frontend-mobile-after', 'architecture-rendered', 'architecture-final', 'database-rendered', 'database-final']);
 const TARGETED_FRONTEND_KINDS = new Set(['frontend-before', 'frontend-proposal', 'frontend-after', 'frontend-mobile-before', 'frontend-mobile-proposal', 'frontend-mobile-after']);
@@ -28,7 +31,8 @@ const EXPECTED_SOURCES: Record<string,string[]> = {
     'technical-review-report': ['technical-review'], 'qa-report': ['qa-validation', 'running-application', 'executed-command'], 'customer-report': ['customer-validation'],
     'visual-proposal-evaluator-report':['technical-review'], 'visual-final-evaluator-report':['technical-review'],
     'property-test-report':['executed-command'], 'mutation-test-report':['executed-command'], 'constitution-report':['executed-command','deterministic-check'],
-    'operational-log':['running-application','executed-command'], 'operational-trace':['running-application','executed-command'], 'operational-metrics':['running-application','executed-command']
+    'operational-log':['running-application','executed-command'], 'operational-trace':['running-application','executed-command'], 'operational-metrics':['running-application','executed-command'],
+    'revision-validation-report':['running-application','executed-command','browser-capture','qa-validation']
 };
 function manifestPath(root: string, id: string): string { return path.join(path.resolve(root), '.ai/evidence', id, 'evidence.json'); }
 function evidenceLocationError(root:string,id:string,file:string):string|null {
@@ -355,7 +359,12 @@ export function addEvidence(root: string, id: string, input: EvidenceInput): Evi
     if (manifest.evidence.some((item: any) => item.kind === input.kind && item.sha256 === hash))
         throw new Error('This evidence is already registered');
     const missionHash=input.kind==='qa-report' ? (input.missionHash || task.meta.qa_mission_hash || null) : (input.missionHash || null);
-    const item: EvidenceRecord = { id: `EV-${String(manifest.evidence.length + 1).padStart(3, '0')}`, kind: input.kind, path: relativeToEvidence, source: input.source, label: input.label || input.kind, tool: input.tool || null, command: input.command || null, exitCode: input.exitCode === undefined || input.exitCode === null ? null : Number(input.exitCode), route: input.route || null, viewport: input.viewport || null, target: input.target || null, captureScope: input.captureScope || null, runtimeUrl: input.runtimeUrl || null, missionHash, attributes: input.attributes || {}, createdAt: new Date().toISOString(), sha256: hash, size: statSync(absolute).size };
+    const bindsToImplementation = IMPLEMENTATION_DEPENDENT_EVIDENCE_KINDS.has(input.kind) && Boolean(task.meta.implementation_generation_id);
+    const implementationGeneration = input.implementationGeneration || (bindsToImplementation ? String(task.meta.implementation_generation_id) : null);
+    const implementationDigest = input.implementationDigest || (bindsToImplementation ? String(task.meta.implementation_digest || '') || null : null);
+    const revisionId = input.revisionId || (bindsToImplementation ? String(task.meta.active_revision_id || '') || null : null);
+    if (input.implementationGeneration && task.meta.implementation_generation_id && input.implementationGeneration !== task.meta.implementation_generation_id) throw new Error('Evidence implementation generation does not match the current implementation');
+    const item: EvidenceRecord = { id: `EV-${String(manifest.evidence.length + 1).padStart(3, '0')}`, kind: input.kind, path: relativeToEvidence, source: input.source, label: input.label || input.kind, tool: input.tool || null, command: input.command || null, exitCode: input.exitCode === undefined || input.exitCode === null ? null : Number(input.exitCode), route: input.route || null, viewport: input.viewport || null, target: input.target || null, captureScope: input.captureScope || null, runtimeUrl: input.runtimeUrl || null, missionHash, implementationGeneration, implementationDigest, revisionId, attributes: input.attributes || {}, createdAt: new Date().toISOString(), sha256: hash, size: statSync(absolute).size };
     manifest.evidence.push(item);
     mkdirSync(path.dirname(manifestPath(root, id)), { recursive: true });
     writeFileSync(manifestPath(root, id), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -368,15 +377,18 @@ export function addEvidence(root: string, id: string, input: EvidenceInput): Evi
 export function listEvidence(root: string, id: string): EvidenceRecord[] { return readManifest(root, id).evidence; }
 function requiredKinds(task: TaskDocument, stage: string): string[] {
     const route = task.meta.route, surfaces = task.meta.surfaces, required: string[] = [];
+    const root=task.path.slice(0,task.path.indexOf(`${path.sep}.ai${path.sep}`));
+    if(stage==='technical-review'&&hasUserWaiver(root,task.meta.id,'technical-review'))return required;
+    if(stage==='qa'&&hasUserWaiver(root,task.meta.id,'qa'))return required;
     const frontend = surfaces.includes('frontend') || surfaces.includes('ui') || surfaces.includes('ux'), backend = surfaces.includes('backend') || surfaces.includes('api'), database = surfaces.includes('database') || route.database;
     if (stage === 'pre-approval') {
-        if (frontend || route.design) {
+        if ((frontend || route.design) && !hasUserWaiver(root,task.meta.id,'design')) {
             required.push('frontend-before', 'ui-design-brief', 'frontend-proposal', 'ui-proposal-review');
             if (['medium','high','critical'].includes(String(task.meta.risk).toLowerCase()) || ['medium','large'].includes(String(task.meta.size).toLowerCase())) required.push('visual-proposal-evaluator-report');
         }
-        if (route.architecture)
+        if (route.architecture && !hasUserWaiver(root,task.meta.id,'technical-architecture'))
             required.push('architecture-source', 'architecture-rendered');
-        if (database)
+        if (database && !hasUserWaiver(root,task.meta.id,'technical-architecture'))
             required.push('database-source', 'database-rendered', 'migration-plan');
     }
     if (stage === 'technical-review' && route.technical_review !== 'none')
@@ -388,18 +400,19 @@ function requiredKinds(task: TaskDocument, stage: string): string[] {
             required.push('backend-demo', 'test-log');
         if (database && route.implementation)
             required.push('database-final', 'migration-log');
-        if (route.architecture && route.implementation)
+        if (route.architecture && route.implementation && !hasUserWaiver(root,task.meta.id,'technical-architecture'))
             required.push('architecture-final');
-        if (route.technical_review !== 'none') required.push('technical-review-report');
+        if (route.technical_review !== 'none' && !hasUserWaiver(root,task.meta.id,'technical-review')) required.push('technical-review-report');
         const q=qualityPolicy(task); if(q.propertyTesting==='required') required.push('property-test-report'); if(q.mutationTesting==='required') required.push('mutation-test-report');
         const ops=operationalPolicy(task); required.push(...ops.requiredEvidence);
         if(route.technical_review!=='none' && listConstitution(task.path.slice(0,task.path.indexOf(`${path.sep}.ai${path.sep}`))).some(item=>item.status==='active')) required.push('constitution-report');
         if (route.qa !== 'none')
             required.push('qa-report');
     }
+    if (stage === 'revision') required.push(...revisionRequiredEvidenceKinds(root, task.meta.id));
     if (stage === 'final') {
         required.push(...requiredKinds(task, 'qa'));
-        if (route.final_customer) required.push('customer-report');
+        if (route.final_customer&&!hasUserWaiver(root,task.meta.id,'target-audience')) required.push('customer-report');
         if ((frontend || route.design) && (['medium','high','critical'].includes(String(task.meta.risk).toLowerCase()) || ['medium','large'].includes(String(task.meta.size).toLowerCase()))) required.push('visual-final-evaluator-report');
     }
     return [...new Set(required)];
@@ -456,8 +469,9 @@ function reportMatchesScreenshot(report: any, screenshot: any) {
     return report && report.screenshotKind === screenshot.kind && exactContextValue(report.route) === exactContextValue(screenshot.route) && exactContextValue(report.target) === exactContextValue(screenshot.target) && report.capture?.scope === screenshot.captureScope && dims && Number(report.viewport?.width) === dims.width && Number(report.viewport?.height) === dims.height;
 }
 export function validateEvidence(root: string, id: string, stage = 'all') {
-    const task = loadTask(findTask(root, id)), items = listEvidence(root, id), kinds = new Set(items.map((item: any) => item.kind)), required = stage === 'all' ? [...requiredKinds(task, 'pre-approval'), ...requiredKinds(task, 'final')] : requiredKinds(task, stage);
-    const missing = [...new Set(required)].filter((kind: any) => !kinds.has(kind)), errors = [], layoutReports = new Map(), designBriefs = new Map(), proposalReviews = new Map();
+    const task = loadTask(findTask(root, id)), items = listEvidence(root, id), revision=activeRevision(root,id), revisionKinds=new Set(revision?.revalidateEvidenceKinds||[]), required = stage === 'all' ? [...requiredKinds(task, 'pre-approval'), ...requiredKinds(task, 'final')] : requiredKinds(task, stage);
+    const kindAvailable=(kind:string)=>items.some(item=>item.kind===kind&&(!revision||!revisionKinds.has(kind)||evidenceGenerationMatches(task,item)));
+    const missing = [...new Set(required)].filter((kind: any) => !kindAvailable(kind)), errors = [], layoutReports = new Map(), designBriefs = new Map(), proposalReviews = new Map();
     for (const item of items) {
         const file = path.resolve(path.dirname(manifestPath(root, id)), item.path);
         if (!existsSync(file))
@@ -503,7 +517,7 @@ export function validateEvidence(root: string, id: string, stage = 'all') {
         if (!markdown.includes(`(${rel})`))
             errors.push(`Markdown does not reference ${item.id}`);
     }
-    const beforeItems = items.filter((x: any) => ['frontend-before', 'frontend-mobile-before'].includes(x.kind)), proposalItems = items.filter((x: any) => PROPOSAL_KINDS.has(x.kind)), afterItems = items.filter((x: any) => AFTER_KINDS.has(x.kind));
+    const beforeItems = items.filter((x: any) => ['frontend-before', 'frontend-mobile-before'].includes(x.kind)), proposalItems = items.filter((x: any) => PROPOSAL_KINDS.has(x.kind)), afterItems = items.filter((x: any) => AFTER_KINDS.has(x.kind) && (!revision || !revisionKinds.has(x.kind) || evidenceGenerationMatches(task,x)));
     const expectedContexts=expectedVisualContexts(task);
     const canonicalFrontend=canonicalFrontendVisualItems(task,[...beforeItems,...proposalItems,...afterItems]);
     const activeBeforeItems=canonicalFrontend.filter(item=>['frontend-before','frontend-mobile-before'].includes(item.kind));

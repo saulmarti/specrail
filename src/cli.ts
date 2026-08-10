@@ -6,7 +6,7 @@ import { initProject, findProjectRoot, resolveRepositoryRoot, projectContextStat
 import { createTask, listTasks, findTask, loadTask, saveTask, setSection, patchTask, addDependency, createSubtask, resolveTaskReference } from './lib/task.js';
 import { addQuestion, answerQuestion, listQuestions } from './lib/questions.js';
 import { addEvidence, listEvidence, validateEvidence, visualEvidenceDigest } from './lib/evidence.js';
-import { startRefinement, completePhase, approveSpecification, requestSpecChanges, rejectTask, startExecution, blockTask, resumeTask, returnTask, approveFinal, rejectFinal, completeDelivery, approveAmendmentDecision, rejectAmendmentDecision, resolveFinalProductOwnerDecision, resolveTargetAudienceDecision, routeTargetAudienceRevision } from './lib/workflow.js';
+import { startRefinement, completePhase, approveSpecification, requestSpecChanges, rejectTask, startExecution, blockTask, resumeTask, returnTask, approveFinal, rejectFinal, startIncrementalRevision, completeDelivery, approveAmendmentDecision, rejectAmendmentDecision, resolveFinalProductOwnerDecision, resolveTargetAudienceDecision, routeTargetAudienceRevision, waiveWorkflowStep, closeTaskByUserOverride } from './lib/workflow.js';
 import { createWorktree, checkpointWorktree, removeWorktree } from './lib/worktree.js';
 import { doctor, doctorFixPlan, applyDoctorFixes } from './lib/doctor.js';
 import { nextAction } from './lib/next.js';
@@ -37,6 +37,8 @@ import { recommendHarness } from './lib/policy.js';
 import { acceptanceCoverage } from './lib/acceptance.js';
 import { setBlastRadius, scopeGuardStatus } from './lib/scope-guard.js';
 import { proposeAmendment, listAmendments } from './lib/amendments.js';
+import { activeRevision, listRevisions } from './lib/revisions.js';
+import { listUserOverrides, USER_OVERRIDE_TARGETS, type UserOverrideTarget } from './lib/user-overrides.js';
 import { inferUpdateChannel, updateSpecRail, type UpdateChannel } from './lib/update.js';
 import { choosePhaseBoundary, enterPhaseBoundary, resetPhaseBoundary } from './lib/phase-boundary.js';
 import { estimatePhaseBoundary } from './lib/boundary-metrics.js';
@@ -363,7 +365,7 @@ async function main() {
             if (arg(1) === 'approve')
                 output(taskSummary(approveFinal(root, arg(2), flags.note, { sessionId: flags.session })), true);
             else if (arg(1) === 'reject')
-                output(taskSummary(rejectFinal(root, arg(2), requireFlag(flags, 'note'), flags['return-to'] || 'builder', { sessionId: flags.session })), true);
+                output(taskSummary(rejectFinal(root, arg(2), requireFlag(flags, 'note'), flags['return-to'] || 'builder', { sessionId: flags.session, incremental: !booleanFlag(flags['full-return'], false), revisionClass: flags.class, revisionSignals: surfaces(flags.signals), affectedFiles: surfaces(flags.files), affectedAcceptanceCriteria: surfaces(flags.ac), allowedFiles: surfaces(flags['allow-files']) })), true);
             else
                 throw new Error('Unknown final command');
             break;
@@ -392,6 +394,28 @@ async function main() {
             if(arg(1)==='set') { assertAgentMutation(root,arg(2),flags); const value=flags.file?jsonValue(flags.file):{allowedFiles:surfaces(requireFlag(flags,'allowed-files')),protectedFiles:surfaces(flags['protected-files']),expectedSymbols:surfaces(flags.symbols),reason:requireFlag(flags,'reason')}; output(setBlastRadius(root,arg(2),value),true); }
             else if(arg(1)==='status') output(scopeGuardStatus(root,arg(2)),true);
             else throw new Error('Use: specrail scope set|status TASK');
+            break;
+        }
+        case 'revision': {
+            root=findProjectRoot(rootFrom(flags));
+            const sub=arg(1), id=arg(2);
+            if(sub==='list') output(listRevisions(root,id),true);
+            else if(sub==='status') output({taskId:id,active:activeRevision(root,id),revisions:listRevisions(root,id)},true);
+            else if(sub==='start') output(taskSummary(startIncrementalRevision(root,id,requireFlag(flags,'note'),{classification:flags.class,changeSignals:surfaces(flags.signals),affectedFiles:surfaces(flags.files),affectedAcceptanceCriteria:surfaces(flags.ac),allowedFiles:surfaces(flags['allow-files'])},{sessionId:flags.session})),true);
+            else throw new Error('Use: specrail revision start|status|list TASK [--note ...] [--class ...] [--signals visual-output,copy-output] [--files a,b] [--ac AC-001]');
+            break;
+        }
+        case 'override': {
+            root=findProjectRoot(rootFrom(flags));
+            const sub=arg(1),id=arg(2);
+            if(sub==='list') output(listUserOverrides(root,id),true);
+            else if(sub==='waive') {
+                const target=String(requireFlag(flags,'step')) as UserOverrideTarget;
+                if(!USER_OVERRIDE_TARGETS.includes(target))throw new Error(`Unsupported override step: ${target}. Allowed: ${USER_OVERRIDE_TARGETS.join(', ')}`);
+                output(taskSummary(waiveWorkflowStep(root,id,target,requireFlag(flags,'reason'),{sessionId:flags.session,userAuthorized:booleanFlag(flags['user-authorized'],false)})),true);
+            }
+            else if(sub==='close') output(taskSummary(closeTaskByUserOverride(root,id,requireFlag(flags,'reason'),{sessionId:flags.session,userAuthorized:booleanFlag(flags['user-authorized'],false)})),true);
+            else throw new Error('Use: specrail override list TASK | override waive TASK --step STEP --reason ... --user-authorized | override close TASK --reason ... --user-authorized');
             break;
         }
         case 'amendment': {
@@ -696,7 +720,7 @@ async function main() {
             } else output(doctor(root, process.env.AI_FLOW_HOME ? path.resolve(process.env.AI_FLOW_HOME) : undefined), true);
             break;
         default: console.log(`specrail commands:\n  init, preflight, intake, autonomy status|set|advance, concurrency plan|status|next|prepare|heartbeat|release|cancel, product intelligence status|enable|disable, product owner status|review|reset|decide, product owner final status|review|reset|decide, audience profiles|status|review|reset|route|decide, project status|complete|learn, create, list, resolve, status, readiness, why-blocked, next, interaction, patch, refine\n  section set, question add|answer|list, phase complete\n  spec approve|changes|reject|lint, run, block, resume, return
-  lease status|acquire|take|release, boundary status|choose|enter|estimate|reset TASK, context status|request, review bundle|cockpit, cockpit TASK\n  evidence add|list|validate, acceptance coverage, scope set|status, amendment propose|list|approve|reject, dependency add, subtask create\n  worktree create|checkpoint|remove, final approve|reject, delivery merge|external|keep
+  lease status|acquire|take|release, boundary status|choose|enter|estimate|reset TASK, context status|request, review bundle|cockpit, cockpit TASK\n  evidence add|list|validate, acceptance coverage, scope set|status, revision start|status|list, override waive|close|list, amendment propose|list|approve|reject, dependency add, subtask create\n  worktree create|checkpoint|remove, final approve|reject, delivery merge|external|keep
   capability visualize status|record [--skill visualize], capability host status|record|reset, visualization status|record|validate-plan
   presentation status|record TASK --gate spec-approval|final-approval --session ID
   qa mission, failure record|list, eval list|approve|dismiss, repair status|reset

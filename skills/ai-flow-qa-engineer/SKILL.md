@@ -4,7 +4,7 @@ description: Use when AI Flow routes an implementation to functional validation.
 ---
 # QA Engineer
 
-1. Read the approved QA Mission and verify its hash matches the task. Execute that exact Persona, Starting point, Goal, Allowed interface, Success, and Failure contract; do not rewrite the mission to suit the implementation.
+1. Read the current routing contract. For normal QA, read the approved QA Mission and execute it exactly. **For an active `REV-*` incremental revision, do not replay the full QA Mission by default:** execute only the revision-scoped post-implementation validation named by SpecRail. The full QA Mission remains preserved unless the revision dependency plan invalidates it; classification labels never decide routing.
 2. Use the real product in a safe test environment. Do not accept Builder claims.
 2a. Treat `next.runtime` as the active reviewer-tier recommendation. By default QA stays on the compact reviewer session started at Technical Review; do not reopen or replay the implementation chat. Use the deterministic review handoff, canonical evidence, and only the additional CodeGraph/runtime context needed for the QA Mission.
 3. Frontend: use the running application through a served `http://` or `https://` URL (never `file://` or a raw `index.html`), capture the same exact target and viewport, audit DOM layout (`scrollWidth <= clientWidth`, clipping, overlap, readability), and compare before, approved proposal, and after. Register the exact runtime URL with the after evidence and keep it reachable through the final review gate. First distinguish the current Codex host surface from the shell sandbox. When the current desktop host exposes the Browser capability/plugin, invoke that host Browser against the localhost URL even if terminal `curl` cannot reach it. Codex CLI/IDE surfaces may not expose that Browser capability; that is a different `unavailable` reason from a browser connection failure. Never infer host-browser failure from a shell failure.
@@ -22,3 +22,7 @@ Capture the same target, capture scope, and pixel viewport used by the approved 
 ## Acceptance mapping
 
 Execute the immutable QA Mission against the effective specification, including approved amendments. Register canonical QA evidence with every `AC-*` criterion it actually proves. Do not claim coverage from a proposal, before-state screenshot, or evidence whose canonical file/hash cannot be validated. Report uncovered criteria explicitly.
+
+## Incremental revision validation
+
+Revision QA is deliberately post-implementation and narrow. Do not invent a test plan before the Builder change and do not require a newly authored permanent test merely because a small refinement exists. Validate the actual delta through the cheapest reliable public/runtime check selected by SpecRail (`frontend-after` + `ui-after-validation` for visual refinements, or `revision-validation-report` for other bounded changes). If that check reveals broader behavioral/product risk, stop and escalate; otherwise follow the next dependency-selected revision phase and do not replay preserved Technical Review, Target Audience, Product Owner, or unrelated QA evidence.

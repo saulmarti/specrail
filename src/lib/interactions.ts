@@ -8,6 +8,7 @@ import { pendingAmendments } from './amendments.js';
 import { runtimeRecommendation } from './phase-handoff.js';
 import { finalProductOwnerRequired, finalProductOwnerReviewStatus, productOwnerReviewStatus, targetAudienceReviewStatus } from './product-intelligence.js';
 import { autonomyPolicy } from './autonomy-policy.js';
+import { hasUserWaiver } from './user-overrides.js';
 import type { HostActionInteraction, NativeInteraction, Presentation, QuestionOption, TaskQuestion } from './types.js';
 
 function option(label:string,description=''):QuestionOption{return{label:String(label),description:String(description||label)};}
@@ -53,7 +54,7 @@ export function interactionForTask(root:string,id:string,kind='current',input:In
   if(task.meta.phase==='final-customer'&&targetAudienceReviewStatus(root,id).requiresProductDecision)return interactionForTask(root,id,'target-audience-decision',input);
   if(task.meta.open_questions>0)return interactionForTask(root,id,'open-questions',input);
   if(task.meta.phase==='spec-approval')return interactionForTask(root,id,'spec-approval',input);
-  if(task.meta.phase==='final-approval'&&finalProductOwnerRequired(root)){
+  if(task.meta.phase==='final-approval'&&finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')){
    const finalOwner=finalProductOwnerReviewStatus(root,id);
    const guidedAcknowledgement=autonomyPolicy(root).level==='guided'&&Boolean(finalOwner.review)&&finalOwner.integrityValid&&!finalOwner.stale&&!finalOwner.review?.humanDecision;
    if(finalOwner.needsHumanJudgment||guidedAcknowledgement)return interactionForTask(root,id,'final-product-owner-decision',input);
@@ -143,7 +144,7 @@ export function interactionForTask(root:string,id:string,kind='current',input:In
   const visualization=blockerVisualization(root,loadProjectConfig(root),task,sessionId) ?? undefined;
   return{tool:'request_user_input',...(visualization?{visualization}:{}),questions:[{id:'workflow-blocker',header:'Bloqueo',question:`${task.meta.id} — ${task.meta.title} está bloqueada: ${task.meta.block_reason||'Un problema relevante necesita tu decisión.'}`,options:[option('Reintentar fase','Reanudar desde la fase interrumpida'),option('Volver a especificación','Refinar alcance o decisiones antes de continuar'),option('Rechazar tarea','Cerrar sin implementar')],isOther:true}]};
  }
- if(kind==='final-approval'){const presentation=finalPresentation(root,id,sessionId);const hostActions=presentationHostActions(presentation);if(hostActions)return hostActions;return{tool:'request_user_input',presentation,questions:[{id:'final-approval',header:'Resultado final',question:`Después de revisar el resultado y las evidencias mostradas arriba para ${task.meta.id} — ${task.meta.title}, ¿aceptas el resultado?`,options:[option('Aprobar resultado','Aceptar el resultado y continuar a su entrega'),option('Solicitar cambios','Volver a la fase adecuada con comentarios'),option('Mantener abierta','Dejarla pendiente de validación')],isOther:true}]};}
+ if(kind==='final-approval'){const presentation=finalPresentation(root,id,sessionId);const hostActions=hasUserWaiver(root,task.meta.id,'host-presentation')?null:presentationHostActions(presentation);if(hostActions)return hostActions;return{tool:'request_user_input',presentation,questions:[{id:'final-approval',header:'Resultado final',question:`Después de revisar el resultado y las evidencias mostradas arriba para ${task.meta.id} — ${task.meta.title}, ¿aceptas el resultado?`,options:[option('Aprobar resultado','Aceptar el resultado y continuar a su entrega'),option('Solicitar cambios','Volver a la fase adecuada con comentarios'),option('Mantener abierta','Dejarla pendiente de validación')],isOther:true}]};}
  if(kind==='delivery')return{tool:'request_user_input',questions:[{id:'delivery',header:'Entrega',question:`${task.meta.id} — ${task.meta.title} está aprobada. ¿Cómo entregamos los cambios del worktree?`,options:[option('Fusionar localmente','Fusionar la rama de la tarea en su rama base y limpiar el worktree'),option('Confirmar entrega externa','Confirmar que el PR o merge externo ya se completó'),option('Mantener worktree','Conservar la rama y el worktree sin cerrar la tarea')],isOther:false}]};
  throw new Error(`Unknown interaction kind: ${kind}`);
 }

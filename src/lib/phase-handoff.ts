@@ -9,6 +9,7 @@ import { findTask, getSection, loadTask } from './task.js';
 import { loadPhaseBoundary, phaseBoundaryStatus } from './phase-boundary.js';
 import { targetAudienceRequired } from './product-intelligence.js';
 import { contextProfileForTask, runtimeRoleForPhase } from './phase-role.js';
+import { activeRevision } from './revisions.js';
 import type { RuntimeRecommendation, TaskDocument } from './types.js';
 
 function stable(value: unknown): string {
@@ -99,6 +100,7 @@ function handoffSource(
     contextFiles: context.files.length ? context.files : (previousProfile?.files ?? []),
     contextSymbols: context.symbols.length ? context.symbols : (previousProfile?.symbols ?? []),
     visualEvidence: canonicalVisualEvidence(root, task.meta.id),
+    revision: activeRevision(root, task.meta.id),
     projectProduct: role === 'target-audience' ? readFileSync(path.join(path.resolve(root), '.ai', 'project', 'product.md'), 'utf8') : '',
     projectUsers: role === 'target-audience' ? readFileSync(path.join(path.resolve(root), '.ai', 'project', 'users.md'), 'utf8') : '',
     sections: {
@@ -152,7 +154,31 @@ export function writeRuntimeHandoff(root: string, id: string, role: HandoffRole 
   const sourceDigest = digest(source);
   mkdirSync(path.dirname(file), { recursive: true });
   const sections = source.sections;
-  const body = role === 'implementer'
+  const revision = source.revision;
+  const revisionBody = role === 'implementer' && revision
+    ? `# ${task.meta.id} · ${revision.id} — revision delta capsule\n\n` +
+      `> Bounded user-authorized iteration over the already approved implementation. This is not a new task and not a planning replay. Preserve every governed artifact not named below.\n\n` +
+      `- Classification: **${revision.classification}**\n- Request: ${revision.request}\n- Approved specification: \`${task.meta.spec_effective_hash || task.meta.spec_approval_hash || 'not sealed'}\` (preserved)\n- Current implementation generation: \`${task.meta.implementation_generation_id || 'initial'}\`\n- Source digest: \`${sourceDigest}\`\n\n` +
+      `## Authority and scope\n\n` +
+      `Implement only this delta. Do not reopen Product Specifier, UX planning, architecture, Technical Review, Target Audience, Product Owner, or the full QA Mission unless the requested change proves materially broader than the declared/context-derived delta. If it does, STOP and escalate instead of silently expanding the revision.\n\n` +
+      `- Affected files named by the revision: ${boundedList(revision.affectedFiles, 16)}\n` +
+      `- Extra files explicitly authorized by the revision: ${boundedList(revision.allowedFiles, 16)}\n` +
+      `- Existing Scope Guard still applies: ${boundedList(scope.allowedFiles, 20)}\n` +
+      `- Affected ACs: ${revision.affectedAcceptanceCriteria.length ? revision.affectedAcceptanceCriteria.map(x=>`\`${x}\``).join(', ') : 'none explicitly invalidated'}\n\n` +
+      `## Test policy for exploratory revision\n\n` +
+      `**Do not design or create a new test before implementing this revision.** The user is still evaluating what the desired result should be, so speculative test-first work would freeze an unstable idea and waste context/tokens. Implement the smallest delta first. After implementation, run only cheap, directly relevant validation. Existing tests may be run after the change when cheap and useful. Decide whether a permanent regression test is worth adding only after the revision is accepted/stabilized.\n\n` +
+      `## Required sequence\n\n` +
+      `1. Read this delta capsule; do not reconstruct the full planning history.\n` +
+      `2. Inspect only the smallest files/symbols needed for the requested delta.\n` +
+      `3. Implement the delta without changing preserved product/architecture decisions.\n` +
+      `4. Do not create speculative tests.\n` +
+      `5. Stop Builder. SpecRail will compare the revision baseline with the real implementation delta, bind a new implementation generation, recompute affected artifacts from that delta, and route only the resulting validation.\n\n` +
+      `## Dependency-selected invalidation\n\n- Change signals: ${(revision.changeSignals||revision.impact).map(x=>`\`${x}\``).join(', ') || 'implementation-output'}\n- Invalidated artifacts: ${(revision.invalidatedArtifacts||[]).map(x=>`\`${x}\``).join(', ') || 'legacy revision validation'}\n- Derived validation phases: ${(revision.requiredPhases||['qa-engineer']).map(x=>`\`${x}\``).join(' → ')}\n\n` +
+      `## Targeted post-implementation validation\n\n${revision.revalidateEvidenceKinds.map(x=>`- \`${x}\``).join('\n')}\n\n` +
+      `## Preserved artifacts\n\n${revision.preservedArtifacts.map(x=>`- ${x}`).join('\n')}\n\n` +
+      `## Stop and escalate\n\nIf the delta requires a product-outcome change, new user flow, architecture/security/migration decision, breaking contract, or broad scope expansion, do not force it through Revision. Use the narrowest Amendment/specification path instead.\n`
+    : null;
+  const body = revisionBody || (role === 'implementer'
     ? `# ${task.meta.id} — implementation capsule\n\n` +
       `> Compiled execution contract for the Builder. Previous conversational reasoning is non-authoritative. Execute this capsule and the sealed SpecRail artifacts; do not redesign, reinterpret, or replay planning. Read the full canonical task only when this capsule explicitly says content was truncated or a concrete conflict requires source verification.\n\n` +
       `- Role: **implementer**\n- Approved specification: \`${task.meta.spec_effective_hash || task.meta.spec_approval_hash || 'not sealed'}\`\n- QA Mission: \`${task.meta.qa_mission_hash || 'not sealed'}\`\n- Scope Guard: \`${task.meta.scope_guard_hash || 'not sealed'}\`\n- Source digest: \`${sourceDigest}\`\n\n` +
@@ -206,7 +232,7 @@ export function writeRuntimeHandoff(root: string, id: string, role: HandoffRole 
         `## User-visible intent\n\n${bounded(`${sections.need}\n\n${sections.productValue}\n\n${sections.users}\n\n${sections.uiTarget}`, 260)}\n\n` +
         `## Canonical visible evidence\n\n${visualEvidenceMarkdown(source.visualEvidence)}\n\n` +
         `## Evaluation contract\n\n` +
-        `Evaluate comprehension, utility, discoverability, friction, trust, and repeat value from the perspective of the requested profile. Interact only through the public/runtime surface available to a real user. Do not derive answers from tests, source code, internal acceptance criteria, implementation notes, architecture, or QA conclusions. If the visible result is insufficient to judge a dimension, mark it as a finding instead of guessing.\n`;
+        `Evaluate comprehension, utility, discoverability, friction, trust, and repeat value from the perspective of the requested profile. Interact only through the public/runtime surface available to a real user. Do not derive answers from tests, source code, internal acceptance criteria, implementation notes, architecture, or QA conclusions. If the visible result is insufficient to judge a dimension, mark it as a finding instead of guessing.\n`);
   const wordCount = words(body).length;
   const wordLimit = HANDOFF_WORD_LIMITS[role];
   if (wordCount > wordLimit) throw new Error(`Runtime ${role} handoff exceeds its deterministic word budget: ${wordCount}/${wordLimit}. Keep canonical detail in task/evidence state and shrink the runtime seed.`);
