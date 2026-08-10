@@ -6,7 +6,7 @@ import { initProject, findProjectRoot, resolveRepositoryRoot, projectContextStat
 import { createTask, listTasks, findTask, loadTask, saveTask, setSection, patchTask, addDependency, createSubtask, resolveTaskReference } from './lib/task.js';
 import { addQuestion, answerQuestion, listQuestions } from './lib/questions.js';
 import { addEvidence, listEvidence, validateEvidence, visualEvidenceDigest } from './lib/evidence.js';
-import { startRefinement, completePhase, approveSpecification, requestSpecChanges, rejectTask, startExecution, blockTask, resumeTask, returnTask, approveFinal, rejectFinal, completeDelivery, approveAmendmentDecision, rejectAmendmentDecision } from './lib/workflow.js';
+import { startRefinement, completePhase, approveSpecification, requestSpecChanges, rejectTask, startExecution, blockTask, resumeTask, returnTask, approveFinal, rejectFinal, completeDelivery, approveAmendmentDecision, rejectAmendmentDecision, resolveFinalProductOwnerDecision, resolveTargetAudienceDecision, routeTargetAudienceRevision } from './lib/workflow.js';
 import { createWorktree, checkpointWorktree, removeWorktree } from './lib/worktree.js';
 import { doctor, doctorFixPlan, applyDoctorFixes } from './lib/doctor.js';
 import { nextAction } from './lib/next.js';
@@ -38,12 +38,17 @@ import { acceptanceCoverage } from './lib/acceptance.js';
 import { setBlastRadius, scopeGuardStatus } from './lib/scope-guard.js';
 import { proposeAmendment, listAmendments } from './lib/amendments.js';
 import { inferUpdateChannel, updateSpecRail, type UpdateChannel } from './lib/update.js';
-import { choosePhaseBoundary, enterPhaseBoundary } from './lib/phase-boundary.js';
+import { choosePhaseBoundary, enterPhaseBoundary, resetPhaseBoundary } from './lib/phase-boundary.js';
 import { estimatePhaseBoundary } from './lib/boundary-metrics.js';
 import { runtimeRecommendation } from './lib/phase-handoff.js';
 import { finalPresentation, specificationPresentation } from './lib/presentation.js';
 import { recordPresentationAction, type PresentationGate } from './lib/presentation-state.js';
 import type { PresentationActionOutcome } from './lib/types.js';
+import { configuredTargetAudienceProfiles, decideProductOwnerReview, finalProductOwnerReviewStatus, productIntelligenceEnabled, productOwnerReviewStatus, recordFinalProductOwnerReview, recordProductOwnerReview, recordTargetAudienceReview, resetFinalProductOwnerReview, resetProductOwnerReview, resetTargetAudienceReviews, setProductIntelligenceEnabled, targetAudienceReviewStatus } from './lib/product-intelligence.js';
+import { setAutonomyPolicy } from './lib/autonomy-policy.js';
+import { advanceAutonomy, autonomyStatus } from './lib/autonomy.js';
+import { assertConcurrencyMutationAuthority, cancelConcurrencyPlan, concurrencyStatus, createConcurrencyPlan, heartbeatConcurrencyLane, nextConcurrencyWave, prepareConcurrencyWave, releaseConcurrencyLane } from './lib/concurrency.js';
+import { getHostCapabilityStatus, recordHostCapabilities, resetHostCapabilities } from './lib/host-capabilities.js';
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PACKAGE_META = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')) as { version?: string };
 const VERSION = PACKAGE_META.version || '0.0.0';
@@ -79,6 +84,8 @@ function booleanFlag(value: unknown, defaultValue = true): boolean { if (value =
     return true; return !['false', '0', 'no', 'off'].includes(String(value).trim().toLowerCase()); }
 function taskSummary(task: any): Record<string, unknown> { return { id: task.meta.id, title: task.meta.title, status: task.meta.status, phase: task.meta.phase, waitingFor: task.meta.waiting_for, openQuestions: task.meta.open_questions, specApproval: task.meta.spec_approval, finalApproval: task.meta.final_approval, deliveryStatus: task.meta.delivery_status || null, path: task.path }; }
 function reference(parts: string[], start = 1): string { return parts.slice(start).join(' ').trim(); }
+function mutationSession(flags: Flags): string | null { return flags.session === undefined ? null : String(flags.session); }
+function assertAgentMutation(root: string, id: string, flags: Flags): void { assertConcurrencyMutationAuthority(root, id, mutationSession(flags)); }
 async function main() {
     const { positional: p, flags } = parse(process.argv.slice(2));
     const arg = (index: number): string => p[index] ?? '';
@@ -114,14 +121,117 @@ async function main() {
             output({ ...result, task: taskSummary(result.task) }, true);
             break;
         }
+
+        case 'autonomy': {
+            root = findProjectRoot(rootFrom(flags));
+            const sub = arg(1);
+            if (sub === 'status') output(autonomyStatus(root, arg(2) || undefined), true);
+            else if (sub === 'set') output(setAutonomyPolicy(root, String(arg(2) || requireFlag(flags, 'level')), flags.delivery ? String(flags.delivery) : undefined), true);
+            else if (sub === 'advance') output(advanceAutonomy(root, arg(2)), true);
+            else throw new Error('Use: specrail autonomy status [TASK] | set guided|autonomous|headless [--delivery ask|merge-local] | advance TASK');
+            break;
+        }
+
+        case 'concurrency': {
+            root = findProjectRoot(rootFrom(flags));
+            const sub = arg(1), ref = arg(2);
+            if (sub === 'plan') output(createConcurrencyPlan(root, ref, { ...(flags.tasks ? { taskIds: surfaces(flags.tasks) } : {}), ...(flags.max ? { maxParallel: Number(flags.max) } : {}) }), true);
+            else if (sub === 'status') output(concurrencyStatus(root, ref), true);
+            else if (sub === 'next') output(nextConcurrencyWave(root, ref), true);
+            else if (sub === 'prepare') output(prepareConcurrencyWave(root, ref, { hostSessionId: flags['host-session'] ? String(flags['host-session']) : null }), true);
+            else if (sub === 'heartbeat') output(heartbeatConcurrencyLane(root, ref, arg(3), { sessionId: flags.session ? String(flags.session) : null, ...(flags.ttl ? { ttlMs: Number(flags.ttl) } : {}) }), true);
+            else if (sub === 'release') output(releaseConcurrencyLane(root, ref, arg(3), { sessionId: flags.session ? String(flags.session) : null, force: booleanFlag(flags.force, false) }), true);
+            else if (sub === 'cancel') output(cancelConcurrencyPlan(root, ref, { force: booleanFlag(flags.force, false) }), true);
+            else throw new Error('Use: specrail concurrency plan PARENT [--tasks A,B] [--max N] | status|next|prepare PARENT [--host-session SESSION] | heartbeat PARENT TASK --session SESSION [--ttl MS] | cancel PARENT | release PARENT TASK --session SESSION [--force]');
+            break;
+        }
+
+        case 'product': {
+            root = findProjectRoot(rootFrom(flags));
+            if (arg(1) === 'intelligence') {
+                const sub = arg(2);
+                if (sub === 'status') output({ enabled: productIntelligenceEnabled(root) }, true);
+                else if (sub === 'enable') output(setProductIntelligenceEnabled(root, true), true);
+                else if (sub === 'disable') output(setProductIntelligenceEnabled(root, false), true);
+                else throw new Error('Use: specrail product intelligence status|enable|disable');
+                break;
+            }
+            if (arg(1) !== 'owner') throw new Error('Use: specrail product intelligence status|enable|disable | product owner status|review|reset|decide TASK | product owner final status|review|reset|decide TASK');
+            if (arg(2) === 'final') {
+                const sub = arg(3), id = arg(4);
+                if (sub === 'status') output(finalProductOwnerReviewStatus(root, id), true);
+                else if (sub === 'review') output(recordFinalProductOwnerReview(root, id, {
+                    verdict: requireFlag(flags, 'verdict'), summary: requireFlag(flags, 'summary'), value: requireFlag(flags, 'value'),
+                    concerns: surfaces(flags.concerns), questions: surfaces(flags.questions), judgmentRequired: booleanFlag(flags['judgment-required'], false)
+                }, { sessionId: mutationSession(flags) }), true);
+                else if (sub === 'reset') {
+                    resetFinalProductOwnerReview(root, id, { sessionId: mutationSession(flags), force: booleanFlag(flags.force, false), reason: String(flags.reason || 'explicit CLI reset') });
+                    output({ taskId: id, reset: true, stage: 'final' }, true);
+                }
+                else if (sub === 'decide') {
+                    const decision = String(requireFlag(flags, 'decision')) as 'proceed'|'revise-implementation'|'revisit-product';
+                    if (!['proceed','revise-implementation','revisit-product'].includes(decision)) throw new Error(`Invalid Final Product Owner decision: ${decision}`);
+                    output(resolveFinalProductOwnerDecision(root, id, decision, String(flags.note || ''), { sessionId: flags.session }), true);
+                } else throw new Error('Use: specrail product owner final status|review|reset|decide TASK');
+                break;
+            }
+            const sub = arg(2), id = arg(3);
+            if (sub === 'status') output(productOwnerReviewStatus(root, id), true);
+            else if (sub === 'review') output(recordProductOwnerReview(root, id, {
+                verdict: requireFlag(flags, 'verdict'), summary: requireFlag(flags, 'summary'), value: requireFlag(flags, 'value'),
+                concerns: surfaces(flags.concerns), questions: surfaces(flags.questions), judgmentRequired: booleanFlag(flags['judgment-required'], false)
+            }, { sessionId: mutationSession(flags) }), true);
+            else if (sub === 'reset') {
+                resetProductOwnerReview(root, id, { sessionId: mutationSession(flags), force: booleanFlag(flags.force, false), reason: String(flags.reason || 'explicit CLI reset') });
+                output({ taskId: id, reset: true }, true);
+            }
+            else if (sub === 'decide') {
+                const decision = String(requireFlag(flags, 'decision')) as 'proceed'|'rework'|'reject';
+                const review = decideProductOwnerReview(root, id, decision, String(flags.note || ''));
+                if (decision === 'reject') output({ review, task: taskSummary(rejectTask(root, id, String(flags.note || 'Rejected after Product Owner review'))) }, true);
+                else output(review, true);
+            } else throw new Error('Use: specrail product owner status|review|reset|decide TASK');
+            break;
+        }
+        case 'audience': {
+            root = findProjectRoot(rootFrom(flags));
+            const sub = arg(1), id = arg(2);
+            if (sub === 'profiles') output(configuredTargetAudienceProfiles(root), true);
+            else if (sub === 'status') output(targetAudienceReviewStatus(root, id), true);
+            else if (sub === 'review') output(recordTargetAudienceReview(root, id, {
+                profileId: String(requireFlag(flags, 'profile')), ...(flags.primary !== undefined ? { primary: booleanFlag(flags.primary, false) } : {}), verdict: requireFlag(flags, 'verdict'),
+                comprehension: requireFlag(flags, 'comprehension'), utility: requireFlag(flags, 'utility'), discoverability: requireFlag(flags, 'discoverability'),
+                friction: requireFlag(flags, 'friction'), trust: requireFlag(flags, 'trust'), repeatValue: requireFlag(flags, 'repeat-value'), findings: surfaces(flags.findings),
+                requiresProductDecision: booleanFlag(flags['product-decision'], false)
+            }, { sessionId: mutationSession(flags) }), true);
+            else if (sub === 'reset') {
+                resetTargetAudienceReviews(root, id, { sessionId: mutationSession(flags), force: booleanFlag(flags.force, false), reason: String(flags.reason || 'explicit CLI reset') });
+                output({ taskId: id, reset: true }, true);
+            }
+            else if (sub === 'route') {
+                output(routeTargetAudienceRevision(root, id, String(flags.note || ''), { sessionId: mutationSession(flags) }), true);
+            }
+            else if (sub === 'decide') {
+                const rawDecision = String(requireFlag(flags, 'decision'));
+                const decision = rawDecision === 'accept' ? 'accept-tradeoff' : rawDecision === 'revise' ? 'revise-implementation' : rawDecision as 'accept-tradeoff'|'revise-implementation'|'revisit-product';
+                if (!['accept-tradeoff','revise-implementation','revisit-product'].includes(decision)) throw new Error(`Invalid Target Audience decision: ${rawDecision}`);
+                output(resolveTargetAudienceDecision(root, id, decision, String(flags.note || ''), { sessionId: flags.session }), true);
+            }
+            else throw new Error('Use: specrail audience profiles | status|review|reset|route|decide TASK');
+            break;
+        }
+
         case 'project': {
             root = findProjectRoot(rootFrom(flags));
             if (arg(1) === 'status')
                 output(projectContextStatus(root), true);
             else if (arg(1) === 'complete')
                 output(completeProjectContext(root, flags.summary), true);
-            else if (arg(1) === 'learn')
-                output(recordTaskLearning(root, flags.task || arg(2), requireFlag(flags, 'text')), true);
+            else if (arg(1) === 'learn') {
+                const taskId = String(flags.task || arg(2));
+                assertAgentMutation(root, taskId, flags);
+                output(recordTaskLearning(root, taskId, requireFlag(flags, 'text')), true);
+            }
             else
                 throw new Error('Unknown project command');
             break;
@@ -165,6 +275,7 @@ async function main() {
             break;
         case 'patch':
             root = findProjectRoot(rootFrom(flags));
+            assertAgentMutation(root, arg(1), flags);
             output(taskSummary(patchTask(root, arg(1), JSON.parse(requireFlag(flags, 'json-data')))), true);
             break;
         case 'refine': {
@@ -173,13 +284,14 @@ async function main() {
             if (!prepared.codegraph.ok)
                 output({ ...taskSummary(prepared.task), codegraph: prepared.codegraph }, true);
             else
-                output(taskSummary(startRefinement(root, prepared.task.meta.id)), true);
+                output(taskSummary(startRefinement(root, prepared.task.meta.id, { sessionId: mutationSession(flags) })), true);
             break;
         }
         case 'section': {
             root = findProjectRoot(rootFrom(flags));
             if (arg(1) !== 'set')
                 throw new Error('Use: specrail section set TASK "Heading" --text ... or --file ...');
+            assertAgentMutation(root, arg(2), flags);
             const task = loadTask(findTask(root, arg(2)));
             const content = flags.file ? readFileSync(path.resolve(flags.file), 'utf8') : requireFlag(flags, 'text');
             task.body = setSection(task.body, arg(3), content);
@@ -188,9 +300,10 @@ async function main() {
         }
         case 'question': {
             root = findProjectRoot(rootFrom(flags));
-            if (arg(1) === 'add')
-                output(addQuestion(root, arg(2), { text: requireFlag(flags, 'text'), category: flags.category, impact: flags.impact, options: flags.options ? JSON.parse(flags.options) : [], recommendation: flags.recommendation }), true);
-            else if (arg(1) === 'answer')
+            if (arg(1) === 'add') {
+                assertAgentMutation(root, arg(2), flags);
+                output(addQuestion(root, arg(2), { text: requireFlag(flags, 'text'), category: flags.category, impact: flags.impact, options: flags.options ? JSON.parse(flags.options) : [], recommendation: flags.recommendation }, { sessionId: mutationSession(flags) }), true);
+            } else if (arg(1) === 'answer')
                 output(taskSummary(answerQuestion(root, arg(2), arg(3), requireFlag(flags, 'answer'))), true);
             else if (arg(1) === 'list')
                 output(listQuestions(root, arg(2)), true);
@@ -235,7 +348,7 @@ async function main() {
         }
         case 'block':
             root = findProjectRoot(rootFrom(flags));
-            output(taskSummary(blockTask(root, reference(p), requireFlag(flags, 'reason'))), true);
+            output(taskSummary(blockTask(root, reference(p), requireFlag(flags, 'reason'), { sessionId: mutationSession(flags) })), true);
             break;
         case 'resume':
             root = findProjectRoot(rootFrom(flags));
@@ -243,7 +356,7 @@ async function main() {
             break;
         case 'return':
             root = findProjectRoot(rootFrom(flags));
-            output(taskSummary(returnTask(root, arg(1), requireFlag(flags, 'to'), requireFlag(flags, 'reason'))), true);
+            output(taskSummary(returnTask(root, arg(1), requireFlag(flags, 'to'), requireFlag(flags, 'reason'), { sessionId: mutationSession(flags) })), true);
             break;
         case 'final':
             root = findProjectRoot(rootFrom(flags));
@@ -257,7 +370,7 @@ async function main() {
         case 'evidence': {
             root = findProjectRoot(rootFrom(flags));
             if (arg(1) === 'add')
-                { const attrs=(flags.attributes?jsonValue(flags.attributes):{}) as Record<string,unknown>; if(flags.proves) attrs.proves=surfaces(flags.proves); output(addEvidence(root, arg(2), { kind: requireFlag(flags, 'kind'), path: requireFlag(flags, 'path'), source: requireFlag(flags, 'source'), label: flags.label, tool: flags.tool, command: flags.command, exitCode: flags['exit-code'] === undefined ? null : Number(flags['exit-code']), route: flags.route, viewport: flags.viewport, target: flags.target, captureScope: flags['capture-scope'], runtimeUrl: flags.url, missionHash: flags['mission-hash'], attributes: attrs as any }), true); }
+                { assertAgentMutation(root, arg(2), flags); const attrs=(flags.attributes?jsonValue(flags.attributes):{}) as Record<string,unknown>; if(flags.proves) attrs.proves=surfaces(flags.proves); output(addEvidence(root, arg(2), { kind: requireFlag(flags, 'kind'), path: requireFlag(flags, 'path'), source: requireFlag(flags, 'source'), label: flags.label, tool: flags.tool, command: flags.command, exitCode: flags['exit-code'] === undefined ? null : Number(flags['exit-code']), route: flags.route, viewport: flags.viewport, target: flags.target, captureScope: flags['capture-scope'], runtimeUrl: flags.url, missionHash: flags['mission-hash'], attributes: attrs as any }), true); }
             else if (arg(1) === 'list')
                 output(listEvidence(root, arg(2)), true);
             else if (arg(1) === 'validate')
@@ -276,14 +389,14 @@ async function main() {
         }
         case 'scope': {
             root=findProjectRoot(rootFrom(flags));
-            if(arg(1)==='set') { const value=flags.file?jsonValue(flags.file):{allowedFiles:surfaces(requireFlag(flags,'allowed-files')),protectedFiles:surfaces(flags['protected-files']),expectedSymbols:surfaces(flags.symbols),reason:requireFlag(flags,'reason')}; output(setBlastRadius(root,arg(2),value),true); }
+            if(arg(1)==='set') { assertAgentMutation(root,arg(2),flags); const value=flags.file?jsonValue(flags.file):{allowedFiles:surfaces(requireFlag(flags,'allowed-files')),protectedFiles:surfaces(flags['protected-files']),expectedSymbols:surfaces(flags.symbols),reason:requireFlag(flags,'reason')}; output(setBlastRadius(root,arg(2),value),true); }
             else if(arg(1)==='status') output(scopeGuardStatus(root,arg(2)),true);
             else throw new Error('Use: specrail scope set|status TASK');
             break;
         }
         case 'amendment': {
             root=findProjectRoot(rootFrom(flags));
-            if(arg(1)==='propose') { const value=flags.file?jsonValue(flags.file):{title:requireFlag(flags,'title'),reason:requireFlag(flags,'reason'),changes:surfaces(requireFlag(flags,'changes')),acceptanceCriteria:surfaces(flags['acceptance-criteria']),allowedFiles:surfaces(flags['allowed-files']),protectedFilesRemoved:surfaces(flags['unprotect-files']),scopeAdditions:surfaces(flags['scope-additions'])}; output(proposeAmendment(root,arg(2),value),true); }
+            if(arg(1)==='propose') { assertAgentMutation(root,arg(2),flags); const value=flags.file?jsonValue(flags.file):{title:requireFlag(flags,'title'),reason:requireFlag(flags,'reason'),changes:surfaces(requireFlag(flags,'changes')),acceptanceCriteria:surfaces(flags['acceptance-criteria']),allowedFiles:surfaces(flags['allowed-files']),protectedFilesRemoved:surfaces(flags['unprotect-files']),scopeAdditions:surfaces(flags['scope-additions'])}; output(proposeAmendment(root,arg(2),value,{sessionId:mutationSession(flags)}),true); }
             else if(arg(1)==='list') output(listAmendments(root,arg(2)),true);
             else if(arg(1)==='approve') output(approveAmendmentDecision(root,arg(2),arg(3),flags.note||'Approved by user',{sessionId:flags.session?String(flags.session):undefined}),true);
             else if(arg(1)==='reject') output(rejectAmendmentDecision(root,arg(2),arg(3),flags.note||'Rejected by user',{sessionId:flags.session?String(flags.session):undefined}),true);
@@ -332,7 +445,10 @@ async function main() {
                     implementationTurns: flags.turns === undefined ? null : Number(flags.turns),
                     inputCostPerMillion: flags['input-cost-per-million'] === undefined ? null : Number(flags['input-cost-per-million'])
                 }), true);
-            } else throw new Error('Use: specrail boundary status|choose|enter|estimate TASK [--session ID]');
+            } else if (sub === 'reset') {
+                if (!booleanFlag(flags.force, false)) throw new Error('Boundary reset requires --force');
+                output(resetPhaseBoundary(root, taskId, undefined, { force: true }), true);
+            } else throw new Error('Use: specrail boundary status|choose|enter|estimate|reset TASK [--session ID] [--force]');
             break;
         }
         case 'context': {
@@ -340,9 +456,10 @@ async function main() {
             const id = arg(2);
             if (arg(1) === 'status')
                 output(contextStatus(root, id), true);
-            else if (arg(1) === 'request')
-                output(requestContextExpansion(root, id, { reason: requireFlag(flags, 'reason'), files: flags.files ? surfaces(flags.files) : [], symbols: flags.symbols ? surfaces(flags.symbols) : [], depth: flags.depth ? Number(flags.depth) : 1, readOnly: booleanFlag(flags['read-only'], true) }), true);
-            else
+            else if (arg(1) === 'request') {
+                assertAgentMutation(root, id, flags);
+                output(requestContextExpansion(root, id, { reason: requireFlag(flags, 'reason'), files: flags.files ? surfaces(flags.files) : [], symbols: flags.symbols ? surfaces(flags.symbols) : [], depth: flags.depth ? Number(flags.depth) : 1, readOnly: booleanFlag(flags['read-only'], true) }, { sessionId: mutationSession(flags) }), true);
+            } else
                 throw new Error('Unknown context command');
             break;
         }
@@ -362,17 +479,20 @@ async function main() {
             root = findProjectRoot(rootFrom(flags));
             if (arg(1) !== 'add')
                 throw new Error('Use: specrail dependency add TASK DEPENDENCY');
+            assertAgentMutation(root, arg(2), flags);
             output(taskSummary(addDependency(root, arg(2), arg(3))), true);
             break;
         case 'subtask':
             root = findProjectRoot(rootFrom(flags));
             if (arg(1) !== 'create')
                 throw new Error('Use: specrail subtask create PARENT "Title"');
+            assertAgentMutation(root, arg(2), flags);
             output(taskSummary(createSubtask(root, arg(2), { title: p.slice(3).join(' ') || requireFlag(flags, 'title'), type: flags.type || 'task', surfaces: surfaces(flags.surfaces), fileScope: surfaces(flags['file-scope']) })), true);
             break;
         case 'worktree': {
             root = findProjectRoot(rootFrom(flags));
             if (arg(1) === 'create') {
+                assertAgentMutation(root, arg(2), flags);
                 const task = loadTask(findTask(root, arg(2)));
                 const worktree = createWorktree(root, task.meta.id, task.meta.title);
                 task.meta.worktree_path = worktree.path;
@@ -383,6 +503,7 @@ async function main() {
                 output(worktree, true);
             }
             else if (arg(1) === 'checkpoint') {
+                assertAgentMutation(root, arg(2), flags);
                 const task = loadTask(findTask(root, arg(2)));
                 output(checkpointWorktree(flags.path || task.meta.worktree_path, flags.message || `${task.meta.id} checkpoint`), true);
             }
@@ -405,16 +526,32 @@ async function main() {
             break;
         case 'capability': {
             root = findProjectRoot(rootFrom(flags));
-            if (arg(1) !== 'visualize') throw new Error('Use: specrail capability visualize status|record');
-            const sessionId = String(flags.session || requireFlag(flags, 'session'));
-            if (arg(2) === 'status') output(getVisualizationCapability(root, sessionId), true);
-            else if (arg(2) === 'record') output(recordVisualizationCapability(root, {
-                sessionId,
-                availability: requireFlag(flags, 'availability'),
-                exactSkillName: flags.skill ? String(flags.skill) : flags.tool ? String(flags.tool) : null,
-                reason: flags.reason ? String(flags.reason) : null
-            }), true);
-            else throw new Error('Use: specrail capability visualize status|record');
+            if (arg(1) === 'visualize') {
+                const sessionId = String(flags.session || requireFlag(flags, 'session'));
+                if (arg(2) === 'status') output(getVisualizationCapability(root, sessionId), true);
+                else if (arg(2) === 'record') output(recordVisualizationCapability(root, {
+                    sessionId,
+                    availability: requireFlag(flags, 'availability'),
+                    exactSkillName: flags.skill ? String(flags.skill) : flags.tool ? String(flags.tool) : null,
+                    reason: flags.reason ? String(flags.reason) : null
+                }), true);
+                else throw new Error('Use: specrail capability visualize status|record');
+            } else if (arg(1) === 'host') {
+                const sessionId = String(flags.session || requireFlag(flags, 'session'));
+                if (arg(2) === 'status') output(getHostCapabilityStatus(root, sessionId), true);
+                else if (arg(2) === 'record') output(recordHostCapabilities(root, {
+                    sessionId,
+                    host: String(requireFlag(flags, 'host')),
+                    subagentSpawn: booleanFlag(flags.subagents, false),
+                    parallelSubagents: booleanFlag(flags.parallel, false),
+                    attestation: String(requireFlag(flags, 'attestation'))
+                }), true);
+                else if (arg(2) === 'reset') {
+                    if (!booleanFlag(flags.force, false)) throw new Error('Host capability reset requires --force');
+                    output(resetHostCapabilities(root, String(requireFlag(flags, 'session')), { force: true }), true);
+                }
+                else throw new Error('Use: specrail capability host status|record|reset --session SESSION [--host NAME --subagents true|false --parallel true|false --attestation TEXT] [--force]');
+            } else throw new Error('Use: specrail capability visualize|host ...');
             break;
         }
         case 'visualization': {
@@ -474,7 +611,7 @@ async function main() {
         }
         case 'failure': {
             root=findProjectRoot(rootFrom(flags));
-            if(arg(1)==='record') output(recordFailure(root,arg(2),{phase:flags.phase,category:flags.category,statement:String(flags.statement||flags.note||requireFlag(flags,'statement'))}),true);
+            if(arg(1)==='record') { assertAgentMutation(root,arg(2),flags); output(recordFailure(root,arg(2),{phase:flags.phase,category:flags.category,statement:String(flags.statement||flags.note||requireFlag(flags,'statement'))}),true); }
             else if(arg(1)==='list') output(listFailures(root),true);
             else throw new Error('Use: specrail failure record|list');
             break;
@@ -509,8 +646,8 @@ async function main() {
         case 'slice': {
             root=findProjectRoot(rootFrom(flags));const id=arg(2);
             if(arg(1)==='status') output(loadSlicePlan(root,id),true);
-            else if(arg(1)==='create') { const value=jsonValue(requireFlag(flags,'file')); output(createSlicePlan(root,id,Array.isArray(value)?value:value.slices),true); }
-            else if(arg(1)==='materialize') output(materializeSlices(root,id),true);
+            else if(arg(1)==='create') { assertAgentMutation(root,id,flags); const value=jsonValue(requireFlag(flags,'file')); output(createSlicePlan(root,id,Array.isArray(value)?value:value.slices),true); }
+            else if(arg(1)==='materialize') { assertAgentMutation(root,id,flags); output(materializeSlices(root,id),true); }
             else throw new Error('Use: specrail slice status|create|materialize TASK');
             break;
         }
@@ -558,9 +695,9 @@ async function main() {
                 } else output(doctorFixPlan(root, process.env.AI_FLOW_HOME ? path.resolve(process.env.AI_FLOW_HOME) : undefined, PACKAGE_ROOT), true);
             } else output(doctor(root, process.env.AI_FLOW_HOME ? path.resolve(process.env.AI_FLOW_HOME) : undefined), true);
             break;
-        default: console.log(`specrail commands:\n  init, preflight, intake, project status|complete|learn, create, list, resolve, status, readiness, why-blocked, next, interaction, patch, refine\n  section set, question add|answer|list, phase complete\n  spec approve|changes|reject|lint, run, block, resume, return
-  lease status|acquire|take|release, boundary status|choose|enter|estimate TASK, context status|request, review bundle|cockpit, cockpit TASK\n  evidence add|list|validate, acceptance coverage, scope set|status, amendment propose|list|approve|reject, dependency add, subtask create\n  worktree create|checkpoint|remove, final approve|reject, delivery merge|external|keep
-  capability visualize status|record [--skill visualize], visualization status|record|validate-plan
+        default: console.log(`specrail commands:\n  init, preflight, intake, autonomy status|set|advance, concurrency plan|status|next|prepare|heartbeat|release|cancel, product intelligence status|enable|disable, product owner status|review|reset|decide, product owner final status|review|reset|decide, audience profiles|status|review|reset|route|decide, project status|complete|learn, create, list, resolve, status, readiness, why-blocked, next, interaction, patch, refine\n  section set, question add|answer|list, phase complete\n  spec approve|changes|reject|lint, run, block, resume, return
+  lease status|acquire|take|release, boundary status|choose|enter|estimate|reset TASK, context status|request, review bundle|cockpit, cockpit TASK\n  evidence add|list|validate, acceptance coverage, scope set|status, amendment propose|list|approve|reject, dependency add, subtask create\n  worktree create|checkpoint|remove, final approve|reject, delivery merge|external|keep
+  capability visualize status|record [--skill visualize], capability host status|record|reset, visualization status|record|validate-plan
   presentation status|record TASK --gate spec-approval|final-approval --session ID
   qa mission, failure record|list, eval list|approve|dismiss, repair status|reset
   metrics, trace [TASK]|validate TASK, constitution list|add|check, quality, operations, slice status|create|materialize

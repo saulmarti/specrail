@@ -4,6 +4,7 @@ import { findTask, getSection, loadTask } from './task.js';
 import { loadProjectConfig } from './project.js';
 import { contextProfileForTask } from './phase-role.js';
 import type { ContextManifest, ContextPolicy, NativeInteraction, TaskDocument } from './types.js';
+import { assertConcurrencyMutationAuthority, releaseConcurrencyTaskReservation } from './concurrency.js';
 function now(): string { return new Date().toISOString(); }
 function manifestPath(root: string,id: string): string { return path.join(path.resolve(root),'.ai','runtime','context',`${id}.json`); }
 function normalizeRepositoryFiles(root: string,files: string[]=[]): string[] {
@@ -45,11 +46,12 @@ export interface ContextExpansionRequest {reason?:string;files?:string[];symbols
 export type ContextExpansionResult =
  | {status:'approved';manifest:ReturnType<typeof contextStatus>}
  | {status:'user-approval-required';reason:string;requested:{files:string[];symbols:string[];depth:number;readOnly:boolean};policy:ContextPolicy;interaction:NativeInteraction};
-export function requestContextExpansion(root: string,id: string,{reason,files=[],symbols=[],depth=1,readOnly=true}: ContextExpansionRequest={}): ContextExpansionResult {
+export function requestContextExpansion(root: string,id: string,{reason,files=[],symbols=[],depth=1,readOnly=true}: ContextExpansionRequest={},options:{sessionId?:string|null}={}): ContextExpansionResult {
+  assertConcurrencyMutationAuthority(root,id,options.sessionId);
   const why=String(reason||'').trim();if(why.length<12)throw new Error('Context expansion requires a concrete reason');
   const safeFiles=normalizeRepositoryFiles(root,files),manifest=ensureContextManifest(root,id),nextFiles=[...new Set([...manifest.files,...safeFiles])],nextSymbols=[...new Set([...manifest.symbols,...symbols.map(String)])];
   const exceeds=nextFiles.length>manifest.policy.maxFiles||depth>manifest.policy.maxDepth||manifest.expansionCount>=manifest.policy.maxAutomaticExpansions||!readOnly;
-  if(exceeds)return{status:'user-approval-required',reason:why,requested:{files:safeFiles,symbols,depth,readOnly},policy:manifest.policy,interaction:{tool:'request_user_input',questions:[{id:'context-expansion',header:'Más contexto',question:`La tarea necesita ampliar el contexto: ${why}`,options:[{label:'Permitir ampliación',description:'Autorizar esta lectura adicional'},{label:'Mantener contexto actual',description:'Continuar sin ampliar'},{label:'Volver a especificación',description:'Revisar alcance o enfoque'}],isOther:true}]}};
+  if(exceeds){const result:ContextExpansionResult={status:'user-approval-required',reason:why,requested:{files:safeFiles,symbols,depth,readOnly},policy:manifest.policy,interaction:{tool:'request_user_input',questions:[{id:'context-expansion',header:'Más contexto',question:`La tarea necesita ampliar el contexto: ${why}`,options:[{label:'Permitir ampliación',description:'Autorizar esta lectura adicional'},{label:'Mantener contexto actual',description:'Continuar sin ampliar'},{label:'Volver a especificación',description:'Revisar alcance o enfoque'}],isOther:true}]}};releaseConcurrencyTaskReservation(root,id,options.sessionId===undefined?{}:{sessionId:options.sessionId});return result;}
   manifest.files=nextFiles;manifest.symbols=nextSymbols;manifest.expansionCount+=1;manifest.history.push({at:now(),reason:why,files:safeFiles,symbols,depth,readOnly,status:'approved'});save(root,id,manifest);return{status:'approved',manifest:contextStatus(root,id)};
 }
 function wordCount(value: unknown): number {return String(value||'').trim().split(/\s+/).filter(Boolean).length;}

@@ -50,3 +50,22 @@ test('the installed CLI generates a local Review Cockpit without a server or ext
   assert.match(html,/SpecRail Review Cockpit/);
   assert.match(html,/This Cockpit is read-only/);
 });
+
+test('public CLI persists and reads integrity-checked host concurrency capability attestations',()=>{
+  const repo=mkdtempSync(path.join(tmpdir(),'specrail-host-capability-repo-'));
+  run(process.execPath,['dist/src/cli.js','init','--root',repo]);
+  const recorded=JSON.parse(run(process.execPath,['dist/src/cli.js','capability','host','record','--session','host-cli-session','--host','test-host','--subagents','true','--parallel','true','--attestation','This test host launches independent workers concurrently for prepared lanes.','--root',repo]));
+  assert.equal(recorded.sessionId,'host-cli-session');
+  assert.equal(recorded.parallelSubagents,true);
+  const status=JSON.parse(run(process.execPath,['dist/src/cli.js','capability','host','status','--session','host-cli-session','--root',repo]));
+  assert.equal(status.valid,true);assert.equal(status.parallelVerified,true);
+  const reset=JSON.parse(run(process.execPath,['dist/src/cli.js','capability','host','reset','--session','host-cli-session','--force','--root',repo]));
+  assert.equal(reset.reset,true);
+  const after=JSON.parse(run(process.execPath,['dist/src/cli.js','capability','host','status','--session','host-cli-session','--root',repo]));
+  assert.equal(after.valid,false);
+});
+
+test('published package explicitly includes the trust model for host/session guarantees',()=>{
+  assert.ok(pkg.files.includes('docs/TRUST-MODEL.md'));
+  assert.ok(existsSync(path.join(root,'docs','TRUST-MODEL.md')));
+});

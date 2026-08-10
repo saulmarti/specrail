@@ -1,0 +1,4 @@
+interface:
+  display_name: "Target Audience"
+  short_description: "Test understanding and usefulness as the intended user"
+  default_prompt: "Validate the completed feature as a configured SpecRail target-audience profile."

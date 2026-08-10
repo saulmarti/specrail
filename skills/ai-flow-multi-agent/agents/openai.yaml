@@ -1,0 +1,4 @@
+interface:
+  display_name: "Multi-Agent Concurrency"
+  short_description: "Schedule safe parallel SpecRail task lanes"
+  default_prompt: "Run the deterministic SpecRail concurrency wave without bypassing task isolation or gates."

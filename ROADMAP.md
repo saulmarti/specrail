@@ -82,7 +82,7 @@ SpecRail separates planning, implementation, and independent review **without st
 - planning/refinement uses a bounded repository context so expensive reasoning does not absorb implementation-scale code context prematurely;
 - when the specification reaches Builder, SpecRail compiles an executable implementation capsule and enforces a strong **turn boundary** before coding; `startExecution`/phase completion mechanically reject bypasses rather than trusting agent prose;
 - `spec approve` exposes `approved`, `userInputRequired`, and the native boundary `interaction` at the top level; the explicit choices are current selector, pause to change model/reasoning, or fresh chat, and none may implement in the approval turn;
-- the boundary is flexible: `same-chat-ok` for small low-risk work, `fresh-chat-recommended` for normal/risky/context-heavy work; the native choice is persisted first, and only the next continuation may explicitly enter the already-chosen boundary before phase work;
+- in `Guided`, the boundary remains flexible: `same-chat-ok` for small low-risk work and `fresh-chat-recommended` for normal/risky/context-heavy work; the native choice is persisted first and only the next continuation may enter it; in `Autonomous`, a mechanically safe boundary may enter deterministically in the current stable session without human interruption; `Headless` stops if it cannot prove a safe supported entry;
 - a same-chat entry performs a logical authority reset while a fresh-chat entry also removes prior-phase conversation from raw input context;
 - the implementation capsule is optimized for execution by a less-capable model: authority, ordered steps, ACs, Scope Guard, QA Mission, UI proposal/evidence, CodeGraph seeds, Definition of Done, and stop/escalation conditions are explicit;
 - implementation receives at least `standard` repository context and preserves `rigorous` when the approved execution profile requires it;
@@ -248,6 +248,53 @@ Recent real usage changed the priority order. Reliability of the **think → exe
 7. **Experiment automation** — Automatic Experiment Runner only after the contracts being compared are stable enough to make the experiment meaningful.
 
 This order may change again when production usage exposes a higher-value integrity or usability failure.
+
+## Autonomous delivery — implemented
+
+**Implementation status:** complete on the current 0.9.1 codebase and tracked under `Unreleased` until published in a subsequent package release. Clean-room verification: [`docs/VALIDATION-0.9.1-AUTONOMY-CONCURRENCY-PRODUCT-INTELLIGENCE.md`](docs/VALIDATION-0.9.1-AUTONOMY-CONCURRENCY-PRODUCT-INTELLIGENCE.md).
+
+
+### Autonomy Levels
+
+- `Guided`: explicit Product Owner acknowledgement plus human review at approval/delivery gates;
+- `Autonomous`: cross only mechanically clean gates and interrupt for human judgment;
+- `Headless`: use the same safe automation but stop instead of fabricating a human decision;
+- autonomous local merge requires explicit project policy; external delivery remains human-authorized;
+- normal Builder/Reviewer phase boundaries obey the autonomy policy: Guided preserves the user choice, Autonomous crosses a mechanically safe same-session boundary, and Headless fails closed when stable session authority is unavailable.
+
+## Multi-agent delivery — implemented
+
+### Dependency-aware concurrency
+
+- schedule child tasks / vertical slices in topological waves under `subagents.maxParallel`;
+- reserve lanes atomically so repeated orchestration cannot double-dispatch the same ready task;
+- allow parallel planning/read-only task work without pretending it owns implementation files;
+- require approved, current, bounded Scope Guard boundaries before Builder lanes can write concurrently;
+- conservatively serialize possible write-scope overlaps and isolate safe writers in separate Git worktrees;
+- bind every prepared lane to a reservation-specific session **and normal task lease**, reject unscheduled mutations of planned tasks, require heartbeat renewal for long-running owners, hold stale reservations fail-closed instead of redispatching on lease expiry, and yield/re-dispatch a fresh session at role boundaries so traces, phase boundaries, evidence, QA, Product Intelligence, and Autonomy remain authoritative without allowing a delayed prior dispatch to reclaim a lane;
+- require an immutable integrity-checked host capability attestation before reporting `dispatch.mode: parallel`; otherwise reserve one lane through deterministic `serial-fallback`;
+- support local-filesystem coordination explicitly and reject unsupported distributed coordination instead of approximating it.
+
+**Contract status:** deterministic concurrency governance is complete for the declared local-filesystem trust model. Vendor-specific subagent launch mechanics live at the host adapter boundary and are represented through the host capability contract rather than guessed by the core.
+
+## Product intelligence — implemented
+
+### Project Product Owner
+
+- persist product mission, priorities, anti-goals, and decision rules per project;
+- bootstrap concrete product/owner/audience context first, then review value/overlap/conflicts before Product Specifier work;
+- in Guided, present every current Product Owner opinion for acknowledgement; in Autonomous/Headless, escalate only material `revise` / `do-not-build` judgment instead of cancelling autonomously;
+- seal the pre-spec review into specification governance;
+- after QA/Target Audience, require a fresh integrity-sealed Product Owner outcome review (`ship` / `revise` / `do-not-ship`) before final approval, with Guided acknowledgement and Autonomous/Headless escalation only for material judgment.
+
+### Target Audience validation
+
+- simulate only project-defined primary/secondary audience profiles through the public product interface and reject incomplete primary-profile configuration;
+- assess comprehension, utility, discoverability, friction, trust, and repeat value;
+- require a fresh stable session after QA/review and another fresh session for each additional primary audience persona;
+- compile an audience-only handoff that excludes code, diffs, implementation plans, architecture internals, tests, private technical handoffs, and QA conclusions;
+- integrity-seal reviews, invalidate stale audience reviews after relevant implementation/evidence/product changes, replace valid stale batches transactionally, and fail closed on corrupted stale review artifacts until explicit recovery;
+- surface genuine product trade-offs as human decisions before final approval.
 
 ## Execution reliability — highest priority
 

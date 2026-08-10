@@ -144,3 +144,18 @@ test('frontend UI Target rejects conflicting capture scopes inside the same visu
     for(const [h,v] of [['Need','Keep the hero comparison deterministic.'],['Product Value','Reviewers must see one unambiguous crop contract.'],['Users','Frontend reviewers.'],['Scope','Only the hero.'],['UI Target','- Route: `/`\n- Target: `#hero`\n- Viewport: `1440x1000`\n- Capture: focused section\n- Capture: focused element'],['Out of Scope','Other sections.'],['Acceptance Criteria','- The hero remains visible at 1440x1000 without horizontal overflow.']])loaded.body=setSection(loaded.body,h,v);saveTask(loaded);
     const lint=lintSpecification(loaded,{stage:'product'});assert.equal(lint.valid,false);assert.ok(lint.errors.some(error=>/conflicting.*capture/i.test(error)),lint.errors.join('; '));
 });
+
+test('approved tasks are invalidated when Autonomy or Product Intelligence governance is downgraded', async () => {
+    const { setAutonomyPolicy } = await import('../dist/src/lib/autonomy-policy.js');
+    const { setProductIntelligenceEnabled } = await import('../dist/src/lib/product-intelligence.js');
+
+    const autonomyRoot = repo();
+    let autonomyTask = approveSpecification(autonomyRoot, completeBackendSpec(autonomyRoot, 'Governed autonomy').meta.id);
+    setAutonomyPolicy(autonomyRoot, 'autonomous');
+    assert.throws(() => startExecution(autonomyRoot, autonomyTask.meta.id, { sessionId: 'autonomy-session' }), /Project governance context changed/i);
+
+    const productRoot = repo();
+    let productTask = approveSpecification(productRoot, completeBackendSpec(productRoot, 'Governed product intelligence').meta.id);
+    setProductIntelligenceEnabled(productRoot, true);
+    assert.throws(() => startExecution(productRoot, productTask.meta.id, { sessionId: 'product-session' }), /Project governance context changed/i);
+});

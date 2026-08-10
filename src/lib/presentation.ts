@@ -13,11 +13,11 @@ import { prepareSpecificationReviewState } from './spec-review-prep.js';
 import type { Attachment, EvidenceRecord, Presentation, PresentationHostAction, TaskDocument, TaskRoute } from './types.js';
 
 const SPEC_SECTIONS: Array<[string,string]> = [
- ['Need','Necesidad'],['Product Value','Valor para el usuario'],['Users','Usuarios'],['Scope','Alcance'],['UI Target','Objetivo visual'],['Out of Scope','Fuera de alcance'],
+ ['Need','Necesidad'],['Product Value','Valor para el usuario'],['Users','Usuarios'],['Product Owner Review','Revisión de Product Owner'],['Scope','Alcance'],['UI Target','Objetivo visual'],['Out of Scope','Fuera de alcance'],
  ['Questions','Preguntas resueltas'],['Acceptance Criteria','Criterios de aceptación'],['Gherkin','Escenarios de aceptación'],['UX/UI Proposal','Propuesta UX/UI'],
  ['Architecture and Data Design','Arquitectura y diseño de datos'],['Implementation Plan','Plan de implementación'],['Decisions','Decisiones']
 ];
-const FINAL_SECTIONS: Array<[string,string]> = [...SPEC_SECTIONS,['QA','QA'],['Final Customer','Cliente final']];
+const FINAL_SECTIONS: Array<[string,string]> = [...SPEC_SECTIONS,['QA','QA'],['Target Audience Review','Público objetivo'],['Final Customer','Cliente final']];
 const SPEC_EVIDENCE = new Set(['frontend-before','frontend-mobile-before','ui-design-brief','frontend-proposal','frontend-mobile-proposal','ui-proposal-review','architecture-source','architecture-rendered','database-source','database-rendered','migration-plan']);
 
 function cleanSection(value: unknown): string {

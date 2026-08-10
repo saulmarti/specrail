@@ -7,6 +7,7 @@ import { loadProjectConfig } from './project.js';
 import { scopeGuardStatus } from './scope-guard.js';
 import { findTask, getSection, loadTask } from './task.js';
 import { loadPhaseBoundary, phaseBoundaryStatus } from './phase-boundary.js';
+import { targetAudienceRequired } from './product-intelligence.js';
 import { contextProfileForTask, runtimeRoleForPhase } from './phase-role.js';
 import type { RuntimeRecommendation, TaskDocument } from './types.js';
 
@@ -30,9 +31,11 @@ function boundedList(values: readonly string[], maxItems = 20): string {
   return items.join(', ') || 'none';
 }
 
-const HANDOFF_WORD_LIMITS = { implementer: 3200, reviewer: 1500 } as const;
+const HANDOFF_WORD_LIMITS = { implementer: 3200, reviewer: 1500, 'target-audience': 1200 } as const;
 
-function handoffFile(root: string, id: string, role: 'implementer' | 'reviewer'): string {
+type HandoffRole = 'implementer' | 'reviewer' | 'target-audience';
+
+function handoffFile(root: string, id: string, role: HandoffRole): string {
   return path.join(path.resolve(root), '.ai', 'runtime', 'handoffs', `${id}-${role}.md`);
 }
 
@@ -77,7 +80,7 @@ function canonicalVisualEvidence(root: string, taskId: string) {
 function handoffSource(
   root: string,
   task: TaskDocument,
-  role: 'implementer' | 'reviewer',
+  role: HandoffRole,
   scope: ReturnType<typeof scopeGuardStatus>,
   context: ReturnType<typeof contextStatus>
 ) {
@@ -96,6 +99,8 @@ function handoffSource(
     contextFiles: context.files.length ? context.files : (previousProfile?.files ?? []),
     contextSymbols: context.symbols.length ? context.symbols : (previousProfile?.symbols ?? []),
     visualEvidence: canonicalVisualEvidence(root, task.meta.id),
+    projectProduct: role === 'target-audience' ? readFileSync(path.join(path.resolve(root), '.ai', 'project', 'product.md'), 'utf8') : '',
+    projectUsers: role === 'target-audience' ? readFileSync(path.join(path.resolve(root), '.ai', 'project', 'users.md'), 'utf8') : '',
     sections: {
       need: getSection(task.body, 'Need').trim(),
       productValue: getSection(task.body, 'Product Value').trim(),
@@ -128,11 +133,11 @@ function visualEvidenceMarkdown(items: ReturnType<typeof canonicalVisualEvidence
   return lines.join('\n');
 }
 
-export function writeRuntimeHandoff(root: string, id: string, role: 'implementer' | 'reviewer' = 'implementer') {
+export function writeRuntimeHandoff(root: string, id: string, role: HandoffRole = 'implementer') {
   const task = loadTask(findTask(root, id));
   const file = handoffFile(root, task.meta.id, role);
-  const boundaryPhase = role === 'implementer' ? 'builder' : 'technical-reviewer';
-  if (task.meta.phase === boundaryPhase) {
+  const boundaryPhase = role === 'implementer' ? 'builder' : role === 'reviewer' ? 'technical-reviewer' : 'final-customer';
+  if (task.meta.phase === boundaryPhase && role !== 'target-audience') {
     const sealed = loadPhaseBoundary(root, task.meta.id, task.meta.phase);
     if (sealed) {
       const existing = readFileSync(file, 'utf8');
@@ -182,7 +187,8 @@ export function writeRuntimeHandoff(root: string, id: string, role: 'implementer
       `## Stop and escalate\n\n` +
       `STOP instead of guessing when: an AC conflicts with another governed artifact; the approved proposal cannot be implemented inside Scope Guard; a protected file must change; a contract would become breaking/unknown; a material architecture/security/migration decision appears; or required evidence cannot be produced. Record the blocked AC and the minimum decision required.\n\n` +
       `## Existing handoff notes\n\n${bounded(sections.handoff, 120) || '_None._'}\n`
-    : `# ${task.meta.id} — review handoff\n\n` +
+    : role === 'reviewer'
+      ? `# ${task.meta.id} — review handoff\n\n` +
       `> Deterministic SpecRail review packet. Review the implementation against the approved specification and evidence; do not inherit implementation assumptions from chat history.\n\n` +
       `- Preferred role: **reviewer**\n- Approved specification: \`${task.meta.spec_effective_hash || task.meta.spec_approval_hash || 'not sealed'}\`\n- QA Mission: \`${task.meta.qa_mission_hash || 'not sealed'}\`\n- Source digest: \`${sourceDigest}\`\n\n` +
       `## Acceptance criteria\n\n${bounded(sections.acceptance, 380)}\n\n` +
@@ -191,7 +197,16 @@ export function writeRuntimeHandoff(root: string, id: string, role: 'implementer
       `## Decisions / architecture\n\n${bounded(`${sections.decisions}\n\n${sections.architecture}`, 220)}\n\n` +
       `## Canonical visual evidence\n\n${visualEvidenceMarkdown(source.visualEvidence)}\n\n` +
       `## QA Mission\n\n${bounded(sections.qaMission, 200)}\n\n` +
-      `## Current QA / customer evidence summaries\n\n${bounded(`${sections.qa}\n\n${sections.finalCustomer}`, 220) || '_Not recorded yet._'}\n`;
+      `## Current QA / customer evidence summaries\n\n${bounded(`${sections.qa}\n\n${sections.finalCustomer}`, 220) || '_Not recorded yet._'}\n`
+      : `# ${task.meta.id} — target audience handoff\n\n` +
+        `> Fresh-context product evaluation packet. Act only as the configured target audience. Do not inspect source code, diffs, implementation plans, architecture internals, private Builder/Reviewer handoffs, or previous chat reasoning. Judge the result from user-visible behavior and the product/audience context below.\n\n` +
+        `- Role: **target audience**\n- Fresh session: **required**\n- Source digest: \`${sourceDigest}\`\n\n` +
+        `## Product\n\n${bounded(source.projectProduct, 220)}\n\n` +
+        `## Audience profiles\n\n${bounded(source.projectUsers, 260)}\n\n` +
+        `## User-visible intent\n\n${bounded(`${sections.need}\n\n${sections.productValue}\n\n${sections.users}\n\n${sections.uiTarget}`, 260)}\n\n` +
+        `## Canonical visible evidence\n\n${visualEvidenceMarkdown(source.visualEvidence)}\n\n` +
+        `## Evaluation contract\n\n` +
+        `Evaluate comprehension, utility, discoverability, friction, trust, and repeat value from the perspective of the requested profile. Interact only through the public/runtime surface available to a real user. Do not derive answers from tests, source code, internal acceptance criteria, implementation notes, architecture, or QA conclusions. If the visible result is insufficient to judge a dimension, mark it as a finding instead of guessing.\n`;
   const wordCount = words(body).length;
   const wordLimit = HANDOFF_WORD_LIMITS[role];
   if (wordCount > wordLimit) throw new Error(`Runtime ${role} handoff exceeds its deterministic word budget: ${wordCount}/${wordLimit}. Keep canonical detail in task/evidence state and shrink the runtime seed.`);
@@ -210,33 +225,38 @@ export function writeRuntimeHandoff(root: string, id: string, role: 'implementer
 
 export function runtimeRecommendation(root: string, id: string, options: { sessionId?: string | null } = {}): RuntimeRecommendation {
   const task = loadTask(findTask(root, id));
-  const role = runtimeRoleForPhase(task.meta.phase);
+  const role = task.meta.phase === 'final-customer' && targetAudienceRequired(root) ? 'target-audience' : runtimeRoleForPhase(task.meta.phase);
   const contextProfile = role === 'system' ? null : contextProfileForTask(loadProjectConfig(root), task);
   const handoff = role === 'implementer'
     ? writeRuntimeHandoff(root, id, 'implementer')
     : role === 'reviewer'
       ? writeRuntimeHandoff(root, id, 'reviewer')
-      : null;
+      : role === 'target-audience'
+        ? writeRuntimeHandoff(root, id, 'target-audience')
+        : null;
   const handoffText = handoff ? readFileSync(handoff.path, 'utf8') : '';
-  const boundaryPhase = task.meta.phase === 'builder' || task.meta.phase === 'technical-reviewer';
+  const boundaryPhase = task.meta.phase === 'builder' || task.meta.phase === 'technical-reviewer' || (task.meta.phase === 'final-customer' && role === 'target-audience');
   const existingBoundary = boundaryPhase ? loadPhaseBoundary(root, id, task.meta.phase) : null;
   const boundary = handoff && boundaryPhase
-    ? phaseBoundaryStatus(root, id, { sessionId: options.sessionId ?? null, handoffDigest: handoff.sourceDigest, handoffContentDigest: handoff.contentDigest, handoffWords: handoff.words })
+    ? phaseBoundaryStatus(root, id, { sessionId: options.sessionId ?? null, originSessionId: task.meta.phase === 'final-customer' ? String(task.meta.target_audience_origin_session_id || '') || null : null, handoffDigest: handoff.sourceDigest, handoffContentDigest: handoff.contentDigest, handoffWords: handoff.words })
     : null;
-  if (boundary && !existingBoundary) resetContextForPhaseBoundary(root, id, `Phase boundary prepared for ${task.meta.phase}; preserve previous-phase context only through the sealed runtime handoff.`);
+  const boundaryChanged = Boolean(boundary && (!existingBoundary || boundary.recordDigest !== existingBoundary.recordDigest));
+  if (boundaryChanged) resetContextForPhaseBoundary(root, id, `Phase boundary prepared for ${task.meta.phase}; preserve previous-phase context only through the sealed runtime handoff.`);
   const currentSession=String(options.sessionId||'').trim()||null;
   const sessionEntryRequired=Boolean(boundary&&(boundary.status!=='entered'||!currentSession||boundary.enteredSessionId!==currentSession));
   const stopBeforePhaseWork=sessionEntryRequired;
-  const freshSessionRecommended = boundary?.recommendation === 'fresh-chat-recommended';
+  const freshSessionRecommended = boundary?.recommendation === 'fresh-chat-recommended' || boundary?.recommendation === 'fresh-chat-required';
   const transferRequired=Boolean(boundary?.status==='entered'&&sessionEntryRequired);
   const transitionNotice = sessionEntryRequired && handoff
     ? {
-        kind: role === 'implementer' ? 'implementation-handoff' as const : 'review-handoff' as const,
-        title: transferRequired ? 'Phase ownership must be entered in this Codex session' : boundary?.status==='chosen' ? 'Phase boundary choice recorded; entry required' : role === 'implementer' ? 'Implementation boundary ready' : 'Independent review boundary ready',
+        kind: role === 'implementer' ? 'implementation-handoff' as const : role === 'target-audience' ? 'target-audience-handoff' as const : 'review-handoff' as const,
+        title: transferRequired ? 'Phase ownership must be entered in this Codex session' : role === 'target-audience' ? 'Fresh Target Audience session required' : boundary?.status==='chosen' ? 'Phase boundary choice recorded; entry required' : role === 'implementer' ? 'Implementation boundary ready' : 'Independent review boundary ready',
         message: transferRequired
-          ? `${task.meta.id} is already inside the ${role === 'implementer' ? 'implementation' : 'review'} phase, but that phase boundary belongs to another Codex session (${boundary?.enteredSessionId || 'unknown'}). Do not continue phase work from this chat until this session explicitly enters the boundary; an active lease may require a user-approved takeover.`
-          : boundary?.status==='chosen'
-            ? `The user's native boundary choice is already persisted as ${boundary.choice}. Do not ask the selector again. Enter the ${role === 'implementer' ? 'implementation' : 'review'} boundary in this session before reading generic repository process/Kanban memory or doing phase work, then execute from the compiled capsule.`
+          ? `${task.meta.id} is already inside the ${role === 'implementer' ? 'implementation' : role === 'target-audience' ? 'Target Audience' : 'review'} phase, but that phase boundary belongs to another Codex session (${boundary?.enteredSessionId || 'unknown'}). Do not continue phase work from this chat until this session explicitly enters the boundary; an active lease may require a user-approved takeover.`
+          : role === 'target-audience'
+            ? `QA/review is sealed for ${task.meta.id}. Target Audience evaluation MUST start in a different stable session from the prior implementation/QA session. Open a fresh chat/subagent, enter the boundary there, and use only the audience handoff plus user-visible runtime/evidence. Same-chat audience simulation is rejected by SpecRail.`
+            : boundary?.status==='chosen'
+              ? `The user's native boundary choice is already persisted as ${boundary.choice}. Do not ask the selector again. Enter the ${role === 'implementer' ? 'implementation' : 'review'} boundary in this session before reading generic repository process/Kanban memory or doing phase work, then execute from the compiled capsule.`
           : role === 'implementer'
             ? `Planning is sealed for ${task.meta.id}. End this turn before coding. Next turn you may continue in this chat or open a fresh Codex chat; SpecRail does not choose or store a model; the Codex selector remains authoritative. ${boundary?.recommendation === 'fresh-chat-recommended' ? 'A fresh chat is recommended because it removes the planning conversation from implementation context and lets a less-capable implementer start from the compiled capsule.' : 'This is a small low-risk task, so continuing in the same chat is reasonable; a fresh chat remains available for stronger isolation.'}`
             : `Implementation is sealed for ${task.meta.id}. End this turn before independent review. Next turn you may continue in this chat or open a fresh Codex chat. ${boundary?.recommendation === 'fresh-chat-recommended' ? 'A fresh chat is recommended to remove builder assumptions from reviewer context.' : 'For this small low-risk change, same-chat review is acceptable after entering the review boundary.'}`,
@@ -261,7 +281,7 @@ export function runtimeRecommendation(root: string, id: string, options: { sessi
     boundary: boundary ? {
       status: boundary.status,
       recommendation: boundary.recommendation,
-      sameChatAllowed: true,
+      sameChatAllowed: boundary.sameChatAllowed,
       choice: boundary.choice,
       choiceSessionId: boundary.choiceSessionId,
       mode: boundary.mode,
@@ -274,12 +294,16 @@ export function runtimeRecommendation(root: string, id: string, options: { sessi
         ? `Implementation starts from the compiled capsule plus ${contextProfile} progressive repository context. The capsule is optimized for execution by a less-capable model: governed decisions are explicit and material ambiguity must escalate instead of being reinterpreted.`
         : role === 'reviewer'
           ? `Independent review starts from a compact ${contextProfile} context plus the deterministic review handoff, diff, evidence, and progressive CodeGraph. No model configuration is stored by SpecRail.`
-          : 'No phase handoff is needed for this system phase.',
+          : role === 'target-audience'
+            ? `Target Audience evaluation starts in a mandatory fresh session with a user-facing handoff only. Source code, diff, architecture internals, QA conclusions, and previous chat reasoning are intentionally excluded.`
+            : 'No phase handoff is needed for this system phase.',
     transitionNotice,
     transitionInstruction: transitionNotice && handoff
-      ? boundary?.status==='chosen'
-        ? `The native phase-boundary choice is already persisted as ${boundary.choice}. Do not ask it again. Before reading generic repository process files or doing ${role === 'implementer' ? 'implementation' : 'independent review'} work, enter the phase boundary in this Codex session, then treat ${handoff.relativePath} as the compiled phase contract. Previous conversational reasoning is non-authoritative. Do not replay the previous chat and do not reread generic Kanban/memory/process files unless the capsule names them, a concrete conflict requires source verification, or a specific missing implementation detail requires them.`
-        : `STOP before doing ${role === 'implementer' ? 'implementation' : 'independent review'} work in this turn. Show the transition notice once, persist the exact native boundary choice, and end the turn. On the next user turn or in the selected fresh chat, enter the phase boundary first. Then treat ${handoff.relativePath} as the compiled phase contract. Previous conversational reasoning is non-authoritative. Do not replay the previous chat and do not reread generic Kanban/memory/process files unless the capsule names them, a concrete conflict requires source verification, or a specific missing implementation detail requires them.`
+      ? role === 'target-audience'
+        ? `STOP before doing Target Audience evaluation in this turn. Show the transition notice once and end the turn. Open a fresh session; same-session entry is forbidden. Enter the phase boundary there, then treat ${handoff.relativePath} as the compiled phase contract. Previous conversational reasoning is non-authoritative. Do not read the full canonical task, source code, diff, architecture internals, private implementation/review handoffs, or QA conclusions; evaluate only user-visible behavior and the audience packet.`
+        : boundary?.status==='chosen'
+          ? `The native phase-boundary choice is already persisted as ${boundary.choice}. Do not ask it again. Before reading generic repository process files or doing ${role === 'implementer' ? 'implementation' : 'independent review'} work, enter the phase boundary in this Codex session, then treat ${handoff.relativePath} as the compiled phase contract. Previous conversational reasoning is non-authoritative. Do not replay the previous chat and do not reread generic Kanban/memory/process files unless the capsule names them, a concrete conflict requires source verification, or a specific missing implementation detail requires them.`
+          : `STOP before doing ${role === 'implementer' ? 'implementation' : 'independent review'} work in this turn. Show the transition notice once, persist the exact native boundary choice, and end the turn. On the next user turn or in the selected fresh chat, enter the phase boundary first. Then treat ${handoff.relativePath} as the compiled phase contract. Previous conversational reasoning is non-authoritative. Do not replay the previous chat and do not reread generic Kanban/memory/process files unless the capsule names them, a concrete conflict requires source verification, or a specific missing implementation detail requires them.`
       : null
   };
 }

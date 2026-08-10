@@ -14,6 +14,8 @@ import { validateTrace } from './trace.js';
 import { acceptanceCoverage } from './acceptance.js';
 import { pendingAmendments, effectiveSpecificationHash } from './amendments.js';
 import { loadBlastRadius, scopeGuardStatus } from './scope-guard.js';
+import { finalProductOwnerRequired, finalProductOwnerReviewStatus, productOwnerRequired, productOwnerReviewStatus, targetAudienceRequired, targetAudienceReviewStatus } from './product-intelligence.js';
+import { autonomyPolicy, type AutonomyPolicy } from './autonomy-policy.js';
 import type { TaskDocument } from './types.js';
 
 export type ReadinessGateStatus = 'pass' | 'pending' | 'fail' | 'stale' | 'warning' | 'not-applicable';
@@ -63,12 +65,12 @@ function explicitBlockOwner(reason: string): ReadinessOwner {
   if (/approval|decision|question|user/i.test(reason)) return 'user';
   return 'agent';
 }
-function phaseAction(task: TaskDocument): { owner: ReadinessOwner; action: string } {
+function phaseAction(task: TaskDocument, autonomy: AutonomyPolicy): { owner: ReadinessOwner; action: string } {
   if (task.meta.status === 'done') return { owner: 'system', action: 'No action is required; the task is complete.' };
   if (task.meta.status === 'rejected') return { owner: 'system', action: 'No action is required; the task was rejected.' };
-  if (task.meta.phase === 'spec-approval') return { owner: 'user', action: 'Review the specification and approve it, request refinement, or reject the task.' };
-  if (task.meta.phase === 'final-approval') return { owner: 'user', action: 'Review the implemented result and approve it or request changes.' };
-  if (task.meta.phase === 'delivery') return { owner: 'user', action: 'Choose the deterministic delivery action for the approved result.' };
+  if (task.meta.phase === 'spec-approval') return autonomy.level === 'guided' ? { owner: 'user', action: 'Review the specification and approve it, request refinement, or reject the task.' } : { owner: 'system', action: 'Advance the clean specification gate under the active autonomy policy.' };
+  if (task.meta.phase === 'final-approval') return autonomy.level === 'guided' ? { owner: 'user', action: 'Review the implemented result and approve it or request changes.' } : { owner: 'system', action: 'Advance the clean final gate under the active autonomy policy.' };
+  if (task.meta.phase === 'delivery') return autonomy.level !== 'guided' && autonomy.delivery === 'merge-local' ? { owner: 'system', action: 'Complete the explicitly authorized local merge delivery.' } : { owner: 'user', action: 'Choose the deterministic delivery action for the approved result.' };
   const labels: Record<string, string> = {
     'product-specifier': 'Complete product specification and resolve material ambiguity.',
     'ux-ui-designer': 'Complete the approved-target UI/UX proposal and its evidence.',
@@ -76,7 +78,7 @@ function phaseAction(task: TaskDocument): { owner: ReadinessOwner; action: strin
     builder: 'Implement the approved specification in the isolated task runtime.',
     'technical-reviewer': 'Run the selected independent technical review modes.',
     'qa-engineer': 'Execute the immutable QA mission against the real result.',
-    'final-customer': 'Evaluate the result from the target customer perspective.'
+    'final-customer': 'Evaluate the result with the configured Target Audience profiles.'
   };
   return { owner: 'agent', action: labels[task.meta.phase] || `Continue the ${task.meta.phase} phase.` };
 }
@@ -101,6 +103,7 @@ export function taskReadiness(root: string, reference: string, options: Readines
   const amendments=pendingAmendments(projectRoot,task.meta.id);
   const coverage=acceptanceCoverage(projectRoot,task.meta.id);
   const scope=scopeGuardStatus(projectRoot,task.meta.id);
+  const autonomy=autonomyPolicy(projectRoot);
   const approved = task.meta.spec_approval === 'approved' && Boolean(task.meta.spec_approval_hash);
   const integrityVersion=Number(task.meta.spec_integrity_version||1),currentGovernanceHash=projectGovernanceHash(projectRoot),governanceValid=!approved||(integrityVersion>=2&&Boolean(task.meta.project_governance_hash)&&task.meta.project_governance_hash===currentGovernanceHash);
   const preMessages = [...pre.missing, ...pre.errors];
@@ -117,6 +120,24 @@ export function taskReadiness(root: string, reference: string, options: Readines
   const contextExceeded = context.files.length > context.policy.maxFiles || context.expansionCount > context.policy.maxAutomaticExpansions;
   gates.push(gate('context-budget', 'Context budget', contextExceeded ? 'fail' : 'pass', contextExceeded ? 'user' : 'system', `${context.files.length}/${context.policy.maxFiles} files and ${context.expansionCount}/${context.policy.maxAutomaticExpansions} automatic expansion(s).`, contextExceeded ? 'Review and explicitly authorize any further context expansion.' : null));
   gates.push(gate('spec-amendments','Specification amendments',amendments.length?'fail':'pass',amendments.length?'user':'system',amendments.length?`${amendments.length} proposed amendment(s) await a user decision.`:'No proposed amendment is waiting for approval.',amendments.length?'Review, approve, or reject each proposed amendment before execution continues.':null));
+  if (productOwnerRequired(projectRoot)) {
+    if (approved) {
+      // The Product Owner opinion is a pre-specification product gate. Its rendered
+      // section is part of the approved specification hash, so later durable
+      // learnings should inform future tasks rather than retroactively stale an
+      // already-approved task. Product/governance changes remain protected by
+      // spec drift + the project-governance seal below.
+      gates.push(gate('product-owner-review', 'Project Product Owner review', 'pass', 'system', 'The Product Owner opinion was resolved before specification approval and is sealed into the approved specification. Later project learnings apply to future product decisions.', null));
+    } else {
+      const productOwner = productOwnerReviewStatus(projectRoot, task.meta.id);
+      const guidedAcknowledgement = autonomy.level === 'guided' && Boolean(productOwner.review) && productOwner.integrityValid && !productOwner.stale && !productOwner.review?.humanDecision;
+      const status: ReadinessGateStatus = productOwner.stale ? 'stale' : productOwner.valid && !guidedAcknowledgement ? 'pass' : 'fail';
+      const owner: ReadinessOwner = productOwner.needsHumanJudgment || guidedAcknowledgement ? 'user' : 'agent';
+      const detail = guidedAcknowledgement ? 'Product Owner review is current; Guided autonomy requires the user to review and acknowledge its opinion before specification work continues.' : productOwner.detail;
+      const action = productOwner.needsHumanJudgment ? 'Resolve the Product Owner recommendation before specification work continues.' : guidedAcknowledgement ? 'Review the Product Owner opinion and explicitly continue, request rework, or reject the task.' : 'Run or refresh the Project Product Owner review before specification approval.';
+      gates.push(gate('product-owner-review', 'Project Product Owner review', status, owner, detail, action));
+    }
+  } else gates.push(gate('product-owner-review', 'Project Product Owner review', 'not-applicable', 'system', 'Project Product Owner review is disabled by Product Intelligence policy.'));
   gates.push(gate('approval-integrity','Approval integrity seal',!approved?'not-applicable':integrityVersion>=2?'pass':'stale','user',!approved?'No approved specification exists yet.':integrityVersion>=2?'The approved specification includes the hardened scope and project-governance integrity seal.':'This approval predates the hardened integrity seal.','Review and approve the specification once with the hardened integrity seal.'));
   gates.push(gate('project-governance','Governed .ai project context',!approved?'not-applicable':governanceValid?'pass':'stale','user',!approved?'Project governance is sealed at approval.':governanceValid?'Governed project context and policy are unchanged since approval.':'Governed .ai project context or policy changed after approval.','Review the changed project governance context and reapprove the affected specification.'));
   if(scope.applicable){const radius=loadBlastRadius(projectRoot,task.meta.id);const preApproval=!approved;const status:ReadinessGateStatus=preApproval?(radius?'pass':'fail'):(scope.valid?'pass':'fail');const action=preApproval&&!radius?'Define the expected files/symbols and protected areas before specification approval.':approved&&!radius?'This legacy approved task has no sealed blast radius. Return it to specification, define the boundary, and reapprove once before execution.':!scope.valid?'Resolve unexpected changes through rollback or an approved amendment.':null;gates.push(gate('scope-guard','Scope Guard / blast radius',status,status==='fail'?(preApproval?'agent':'user'):'system',preApproval?(radius?`Blast radius is defined and will be sealed on approval: ${radius.allowedFiles.join(', ')}.`:'Implementation work has no blast radius defined.'):scope.detail,action));}else gates.push(gate('scope-guard','Scope Guard / blast radius','not-applicable','system','This task has no implementation route.'));
@@ -131,7 +152,7 @@ export function taskReadiness(root: string, reference: string, options: Readines
   else gates.push(gate('pre-evidence', 'Pre-approval evidence', 'not-applicable', 'agent', 'This route does not require pre-approval visual/architecture evidence.'));
 
   const specNeeded = ['execution', 'final-review', 'delivery', 'complete'].includes(milestone) || task.meta.phase === 'spec-approval';
-  gates.push(gate('spec-approval', 'Specification approval', specNeeded ? (approved ? 'pass' : 'pending') : 'pending', 'user', approved ? `Approved specification ${String(task.meta.spec_approval_hash).slice(0, 12)}…` : 'The specification has not been approved.', 'Review and explicitly approve the specification.'));
+  gates.push(gate('spec-approval', 'Specification approval', specNeeded ? (approved ? 'pass' : 'pending') : 'pending', autonomy.level==='guided'?'user':'system', approved ? `Approved specification ${String(task.meta.spec_approval_hash).slice(0, 12)}…` : autonomy.level==='guided'?'The specification has not been approved by the user.':'The specification awaits a mechanically safe autonomy-policy transition.', approved?null:autonomy.level==='guided'?'Review and explicitly approve the specification.':'Advance only when all deterministic blockers are clear.'));
   const effectiveHash=approved&&task.meta.spec_approval_hash?effectiveSpecificationHash(projectRoot,task.meta.id,currentHash):null;
   const driftStatus: ReadinessGateStatus = !approved ? 'not-applicable' : task.meta.spec_approval_hash !== currentHash || (task.meta.spec_effective_hash&&task.meta.spec_effective_hash!==effectiveHash) ? 'stale' : 'pass';
   gates.push(gate('spec-drift', 'Approved specification unchanged', driftStatus, 'user', driftStatus === 'pass' ? `Base and effective specification hashes are intact${task.meta.spec_effective_hash?' including approved amendments':''}.` : driftStatus === 'stale' ? 'Governed base specification or approved amendment set changed after approval.' : 'No approved specification exists yet.', driftStatus === 'stale' ? 'Restore the approved state or review the change through the formal approval/amendment flow.' : null));
@@ -139,13 +160,28 @@ export function taskReadiness(root: string, reference: string, options: Readines
   const needsFinal = ['final-review', 'delivery', 'complete'].includes(milestone);
   gates.push(gate('acceptance-coverage','Acceptance Coverage Matrix',needsFinal?(coverage.complete?'pass':'fail'):'not-applicable',needsFinal&&!coverage.complete?'agent':'system',needsFinal?(coverage.complete?`All ${coverage.criteria.length} effective acceptance criteria have valid evidence.`:`${coverage.uncovered.length} acceptance criterion/criteria lack valid evidence: ${coverage.uncovered.join(', ')||'invalid evidence references'}.`):'Coverage becomes blocking at final review.',needsFinal&&!coverage.complete?'Attach valid evidence to every uncovered AC-* criterion before final approval.':null));
   gates.push(gate('final-evidence', 'Final evidence', needsFinal ? (final.valid ? 'pass' : staleEvidence(finalMessages) ? 'stale' : 'fail') : 'not-applicable', 'agent', needsFinal ? (final.valid ? 'All risk-selected final evidence is valid.' : finalMessages.join('; ')) : 'Final evidence is required after implementation and review.', needsFinal && !final.valid ? 'Regenerate or complete the required final evidence against the real implementation.' : null));
+  if (needsFinal && task.meta.route.target_audience && targetAudienceRequired(projectRoot)) {
+    const audience = targetAudienceReviewStatus(projectRoot, task.meta.id);
+    const status: ReadinessGateStatus = audience.valid ? 'pass' : audience.stale ? 'stale' : task.meta.phase === 'final-customer' ? 'fail' : 'pending';
+    gates.push(gate('target-audience-review', 'Target Audience validation', status, !audience.configurationValid || audience.requiresProductDecision ? 'user' : 'agent', audience.detail, !audience.configurationValid ? 'Resolve the Target Audience profile configuration before validation can continue.' : audience.requiresProductDecision ? 'Resolve the product trade-off raised by the Target Audience review.' : 'Run the configured primary Target Audience profiles against the public result.'));
+  } else gates.push(gate('target-audience-review', 'Target Audience validation', 'not-applicable', 'system', needsFinal ? 'This task route does not require Target Audience validation.' : 'Target Audience validation becomes applicable during final review.'));
+  if (needsFinal && finalProductOwnerRequired(projectRoot)) {
+    const finalOwner = finalProductOwnerReviewStatus(projectRoot, task.meta.id);
+    const guidedAcknowledgement = autonomy.level === 'guided' && Boolean(finalOwner.review) && finalOwner.integrityValid && !finalOwner.stale && !finalOwner.review?.humanDecision;
+    const beforeFinalOwner = task.meta.phase === 'final-customer';
+    const status: ReadinessGateStatus = task.meta.final_approval === 'approved' ? 'pass' : beforeFinalOwner ? 'pending' : finalOwner.stale ? 'stale' : finalOwner.valid && !guidedAcknowledgement ? 'pass' : 'fail';
+    const owner: ReadinessOwner = finalOwner.needsHumanJudgment || guidedAcknowledgement ? 'user' : status === 'pass' ? 'system' : 'agent';
+    const detail = task.meta.final_approval === 'approved' ? 'The final Product Owner outcome review was resolved before final approval and is sealed into the accepted delivery state.' : beforeFinalOwner ? 'Final Product Owner review runs after Target Audience validation completes.' : guidedAcknowledgement ? 'Final Product Owner review is current; Guided autonomy requires the user to acknowledge the outcome opinion before final approval.' : finalOwner.detail;
+    const action = beforeFinalOwner ? 'Complete Target Audience validation before the final Product Owner re-evaluates the implemented outcome.' : finalOwner.needsHumanJudgment ? 'Resolve the final Product Owner recommendation before final approval.' : guidedAcknowledgement ? 'Review the final Product Owner outcome opinion and explicitly proceed or request revision.' : status === 'pass' ? null : 'Run or refresh the final Product Owner review against the implemented result.';
+    gates.push(gate('product-owner-final-review', 'Final Product Owner outcome review', status, owner, detail, action));
+  } else gates.push(gate('product-owner-final-review', 'Final Product Owner outcome review', 'not-applicable', 'system', needsFinal ? 'Final Product Owner outcome review is disabled by Product Intelligence policy.' : 'Final Product Owner outcome review becomes applicable during final review.'));
   const learningMissingStatus: ReadinessGateStatus = ['final-approval','delivery'].includes(task.meta.phase) || ['delivery','complete'].includes(milestone) ? 'fail' : 'pending';
   gates.push(gate('project-learning', 'Durable project learning', needsFinal ? (task.meta.learning_recorded ? 'pass' : learningMissingStatus) : 'not-applicable', 'agent', task.meta.learning_recorded ? 'Durable project learning has been recorded.' : 'Learning is recorded before final approval when the task produced reusable facts.', needsFinal && !task.meta.learning_recorded ? 'Record durable project learning before final approval.' : null));
   const finalApproved = task.meta.final_approval === 'approved';
-  gates.push(gate('final-approval', 'Final approval', ['delivery', 'complete'].includes(milestone) ? (finalApproved ? 'pass' : 'pending') : needsFinal ? (finalApproved ? 'pass' : 'pending') : 'not-applicable', 'user', finalApproved ? 'The user accepted the final result.' : 'The final result has not been accepted.', needsFinal && !finalApproved ? 'Review the final result and explicitly approve it or request changes.' : null));
+  gates.push(gate('final-approval', 'Final approval', ['delivery', 'complete'].includes(milestone) ? (finalApproved ? 'pass' : 'pending') : needsFinal ? (finalApproved ? 'pass' : 'pending') : 'not-applicable', autonomy.level==='guided'?'user':'system', finalApproved ? 'The final result is accepted under the recorded approval policy.' : autonomy.level==='guided'?'The final result has not been accepted by the user.':'The final result awaits a mechanically safe autonomy-policy transition.', needsFinal && !finalApproved ? (autonomy.level==='guided'?'Review the final result and explicitly approve it or request changes.':'Advance only when all deterministic final-review blockers are clear.') : null));
   const deliveryApplicable = task.meta.worktree_path !== null || task.meta.delivery_status === 'completed' || milestone === 'delivery';
   const deliveryPass = task.meta.delivery_status === 'completed' || (task.meta.status === 'done' && task.meta.delivery_status === 'not_required');
-  gates.push(gate('delivery', 'Deterministic delivery', deliveryApplicable ? (deliveryPass ? 'pass' : 'pending') : 'not-applicable', 'user', deliveryPass ? 'Delivery is complete.' : deliveryApplicable ? 'Approved work still needs an explicit delivery decision.' : 'No separate worktree delivery is required.', deliveryApplicable && !deliveryPass ? 'Choose the deterministic delivery action.' : null));
+  gates.push(gate('delivery', 'Deterministic delivery', deliveryApplicable ? (deliveryPass ? 'pass' : 'pending') : 'not-applicable', autonomy.level!=='guided'&&autonomy.delivery==='merge-local'?'system':'user', deliveryPass ? 'Delivery is complete.' : deliveryApplicable ? (autonomy.level!=='guided'&&autonomy.delivery==='merge-local'?'Project policy explicitly authorizes local merge delivery.':'Approved work still needs an explicit delivery decision.') : 'No separate worktree delivery is required.', deliveryApplicable && !deliveryPass ? (autonomy.level!=='guided'&&autonomy.delivery==='merge-local'?'Complete the deterministic local merge.':'Choose the deterministic delivery action.') : null));
 
   if (task.meta.status === 'blocked') {
     const reason = String(task.meta.block_reason || 'The workflow is explicitly blocked.');
@@ -157,7 +193,7 @@ export function taskReadiness(root: string, reference: string, options: Readines
   const blockers = gates.filter(item => item.blocking);
   const scoreValue = applicable.length ? Math.round((passed / applicable.length) * 100) : 100;
   const firstBlocking = blockers[0] ?? null;
-  const fallback = phaseAction(task);
+  const fallback = phaseAction(task, autonomy);
   const next = firstBlocking
     ? { owner: firstBlocking.owner, action: firstBlocking.action || firstBlocking.detail, gateId: firstBlocking.id }
     : { owner: fallback.owner, action: fallback.action, gateId: null };

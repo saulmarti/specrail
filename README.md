@@ -25,6 +25,9 @@ Coding agents are fast at producing code. The expensive failures happen around t
 - retrying the same failure indefinitely;
 - losing task state when a chat closes;
 - letting two sessions edit the same task;
+- babysitting mechanical approvals that do not require human judgment;
+- spawning parallel agents without proving their scopes, leases, or host capability are safe;
+- shipping something that passes QA but is unclear or low-value to the intended audience;
 - approving a result from fragmented evidence.
 
 SpecRail adds **rails**, not another project-management system. Markdown remains the source of truth, Codex remains the agent, and deterministic gates protect the delivery.
@@ -99,7 +102,8 @@ codegraph status PROJECT             # verified readiness
 ```mermaid
 flowchart LR
     A[Your request] --> B[Repository + CodeGraph preflight]
-    B --> C[Product specification]
+    B --> PO[Project Product Owner review]
+    PO --> C[Product specification]
     C --> D{Material decisions?}
     D -->|Yes| E[Native Codex questions]
     E --> C
@@ -111,8 +115,9 @@ flowchart LR
     I --> J[Isolated implementation]
     J --> K[Technical review]
     K --> L[QA against immutable mission]
-    L --> M[Final customer review]
-    M --> N[Coverage + Scope Guard + Final Review Bundle]
+    L --> M[Target Audience validation]
+    M --> FPO[Final Product Owner outcome review]
+    FPO --> N[Coverage + Scope Guard + Final Review Bundle]
     N --> O{You approve?}
     O -->|Return| J
     O -->|Approve| P[Merge / external delivery / keep open]
@@ -231,9 +236,45 @@ Fast, standard, and rigorous profiles have explicit retry budgets. On the final 
 
 A lightweight atomic lease prevents two chats from implementing the same task simultaneously. Another chat can inspect, cancel, or explicitly take control.
 
+### Product Intelligence checks value before and after implementation
+
+New projects can require a persistent Project Product Owner before specification, a fresh-session Target Audience validation after QA, and a second Product Owner outcome review before final approval. These roles are integrity/freshness sealed and cannot silently override the user's intent: material product trade-offs remain human decisions. Existing projects keep their previous workflow until Product Intelligence is explicitly enabled.
+
+### Autonomy changes authority, not quality gates
+
+`Guided`, `Autonomous`, and `Headless` all use the same specification, Scope Guard, evidence, QA, Product Intelligence, and delivery contracts. Autonomous modes may cross only mechanically clean gates; questions, Amendments, product trade-offs, external delivery, and other human/external judgment are never fabricated. At normal implementation/review phase boundaries, Guided keeps the native boundary choice while Autonomous enters the deterministic same-session boundary when a stable session is available; Headless stops rather than guessing when the boundary cannot be entered safely.
+
+### Parallel work is scheduled, leased, and host-attested
+
+Multi-Agent Concurrency does not equate a graph of independent tasks with real parallel execution. SpecRail enforces project-wide `subagents.maxParallel`, dependencies, Scope Guard overlap, reservation-specific sessions, task leases, worktree isolation, interprocess locks, and transactional preparation. A host must attest real parallel subagent capability before `dispatch.mode: parallel`; otherwise SpecRail uses `serial-fallback`. Long-running lanes heartbeat their reservation, and an expired lease never authorizes silent redispatch.
+
 ### Reviews are mobile-friendly
 
 At specification and final gates, SpecRail generates a durable local **Review Cockpit** and the authoritative Review Bundle, then marks canonical visual attachments as `requiredVisible`. A local path or generated HTML file is audit metadata, not proof that the user saw the evidence. Visual gates are now mechanically two-step: `next` first returns `interaction.tool=host_actions`; every canonical visual gets a blocking `present-image` action for the conversation and the Cockpit gets a non-blocking `open-url` action. Each real outcome is acknowledged against the exact task, gate, session, action ID and `presentationDigest`. Until the current digest is acknowledged, direct approve/change/reject commands are blocked and the native approval selector is not emitted. Changed evidence, another session, or a corrupt/stale acknowledgment returns the gate to presentation. If a required image cannot be presented in-conversation, approval stays blocked rather than degrading to paths. When the installed `visualize` skill is available, SpecRail can prepare and validate an interactive `$visualize` artifact plus native reference, but those states remain `hostPresentation: unverified` until the host exposes a trustworthy presentation signal.
+
+## Autonomy Levels
+
+SpecRail can run the same governed workflow at three authority levels:
+
+```text
+○ Guided      Review Product Owner opinion, spec, plan/result gates, and delivery.
+● Autonomous  Interrupt only when judgment is required.
+○ Headless    Stop only when SpecRail cannot safely proceed.
+```
+
+`Autonomous` and `Headless` may cross mechanically clean specification/final gates, but they never answer product questions, approve Amendments, resolve Product Owner/Audience trade-offs, steal a task lease, or invent external delivery confirmation. Local worktree merge can be automated only when the project explicitly configures it. See [`docs/AUTONOMY.md`](docs/AUTONOMY.md).
+
+## Multi-Agent Concurrency
+
+Large features can execute independent child tasks or vertical slices concurrently. `subagents.maxParallel` is enforced across the whole project, not separately per parent plan. SpecRail builds dependency-aware waves and only permits parallel Builder writes when both tasks have approved, current, non-overlapping Scope Guard boundaries. `prepare` atomically binds every selected lane — including Product Owner/specification/Target Audience task-local work — to a reservation-specific session **and** the normal task lease. Planned tasks reject unscheduled agent mutations, safe write lanes receive separate Git worktrees, possible scope overlap is serialized, long-running lanes renew the same reservation with `concurrency heartbeat` instead of becoming silently redispatchable on lease expiry, human gates and every role handoff yield the old lane, and synchronous partial `prepare` failures roll back newly created worktrees/leases before the wave is committed.
+
+The scheduler is host-agnostic **without guessing host capability**. A host session must persist an integrity-checked capability attestation before `concurrency prepare` can return `dispatch.mode: parallel`; otherwise the default is `serial-fallback` and SpecRail reserves one lane only. The supported coordination contract is local-filesystem; unsupported distributed modes fail explicitly. Concurrency changes **when** a task runs, never its approvals, evidence, QA, Product Intelligence, leases, or Autonomy authority. See [`docs/MULTI-AGENT-CONCURRENCY.md`](docs/MULTI-AGENT-CONCURRENCY.md) and [`docs/TRUST-MODEL.md`](docs/TRUST-MODEL.md).
+
+## Product Intelligence
+
+Every new project gets a persistent **Project Product Owner** plus target-audience context. Existing projects remain on their previous workflow until Product Intelligence is explicitly enabled with `specrail product intelligence enable`, so an update cannot silently introduce new human gates. Before specification, the Product Owner challenges whether the requested feature serves the product, overlaps existing capability, or needs a consequential product decision. After QA, the **Target Audience Agent** validates whether intended users understand, discover, trust, and benefit from the real result; then the same Product Owner performs an outcome review (`ship` / `revise` / `do-not-ship`) before final approval.
+
+In `Guided`, every current Product Owner opinion — including clean `build` and final `ship` — is shown for acknowledgement. In `Autonomous`/`Headless`, clean opinions may continue without interruption, while `revise` / `do-not-build` / `do-not-ship` and Target Audience product trade-offs remain human judgment gates. SpecRail never silently cancels or redefines the user's request. Project identity and audience profiles are bootstrapped before task-level Product Owner judgment. Both reviews are integrity-sealed and freshness-checked against their governed inputs; Target Audience freshness also includes the current implementation snapshot and evidence. Target Audience now has a **mandatory fresh-session boundary**: the prior QA/review session cannot enter, every additional primary persona rotates to another session, and the sealed audience packet excludes code/diff/architecture/QA internals. Audience refresh is transactional: invalid fresh input preserves the previous stale batch, while corrupted stale batches fail closed until explicit administrative reset. See [`docs/PRODUCT-INTELLIGENCE.md`](docs/PRODUCT-INTELLIGENCE.md).
 
 ## Prime-inspired execution model
 
@@ -390,6 +431,9 @@ CI proves automated checks passed on a specific commit; it does not replace spec
 
 ## Public roadmap
 
+The current 0.9.1 integration of Autonomy Levels, Product Intelligence, and Multi-Agent Concurrency is validated in [`docs/VALIDATION-0.9.1-AUTONOMY-CONCURRENCY-PRODUCT-INTELLIGENCE.md`](docs/VALIDATION-0.9.1-AUTONOMY-CONCURRENCY-PRODUCT-INTELLIGENCE.md).
+
+
 ### Readiness / Why blocked
 
 CLI, `next`, and Review Cockpit now use the same deterministic gate model:
@@ -493,6 +537,18 @@ specrail status TASK-0001
 specrail readiness TASK-0001 --json
 specrail why-blocked TASK-0001 --json
 specrail next TASK-0001 --json
+specrail autonomy status TASK-0001
+specrail autonomy set guided|autonomous|headless
+specrail product intelligence status
+specrail product owner status TASK-0001
+specrail product owner final status TASK-0001
+specrail audience profiles
+specrail audience status TASK-0001
+specrail concurrency plan PARENT-TASK
+specrail concurrency status PARENT-TASK
+specrail concurrency prepare PARENT-TASK --host-session HOST-SESSION
+specrail concurrency heartbeat PARENT-TASK CHILD-TASK --session LANE-SESSION
+specrail capability host status --session HOST-SESSION
 specrail spec lint TASK-0001 --json
 specrail review bundle TASK-0001 --stage final --json
 specrail metrics TASK-0001 --json

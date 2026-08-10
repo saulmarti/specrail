@@ -111,7 +111,7 @@ function phaseLabel(phase: string): string {
   return ({
     'product-specifier': 'Product specification', 'ux-ui-designer': 'UX/UI design', 'technical-architecture': 'Architecture',
     'spec-approval': 'Specification approval', builder: 'Implementation', 'technical-reviewer': 'Technical review',
-    'qa-engineer': 'QA', 'final-customer': 'Final customer', 'final-approval': 'Final approval', delivery: 'Delivery', done: 'Done'
+    'qa-engineer': 'QA', 'final-customer': 'Target audience', 'final-approval': 'Final approval', delivery: 'Delivery', done: 'Done'
   } as Record<string, string>)[phase] ?? phase.replace(/-/g, ' ');
 }
 function decisions(task: TaskDocument): Array<{ label: string; detail: string }> {

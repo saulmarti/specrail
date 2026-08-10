@@ -19,14 +19,14 @@ function defaultActor(phase:string):string{
   const map:Record<string,string>={
     'product-specifier':'product-specifier','ux-ui-designer':'ux-ui-designer','technical-architecture':'technical-reviewer',
     'spec-approval':'orchestrator','builder':'builder','technical-reviewer':'technical-reviewer','qa-engineer':'qa-engineer',
-    'final-customer':'final-customer','final-approval':'orchestrator','delivery':'orchestrator','done':'orchestrator'
+    'final-customer':'target-audience','final-approval':'orchestrator','delivery':'orchestrator','done':'orchestrator'
   };
   return map[phase]||'orchestrator';
 }
 function defaultSkills(actor:string):string[]{
   const map:Record<string,string>={
     'orchestrator':'ai-flow','product-specifier':'ai-flow-product-specifier','ux-ui-designer':'ai-flow-ux-ui-designer',
-    'builder':'ai-flow-builder','technical-reviewer':'ai-flow-technical-reviewer','qa-engineer':'ai-flow-qa-engineer','final-customer':'ai-flow-final-customer'
+    'builder':'ai-flow-builder','technical-reviewer':'ai-flow-technical-reviewer','qa-engineer':'ai-flow-qa-engineer','target-audience':'ai-flow-target-audience','final-customer':'ai-flow-final-customer'
   };
   return map[actor]?[map[actor]!]:[];
 }

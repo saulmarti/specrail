@@ -30,6 +30,12 @@ export function readyProjectContext(root) {
     };
     for (const [name, content] of Object.entries(docs))
         writeFileSync(path.join(root, '.ai', 'project', name), `${content}\n`);
+    // Legacy regression fixtures predate Product Intelligence. Dedicated tests enable
+    // and exercise the new Product Owner and Target Audience gates explicitly.
+    const configPath = path.join(root, '.ai', 'config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    config.productIntelligence = { ...(config.productIntelligence || {}), enabled: false };
+    writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
     return completeProjectContext(root, 'Test context');
 }
 const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z7h8AAAAASUVORK5CYII=', 'base64');

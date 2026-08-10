@@ -33,7 +33,7 @@ test('Agent Plugin validator checks the portable manifest and all immediate skil
  const pkg=JSON.parse(readFileSync(path.join(process.cwd(),'package.json'),'utf8'));
  assert.equal(result.name,'specrail');
  assert.equal(result.version,pkg.version);
- assert.equal(result.skills.length,7);
+ assert.equal(result.skills.length,10);
 });
 
 test('Agent Plugin validator rejects invalid portable manifests and mismatched skill names',()=>{

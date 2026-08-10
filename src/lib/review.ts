@@ -9,7 +9,7 @@ import { acceptanceCoverage } from './acceptance.js';
 import { scopeGuardStatus } from './scope-guard.js';
 import { listAmendments, effectiveSpecificationHash } from './amendments.js';
 import { listTrace, validateTrace } from './trace.js';
-const SPEC = ['Need', 'Product Value', 'Users', 'Scope', 'UI Target', 'Blast Radius', 'Out of Scope', 'Acceptance Criteria', 'Gherkin', 'QA Mission', 'UX/UI Proposal', 'Architecture and Data Design', 'Quality Strategy', 'Operational Evidence', 'Vertical Slices', 'Constitution Impact', 'Implementation Plan', 'Decisions'];
+const SPEC = ['Need', 'Product Value', 'Users', 'Product Owner Review', 'Scope', 'UI Target', 'Blast Radius', 'Out of Scope', 'Acceptance Criteria', 'Gherkin', 'QA Mission', 'UX/UI Proposal', 'Architecture and Data Design', 'Quality Strategy', 'Operational Evidence', 'Vertical Slices', 'Constitution Impact', 'Implementation Plan', 'Decisions'];
 function clean(v: any) { return String(v || '').trim(); }
 function rel(from: any, to: any) { return path.relative(path.dirname(from), to).split(path.sep).join('/'); }
 
@@ -105,7 +105,7 @@ export function writeReviewBundle(root: any, id: any, stage: any = 'spec') {
     if (stage === 'final') {
         const git = gitSummary(root, task);
         lines.push('', '## Delivery diff summary', '', git.stat || '_No diff stat available._', '', '```text', git.status || 'Clean working tree', '```', '');
-        for (const section of ['QA', 'Final Customer', 'Handoff']) {
+        for (const section of ['QA', 'Target Audience Review', 'Product Owner Final Review', 'Final Customer', 'Handoff']) {
             const value = clean(getSection(task.body, section));
             if (value)
                 lines.push(`## ${section}`, '', value, '');

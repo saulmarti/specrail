@@ -6,10 +6,16 @@ import { loadProjectConfig } from './project.js';
 import { blockerVisualization, questionsVisualization } from './visualization.js';
 import { pendingAmendments } from './amendments.js';
 import { runtimeRecommendation } from './phase-handoff.js';
+import { finalProductOwnerRequired, finalProductOwnerReviewStatus, productOwnerReviewStatus, targetAudienceReviewStatus } from './product-intelligence.js';
+import { autonomyPolicy } from './autonomy-policy.js';
 import type { HostActionInteraction, NativeInteraction, Presentation, QuestionOption, TaskQuestion } from './types.js';
 
 function option(label:string,description=''):QuestionOption{return{label:String(label),description:String(description||label)};}
 function header(value:unknown):string{return String(value||'Decision').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase()).slice(0,30);}
+function decisionPresentation(root:string,task:ReturnType<typeof loadTask>,kind:string,title:string,markdown:string){
+ const taskPath=path.resolve(task.path);
+ return{kind,requiredBeforeInput:true,title,markdown,taskPath,taskRelativePath:path.relative(path.resolve(root),taskPath),previewUrl:null,attachments:[],visualization:null};
+}
 
 interface InteractionInput {
   id?: string;
@@ -39,8 +45,19 @@ export function interactionForTask(root:string,id:string,kind='current',input:In
  const sessionId=input.sessionId;
  if(kind==='current'){
   if(pendingAmendments(root,id).length)return interactionForTask(root,id,'amendment',input);
+  if(task.meta.phase==='product-specifier'){
+   const productOwner=productOwnerReviewStatus(root,id);
+   const guidedAcknowledgement=autonomyPolicy(root).level==='guided'&&Boolean(productOwner.review)&&productOwner.integrityValid&&!productOwner.stale&&!productOwner.review?.humanDecision;
+   if(productOwner.needsHumanJudgment||guidedAcknowledgement)return interactionForTask(root,id,'product-owner-decision',input);
+  }
+  if(task.meta.phase==='final-customer'&&targetAudienceReviewStatus(root,id).requiresProductDecision)return interactionForTask(root,id,'target-audience-decision',input);
   if(task.meta.open_questions>0)return interactionForTask(root,id,'open-questions',input);
   if(task.meta.phase==='spec-approval')return interactionForTask(root,id,'spec-approval',input);
+  if(task.meta.phase==='final-approval'&&finalProductOwnerRequired(root)){
+   const finalOwner=finalProductOwnerReviewStatus(root,id);
+   const guidedAcknowledgement=autonomyPolicy(root).level==='guided'&&Boolean(finalOwner.review)&&finalOwner.integrityValid&&!finalOwner.stale&&!finalOwner.review?.humanDecision;
+   if(finalOwner.needsHumanJudgment||guidedAcknowledgement)return interactionForTask(root,id,'final-product-owner-decision',input);
+  }
   if(task.meta.phase==='final-approval')return interactionForTask(root,id,'final-approval',input);
   if(task.meta.phase==='delivery')return interactionForTask(root,id,'delivery',input);
   if(task.meta.status==='blocked')return interactionForTask(root,id,'blocker',input);
@@ -56,6 +73,34 @@ export function interactionForTask(root:string,id:string,kind='current',input:In
   const visualization=questionsVisualization(root,loadProjectConfig(root),task,[q],sessionId) ?? undefined;
   return{tool:'request_user_input',...(visualization?{visualization}:{}),questions:[{id:q.id,header:header(q.category),question:q.text,options:q.options.map(x=>option(x,q.recommendation===x?'Recommended option':x)),isOther:true}]};
  }
+
+ if(kind==='product-owner-decision'){
+  const status=productOwnerReviewStatus(root,id),review=status.review;
+  if(!review)return{tool:null,questions:[],reason:'No Product Owner review requires a decision'};
+  const concerns=review.concerns.length?review.concerns.map(item=>`- ${item}`).join('\n'):'- None.';
+  const questions=review.questions.length?review.questions.map(item=>`- ${item}`).join('\n'):'- None.';
+  const presentation=decisionPresentation(root,task,'product-owner-decision',`Product Owner — ${task.meta.id}`,`# Product Owner Review\n\n**Verdict:** ${review.verdict}\n\n## Opinion\n\n${review.summary}\n\n## Product value\n\n${review.value}\n\n## Concerns\n\n${concerns}\n\n## Product questions\n\n${questions}`);
+  return{tool:'request_user_input',presentation,questions:[{id:'product-owner-decision',header:'Product Owner',question:`El Product Owner del proyecto recomienda «${review.verdict}». Después de revisar su opinión completa, ¿cómo quieres continuar?`,options:[option('Continuar con la feature','Aceptar conscientemente el trade-off y pasar a especificación'),option('Revisar propuesta','Mantener la tarea en Product Owner y replantear la idea'),option('Rechazar tarea','Cerrar la tarea sin implementarla')],isOther:true}]};
+ }
+ if(kind==='final-product-owner-decision'){
+  const status=finalProductOwnerReviewStatus(root,id),review=status.review;
+  if(!review)return{tool:null,questions:[],reason:'No final Product Owner review requires a decision'};
+  const concerns=review.concerns.length?review.concerns.map(item=>`- ${item}`).join('\n'):'- None.';
+  const questions=review.questions.length?review.questions.map(item=>`- ${item}`).join('\n'):'- None.';
+  const presentation=decisionPresentation(root,task,'final-product-owner-decision',`Product Owner outcome review — ${task.meta.id}`,`# Final Product Owner Review\n\n**Verdict:** ${review.verdict}\n\n## Outcome opinion\n\n${review.summary}\n\n## Product value after implementation\n\n${review.value}\n\n## Concerns\n\n${concerns}\n\n## Product questions\n\n${questions}`);
+  return{tool:'request_user_input',presentation,questions:[{id:'final-product-owner-decision',header:'Product Owner',question:`El Product Owner reevalúa el resultado implementado como «${review.verdict}». Después de revisar su opinión completa, ¿cómo quieres continuar?`,options:[option('Continuar a aprobación final','Aceptar conscientemente el resultado y pasar al gate final'),option('Revisar implementación','Volver al Builder para corregir el resultado'),option('Revisar producto','Volver a Product Specifier y replantear la feature')],isOther:true}]};
+ }
+ if(kind==='target-audience-decision'){
+  const status=targetAudienceReviewStatus(root,id);
+  if(!status.reviews.length)return{tool:null,questions:[],reason:'No Target Audience review requires a decision'};
+  const reviews=status.reviews.map(review=>{
+   const findings=review.findings.length?review.findings.map(item=>`- ${item}`).join('\n'):'- None.';
+   return`## ${review.profileId}${review.primary?' — primary':''}\n\n**Verdict:** ${review.verdict}\n\n| Signal | Result |\n|---|---|\n| Comprehension | ${review.comprehension} |\n| Utility | ${review.utility} |\n| Discoverability | ${review.discoverability} |\n| Friction | ${review.friction} |\n| Trust | ${review.trust} |\n| Repeat value | ${review.repeatValue} |\n\n### Findings\n\n${findings}`;
+  }).join('\n\n');
+  const presentation=decisionPresentation(root,task,'target-audience-decision',`Target Audience — ${task.meta.id}`,`# Target Audience Review\n\n${reviews}\n\n> This is a simulated audience review, not claimed user research.`);
+  return{tool:'request_user_input',presentation,questions:[{id:'target-audience-decision',header:'Público objetivo',question:'La simulación del público objetivo detectó un trade-off de producto. Después de revisar todos los perfiles y findings, ¿qué quieres hacer?',options:[option('Aceptar trade-off','Aceptar explícitamente la decisión de producto y continuar'),option('Revisar implementación','Volver al Builder para reducir fricción o mejorar comprensión'),option('Revisar producto','Volver al Product Owner para replantear la feature')],isOther:true}]};
+ }
+
  if(kind==='amendment'){
   const amendment=pendingAmendments(root,id)[0];
   if(!amendment)return{tool:null,questions:[],reason:'No pending specification amendment requires user input'};

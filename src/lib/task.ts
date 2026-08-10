@@ -3,7 +3,7 @@ import path from 'node:path';
 import { parseDocument, serializeDocument } from './frontmatter.js';
 import { defaultRoute, type NativeInteraction, type TaskDocument, type TaskInput, type TaskMeta, type TaskStatus, type TaskSummary } from './types.js';
 
-const SECTION_NAMES = ['Need','Product Value','Users','Scope','UI Target','Blast Radius','Out of Scope','Questions','Acceptance Criteria','Gherkin','QA Mission','Quality Strategy','Operational Evidence','Vertical Slices','Constitution Impact','UX/UI Proposal','Architecture and Data Design','Implementation Plan','Decisions','Evidence','QA','Final Customer','Handoff','Workflow Log'] as const;
+const SECTION_NAMES = ['Need','Product Value','Users','Product Owner Review','Product Owner Final Review','Scope','UI Target','Blast Radius','Out of Scope','Questions','Acceptance Criteria','Gherkin','QA Mission','Quality Strategy','Operational Evidence','Vertical Slices','Constitution Impact','UX/UI Proposal','Architecture and Data Design','Implementation Plan','Decisions','Evidence','QA','Target Audience Review','Final Customer','Handoff','Workflow Log'] as const;
 const FOLDER_BY_STATUS: Record<TaskStatus, string> = {
   draft:'inbox', refining:'refining', awaiting_spec_approval:'ready', ready:'ready', active:'active', review:'review', qa:'review', customer_validation:'review', awaiting_final_approval:'review', awaiting_delivery:'review', blocked:'blocked', done:'done', rejected:'done'
 };
@@ -112,6 +112,9 @@ function asTaskMeta(raw: Record<string, unknown>): TaskMeta {
     delivery_action: typeof raw.delivery_action === 'string' ? raw.delivery_action : null,
     completed_design: raw.completed_design === true,
     completed_architecture: raw.completed_architecture === true,
+    product_owner_review_digest: typeof raw.product_owner_review_digest === 'string' ? raw.product_owner_review_digest : null,
+    product_owner_final_review_digest: typeof raw.product_owner_final_review_digest === 'string' ? raw.product_owner_final_review_digest : null,
+    target_audience_review_digest: typeof raw.target_audience_review_digest === 'string' ? raw.target_audience_review_digest : null,
     created_at: typeof raw.created_at === 'string' ? raw.created_at : now(),
     updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : now()
   };

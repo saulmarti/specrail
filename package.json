@@ -31,6 +31,11 @@
     "docs/ACCEPTANCE-COVERAGE.md",
     "docs/SCOPE-GUARD.md",
     "docs/AMENDMENTS.md",
+    "docs/PRODUCT-INTELLIGENCE.md",
+    "docs/AUTONOMY.md",
+    "docs/MULTI-AGENT-CONCURRENCY.md",
+    "docs/TRUST-MODEL.md",
+    "docs/VALIDATION-0.9.1-AUTONOMY-CONCURRENCY-PRODUCT-INTELLIGENCE.md",
     "docs/REPLAY-HARDENING.md",
     "docs/VALIDATION-0.8.0-beta.2.md"
   ],

@@ -6,7 +6,7 @@ import { qualityPolicy } from './quality.js';
 import { operationalPolicy } from './observability.js';
 import { parseUiTargetContexts } from './evidence.js';
 
-export const GOVERNED_SPEC_SECTIONS = ['Need','Product Value','Users','Scope','UI Target','Blast Radius','Out of Scope','Questions','Acceptance Criteria','Gherkin','QA Mission','Quality Strategy','Operational Evidence','Vertical Slices','Constitution Impact','UX/UI Proposal','Architecture and Data Design','Implementation Plan','Decisions'] as const;
+export const GOVERNED_SPEC_SECTIONS = ['Need','Product Value','Users','Product Owner Review','Scope','UI Target','Blast Radius','Out of Scope','Questions','Acceptance Criteria','Gherkin','QA Mission','Quality Strategy','Operational Evidence','Vertical Slices','Constitution Impact','UX/UI Proposal','Architecture and Data Design','Implementation Plan','Decisions'] as const;
 const GOVERNED_META_V1 = ['title','type','size','risk','execution_profile','surfaces','route','file_scope','dependencies','parent_id'] as const;
 const GOVERNED_META_V2 = [...GOVERNED_META_V1,'spec_integrity_version','project_governance_hash','scope_guard_hash','scope_baseline_commit'] as const;
 const VAGUE=[/\b(?:work|works|working|funcione|funciona)\s+(?:correctly|properly|bien|correctamente)\b/i,/\b(?:look|looks|se vea|verse)\s+(?:good|better|nice|bien|mejor|bonito)\b/i,/\b(?:improve|mejorar)\s+(?:the\s+)?(?:design|ux|ui|usability|diseño|experiencia|usabilidad)\b/i,/\b(?:responsive|usable|user[- ]friendly|intuitive|intuitivo|usable)\b[.!]?$/i,/\b(?:best practices|buenas prácticas)\b/i];

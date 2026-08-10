@@ -35,7 +35,7 @@ test('installed CLI completes a natural backend request with native approval pay
     const projectDocs = {
         'product.md': '# Product\n\nA monitored service with explicit operational value and priorities.',
         'product-owner.md': '# Product Owner\n\nProtect monitoring value, stable contracts, and evidence-based delivery.',
-        'users.md': '# Users\n\nOperators need a dependable way to verify service availability.',
+        'users.md': '# Users\n\n## Audience: operator (primary)\n\nOperators need a dependable way to verify service availability.',
         'architecture.md': '# Architecture\n\nThe service exposes HTTP contracts within existing repository boundaries.',
         'runbook.md': '# Runbook\n\nRun the project test and application commands discovered in the repository.'
     };
@@ -45,6 +45,8 @@ test('installed CLI completes a natural backend request with native approval pay
     const sections = { Need: 'Expose a health endpoint for monitoring.', 'Product Value': 'Operators can confirm service availability.', Scope: 'Add GET /health with a stable response.', 'Out of Scope': 'Dependency diagnostics.', 'Acceptance Criteria': '- GET /health returns 200\n- Response contains status=ok' };
     for (const [heading, text] of Object.entries(sections))
         json(bin, ['section', 'set', id, heading, '--text', text, '--root', repo]);
+    json(bin, ['product','owner','review',id,'--verdict','build','--summary','The health endpoint directly supports the monitoring need for this service.','--value','Operators gain a dependable public signal for service availability.','--root',repo]);
+    json(bin, ['product','owner','decide',id,'--decision','proceed','--note','Reviewed Product Owner opinion in Guided mode.','--root',repo]);
     json(bin, ['scope','set',id,'--allowed-files','health-endpoint.txt','--reason','Health endpoint delivery boundary','--root',repo]);
     json(bin, ['phase', 'complete', id, '--root', repo]);
     const spec = json(bin, ['interaction', id, '--kind', 'spec-approval', '--root', repo]);
@@ -88,7 +90,27 @@ test('installed CLI completes a natural backend request with native approval pay
         json(bin, args);
     }
     json(bin, ['phase', 'complete', id, '--session', 'backend-reviewer', '--root', repo]);
+    const audienceNext = json(bin, ['next', id, '--session', 'backend-reviewer', '--root', repo]);
+    assert.equal(audienceNext.runtime.boundary.recommendation, 'fresh-chat-required');
+    assert.equal(audienceNext.runtime.boundary.sameChatAllowed, false);
+    json(bin, ['boundary', 'enter', id, '--session', 'backend-audience', '--root', repo]);
+    json(bin, ['audience','review',id,'--profile','operator','--primary','--verdict','pass','--comprehension','pass','--utility','pass','--discoverability','pass','--friction','pass','--trust','pass','--repeat-value','pass','--findings','The health contract is clear and useful to operators.','--session','backend-audience','--root',repo]);
+    json(bin, ['phase', 'complete', id, '--session', 'backend-audience', '--root', repo]);
     json(bin, ['project', 'learn', '--task', id, '--text', 'The health endpoint is a stable public monitoring contract.', '--root', repo]);
+    const finalPoNext = json(bin, ['next', id, '--root', repo]);
+    assert.equal(finalPoNext.actor, 'ai-flow-product-owner');
+    assert.equal(finalPoNext.action, 'final-product-owner-review');
+    json(bin, ['product','owner','final','review',id,'--verdict','ship','--summary','The implemented health endpoint matches the approved product intent and remains understandable to operators.','--value','Operators now have the dependable monitoring outcome the feature was intended to create.','--root',repo]);
+    const finalPoDecision = json(bin, ['next', id, '--root', repo]);
+    assert.equal(finalPoDecision.action, 'review-final-product-owner-opinion');
+    assert.equal(finalPoDecision.actor, 'user');
+    json(bin, ['product','owner','final','decide',id,'--decision','proceed','--note','Reviewed final Product Owner outcome in Guided mode.','--root',repo]);
+    const finalReadiness = json(bin, ['readiness', id, '--root', repo]);
+    const productOwnerGate = finalReadiness.gates.find(gate => gate.id === 'product-owner-review');
+    assert.equal(productOwnerGate.status, 'pass');
+    assert.match(productOwnerGate.detail, /sealed into the approved specification/i);
+    const finalProductOwnerGate = finalReadiness.gates.find(gate => gate.id === 'product-owner-final-review');
+    assert.equal(finalProductOwnerGate.status, 'pass');
     const final = json(bin, ['interaction', id, '--kind', 'final-approval', '--root', repo]);
     assert.equal(final.tool, 'request_user_input');
     assert.equal(final.questions[0].options[0].label, 'Aprobar resultado');
@@ -130,13 +152,15 @@ test('installed CLI requires Taste Skill plus Image Gen and rejects a visibly br
     const bin = path.join(home, '.local', 'bin', 'ai-flow');
     const intake = json(bin, ['intake', 'Ajustar el H3 de Home Spotlight', '--need', 'Improve the exact spotlight heading hierarchy.', '--type', 'task', '--surfaces', 'frontend', '--root', repo]);
     const id = intake.task.id;
-    const docs = { 'product.md': '# Product\n\nA real web product whose homepage helps visitors discover and understand its primary content.', 'product-owner.md': '# Product Owner\n\nProtect focused user value, existing homepage hierarchy, and evidence-based visual delivery.', 'users.md': '# Users\n\nHomepage visitors use desktop and mobile layouts and need clear readable section headings.', 'architecture.md': '# Architecture\n\nThe existing frontend has bounded homepage sections and reusable typography components.', 'runbook.md': '# Runbook\n\nStart the real application with the repository command and validate the target route in a browser.' };
+    const docs = { 'product.md': '# Product\n\nA real web product whose homepage helps visitors discover and understand its primary content.', 'product-owner.md': '# Product Owner\n\nProtect focused user value, existing homepage hierarchy, and evidence-based visual delivery.', 'users.md': '# Users\n\n## Audience: homepage visitor (primary)\n\nHomepage visitors use desktop and mobile layouts and need clear readable section headings.', 'architecture.md': '# Architecture\n\nThe existing frontend has bounded homepage sections and reusable typography components.', 'runbook.md': '# Runbook\n\nStart the real application with the repository command and validate the target route in a browser.' };
     for (const [name, content] of Object.entries(docs))
         writeFileSync(path.join(repo, '.ai', 'project', name), content);
     json(bin, ['project', 'complete', '--root', repo]);
     const sections = { Need: 'Reduce the exact Home Spotlight H3 size.', 'Product Value': 'Improve hierarchy without changing other homepage sections.', Scope: 'Only the Home Spotlight heading.', 'UI Target': '- Route: `/`\n- Target: `section#home-spotlight`\n- Viewport: `1440x1000`\n- Capture: focused section', 'Out of Scope': 'Hero, navigation, cards, and backend.', 'Acceptance Criteria': '- Exact section is shown before and after\n- No overflow or clipped text' };
     for (const [heading, text] of Object.entries(sections))
         json(bin, ['section', 'set', id, heading, '--text', text, '--root', repo]);
+    json(bin, ['product','owner','review',id,'--verdict','build','--summary','The hierarchy adjustment is a focused product-quality improvement for homepage visitors.','--value','Clearer heading hierarchy improves comprehension without adding product complexity.','--root',repo]);
+    json(bin, ['product','owner','decide',id,'--decision','proceed','--note','Reviewed Product Owner opinion in Guided mode.','--root',repo]);
     json(bin, ['scope','set',id,'--allowed-files','src/**','--reason','Home Spotlight implementation boundary','--root',repo]);
     json(bin, ['phase', 'complete', id, '--root', repo]);
     const dir = path.join(repo, '.ai', 'evidence', id, 'frontend');

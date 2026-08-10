@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Product Owner"
+  short_description: "Challenge product value before specification"
+  default_prompt: "Review this task as the persistent SpecRail Project Product Owner before specification."

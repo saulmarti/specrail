@@ -26,7 +26,9 @@ const GOVERNED_CONFIG_KEYS = [
   'metrics',
   'leases',
   'adaptivePolicy',
-  'contextBudget'
+  'contextBudget',
+  'autonomy',
+  'productIntelligence'
 ] as const;
 
 function stable(value: unknown): string {

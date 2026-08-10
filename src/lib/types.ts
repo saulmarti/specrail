@@ -21,6 +21,7 @@ export interface TaskRoute {
   implementation: boolean;
   technical_review: 'none' | 'focused' | 'full' | string;
   qa: 'none' | 'focused' | 'browser' | string;
+  target_audience: boolean;
   final_customer: boolean;
   mutation_testing: boolean;
   property_testing: 'none' | 'recommended' | 'required' | string;
@@ -69,6 +70,11 @@ export interface TaskMeta {
   delivery_action?: string | null;
   completed_design?: boolean;
   completed_architecture?: boolean;
+  product_owner_review_digest?: string | null;
+  product_owner_final_review_digest?: string | null;
+  target_audience_review_digest?: string | null;
+  target_audience_origin_session_id?: string | null;
+  target_audience_forbidden_session_ids?: string[];
   created_at: string;
   updated_at: string;
   [key: string]: unknown;
@@ -113,10 +119,22 @@ export interface NativeQuestion {
   isOther: boolean;
 }
 
+export interface DecisionPresentation {
+  kind: string;
+  requiredBeforeInput: boolean;
+  title: string;
+  markdown: string;
+  taskPath: string;
+  taskRelativePath: string;
+  previewUrl: null;
+  attachments: Attachment[];
+  visualization: null;
+}
+
 export interface NativeInteraction {
   tool: 'request_user_input';
   questions: NativeQuestion[];
-  presentation?: Presentation;
+  presentation?: Presentation | DecisionPresentation;
   visualization?: VisualizationPlan;
   turnPolicy?: {
     afterSelection: 'persist-boundary-choice-and-end-turn';
@@ -488,7 +506,7 @@ export interface ContextManifest {
   updatedAt: string;
 }
 
-export type RuntimeRole = 'thinker' | 'implementer' | 'reviewer' | 'system';
+export type RuntimeRole = 'thinker' | 'implementer' | 'reviewer' | 'target-audience' | 'system';
 
 export interface RuntimeRecommendation {
   role: RuntimeRole;
@@ -507,8 +525,8 @@ export interface RuntimeRecommendation {
   handoffTruncated: boolean;
   boundary: null | {
     status: 'required' | 'chosen' | 'entered';
-    recommendation: 'same-chat-ok' | 'fresh-chat-recommended';
-    sameChatAllowed: true;
+    recommendation: 'same-chat-ok' | 'fresh-chat-recommended' | 'fresh-chat-required';
+    sameChatAllowed: boolean;
     choice: 'continue-current' | 'pause-model-change' | 'fresh-chat' | null;
     choiceSessionId: string | null;
     mode: 'same-chat' | 'fresh-chat' | 'unknown' | null;
@@ -517,12 +535,80 @@ export interface RuntimeRecommendation {
   };
   rationale: string;
   transitionNotice: null | {
-    kind: 'implementation-handoff' | 'review-handoff';
+    kind: 'implementation-handoff' | 'review-handoff' | 'target-audience-handoff';
     title: string;
     message: string;
     resumePrompt: string;
   };
   transitionInstruction: string | null;
+}
+
+export type ProductOwnerVerdict = 'build' | 'revise' | 'do-not-build';
+export type FinalProductOwnerVerdict = 'ship' | 'revise' | 'do-not-ship';
+export type AudienceVerdict = 'pass' | 'revise' | 'reject';
+export type AudienceSignal = 'pass' | 'warn' | 'fail';
+
+export interface ProductOwnerReview {
+  schemaVersion: 1;
+  taskId: string;
+  verdict: ProductOwnerVerdict;
+  summary: string;
+  value: string;
+  concerns: string[];
+  questions: string[];
+  judgmentRequired: boolean;
+  humanDecision: 'proceed' | 'rework' | 'reject' | null;
+  humanDecisionNote: string | null;
+  sourceDigest: string;
+  artifactDigest: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FinalProductOwnerReview {
+  schemaVersion: 1;
+  taskId: string;
+  verdict: FinalProductOwnerVerdict;
+  summary: string;
+  value: string;
+  concerns: string[];
+  questions: string[];
+  judgmentRequired: boolean;
+  humanDecision: 'proceed' | 'revise-implementation' | 'revisit-product' | 'reject' | null;
+  humanDecisionNote: string | null;
+  sourceDigest: string;
+  artifactDigest: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TargetAudienceReview {
+  schemaVersion: 1;
+  taskId: string;
+  profileId: string;
+  primary: boolean;
+  verdict: AudienceVerdict;
+  comprehension: AudienceSignal;
+  utility: AudienceSignal;
+  discoverability: AudienceSignal;
+  friction: AudienceSignal;
+  trust: AudienceSignal;
+  repeatValue: AudienceSignal;
+  findings: string[];
+  requiresProductDecision: boolean;
+  humanDecision: 'accept' | 'revise' | null;
+  humanDecisionNote: string | null;
+  sourceDigest: string;
+  artifactDigest: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TargetAudienceProfile {
+  id: string;
+  label: string;
+  primary: boolean;
+  source: 'explicit';
 }
 
 export interface ProjectConfig {
@@ -566,6 +652,7 @@ export function defaultRoute(surfaces: readonly string[] = [], type = 'task'): T
   const hasFrontend = surfaces.includes('frontend') || surfaces.includes('ui') || surfaces.includes('ux');
   const hasArchitecture = type === 'architecture';
   const hasDatabase = surfaces.includes('database') || type === 'database';
+  const targetAudience = type === 'feature' || surfaces.some(surface => ['frontend','ui','ux','cli','api'].includes(surface));
   const implementation = !['design','architecture'].includes(type);
   return {
     design: hasFrontend,
@@ -574,6 +661,7 @@ export function defaultRoute(surfaces: readonly string[] = [], type = 'task'): T
     implementation,
     technical_review: implementation ? 'focused' : 'none',
     qa: hasFrontend ? 'browser' : implementation ? 'focused' : 'none',
+    target_audience: targetAudience,
     final_customer: hasFrontend,
     mutation_testing: false,
     property_testing: 'none',

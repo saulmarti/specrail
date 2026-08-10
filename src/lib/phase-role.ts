@@ -5,7 +5,7 @@ const IMPLEMENTATION_PHASES = new Set<TaskPhase>(['builder']);
 const REVIEW_PHASES = new Set<TaskPhase>(['technical-reviewer','qa-engineer','final-customer','final-approval']);
 const PROFILES = ['fast','standard','rigorous'] as const;
 type ContextProfileName = typeof PROFILES[number];
-export type RuntimeRole = 'thinker' | 'implementer' | 'reviewer' | 'system';
+export type RuntimeRole = 'thinker' | 'implementer' | 'reviewer' | 'target-audience' | 'system';
 
 function profileName(value: unknown, fallback: ContextProfileName): ContextProfileName {
   const normalized = String(value || '').trim().toLowerCase();
@@ -38,5 +38,6 @@ export function contextProfileForTask(_config: unknown, task: TaskDocument): Con
   if (role === 'implementer') return atLeast(executionProfile, 'standard');
   if (role === 'thinker') return highRisk(task) || largeTask(task) || executionProfile === 'rigorous' ? 'standard' : 'fast';
   if (role === 'reviewer') return highRisk(task) || executionProfile === 'rigorous' ? 'standard' : 'fast';
+  if (role === 'target-audience') return 'fast';
   return executionProfile;
 }

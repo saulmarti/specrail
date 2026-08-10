@@ -11,11 +11,12 @@ import { startRefinement, completePhase, approveSpecification, startExecution, b
 import { contextStatus, requestContextExpansion } from '../dist/src/lib/context.js';
 import { nextAction } from '../dist/src/lib/next.js';
 import { runtimeRecommendation } from '../dist/src/lib/phase-handoff.js';
-import { choosePhaseBoundary, enterPhaseBoundary, loadPhaseBoundary } from '../dist/src/lib/phase-boundary.js';
+import { choosePhaseBoundary, enterPhaseBoundary, invalidatePhaseBoundary, loadPhaseBoundary, rememberTargetAudienceSourceSession, resetPhaseBoundary } from '../dist/src/lib/phase-boundary.js';
 import { estimatePhaseBoundary } from '../dist/src/lib/boundary-metrics.js';
 import { acquireTaskLease, leaseStatus } from '../dist/src/lib/lease.js';
 import { addEvidence } from '../dist/src/lib/evidence.js';
 import { proposeAmendment, approveAmendment } from '../dist/src/lib/amendments.js';
+import { setProductIntelligenceEnabled } from '../dist/src/lib/product-intelligence.js';
 
 const repo=()=>mkdtempSync(path.join(tmpdir(),'specrail-handoff-'));
 function backendAtSpecApproval(root){
@@ -184,6 +185,16 @@ test('phase boundary state is integrity checked and edited runtime JSON cannot f
   assert.throws(()=>nextAction(root,id,{sessionId:'forged'}),/phase-boundary integrity check failed/i);
 });
 
+test('corrupt phase boundaries fail closed but can be administratively reset without trusting their JSON',()=>{
+  const root=repo(),id=backendAtBuilder(root),first=nextAction(root,id,{sessionId:'planner'}).runtime;
+  chooseAndEnter(root,id,first,{choice:'fresh-chat',choiceSessionId:'planner',entrySessionId:'builder-owner'});
+  const file=path.join(root,'.ai','runtime','boundaries',`${id}-builder.json`),record=JSON.parse(readFileSync(file,'utf8'));record.enteredSessionId='forged-owner';writeFileSync(file,`${JSON.stringify(record,null,2)}\n`);
+  assert.throws(()=>nextAction(root,id,{sessionId:'builder-owner'}),/phase-boundary integrity check failed/i);
+  assert.throws(()=>resetPhaseBoundary(root,id,'builder'),/requires force=true/i);
+  const reset=resetPhaseBoundary(root,id,'builder',{force:true});assert.equal(reset.reset,true);assert.equal(leaseStatus(root,id,'replacement').active,false);
+  const repaired=nextAction(root,id,{sessionId:'replacement'});assert.equal(repaired.runtime.boundary.status,'required');
+});
+
 test('approved amendments invalidate an entered implementation boundary and require a newly compiled capsule',()=>{
   const root=repo(),id=backendAtBuilder(root),first=nextAction(root,id,{sessionId:'planner'});
   chooseAndEnter(root,id,first.runtime,{choice:'fresh-chat',choiceSessionId:'planner',entrySessionId:'builder'});
@@ -254,4 +265,62 @@ test('CLI exposes boundary status, explicit entry, and model-independent token e
   const chosen=run(['boundary','choose',id,'--choice','fresh','--session','planner-cli']);assert.equal(chosen.boundary.status,'chosen');assert.equal(chosen.boundary.choice,'fresh-chat');assert.equal(chosen.runtime.stopBeforePhaseWork,true);
   const pending=nextAction(root,id,{sessionId:'builder-cli'});assert.equal(pending.action,'enter-phase-boundary');assert.equal(pending.userInputRequired,false);
   const entered=run(['boundary','enter',id,'--session','builder-cli']);assert.equal(entered.boundary.status,'entered');assert.equal(entered.boundary.mode,'fresh-chat');assert.equal(entered.runtime.stopBeforePhaseWork,false);
+  const boundaryFile=path.join(root,'.ai','runtime','boundaries',`${id}-builder.json`),forged=JSON.parse(readFileSync(boundaryFile,'utf8'));forged.status='required';writeFileSync(boundaryFile,`${JSON.stringify(forged,null,2)}\n`);
+  const corrupt=spawnSync(process.execPath,[cli,'boundary','status',id,'--session','builder-cli','--root',root],{encoding:'utf8'});assert.notEqual(corrupt.status,0);assert.match(corrupt.stderr,/integrity check failed/i);
+  const reset=run(['boundary','reset',id,'--force']);assert.equal(reset.reset,true);
+  const rebuilt=run(['boundary','status',id,'--session','replacement-cli']);assert.equal(rebuilt.boundary.status,'required');
+});
+
+test('Target Audience boundary requires a different fresh session and rotates again when its user packet changes',()=>{
+  const root=repo();initProject(root,{name:'Audience isolation'});readyProjectContext(root);setProductIntelligenceEnabled(root,true);
+  writeFileSync(path.join(root,'.ai','project','product.md'),'# Product\n\nA concrete product that helps operators complete a visible workflow predictably with low avoidable friction.\n');
+  writeFileSync(path.join(root,'.ai','project','users.md'),'# Users\n\n## Audience: operator (primary)\n\nOperators need clear controls, understandable outcomes, and predictable feedback.\n');
+  const created=createTask(root,{title:'Audience isolated review',type:'feature',surfaces:['frontend'],size:'small',risk:'low'});
+  let task=loadTask(findTask(root,created.meta.id));
+  task.meta.phase='final-customer';task.meta.status='customer_validation';task.meta.target_audience_origin_session_id='qa-session';
+  task.body=setSection(task.body,'Need','Make the visible action understandable to operators.');
+  task.body=setSection(task.body,'Product Value','Operators can discover and use the action without implementation knowledge.');
+  task.body=setSection(task.body,'Users','Operators using the public product surface.');
+  task.body=setSection(task.body,'UI Target','- Route: `/`\n- Target: `main`\n- Viewport: `1440x1000`');
+  saveTask(task);
+
+  const first=runtimeRecommendation(root,created.meta.id,{sessionId:'qa-session'});
+  assert.equal(first.role,'target-audience');
+  assert.equal(first.boundary.status,'chosen');
+  assert.equal(first.boundary.choice,'fresh-chat');
+  assert.equal(first.boundary.recommendation,'fresh-chat-required');
+  assert.equal(first.boundary.sameChatAllowed,false);
+  assert.equal(first.runtime?.sameChatAllowed,undefined);
+  const packet=readFileSync(first.handoffPath,'utf8');
+  assert.match(packet,/fresh-context product evaluation packet/i);
+  assert.match(packet,/## Product/);
+  assert.match(packet,/## Audience profiles/);
+  assert.doesNotMatch(packet,/## Implementation delta|## Architecture \/ data constraints|## Implementation plan|## Current QA \/ customer evidence summaries/i);
+  assert.throws(()=>enterPhaseBoundary(root,created.meta.id,{sessionId:'qa-session',handoffDigest:first.handoffDigest,handoffContentDigest:first.handoffContentDigest,handoffWords:first.handoffWords}),/requires a fresh session/i);
+  enterPhaseBoundary(root,created.meta.id,{sessionId:'audience-1',handoffDigest:first.handoffDigest,handoffContentDigest:first.handoffContentDigest,handoffWords:first.handoffWords});
+  assert.equal(leaseStatus(root,created.meta.id,'audience-1').owner,'audience-1');
+
+  writeFileSync(path.join(root,'.ai','project','users.md'),'# Users\n\n## Audience: operator (primary)\n\nOperators now require clearer discovery, explicit feedback, and predictable recovery from mistakes.\n');
+  const refreshed=runtimeRecommendation(root,created.meta.id,{sessionId:'audience-1'});
+  assert.equal(refreshed.boundary.status,'chosen');
+  assert.equal(refreshed.boundary.choice,'fresh-chat');
+  assert.equal(refreshed.boundary.originSessionId,'qa-session');
+  assert.deepEqual(loadPhaseBoundary(root,created.meta.id,'final-customer').forbiddenSessionIds,['audience-1','qa-session']);
+  assert.equal(leaseStatus(root,created.meta.id,'audience-1').active,false);
+  assert.throws(()=>enterPhaseBoundary(root,created.meta.id,{sessionId:'audience-1',handoffDigest:refreshed.handoffDigest,handoffContentDigest:refreshed.handoffContentDigest,handoffWords:refreshed.handoffWords}),/requires a fresh session/i);
+  enterPhaseBoundary(root,created.meta.id,{sessionId:'audience-2',handoffDigest:refreshed.handoffDigest,handoffContentDigest:refreshed.handoffContentDigest,handoffWords:refreshed.handoffWords});
+  assert.equal(loadPhaseBoundary(root,created.meta.id,'final-customer').enteredSessionId,'audience-2');
+
+  // A later Builder/QA repair cycle introduces a new QA source session. The
+  // next audience run must be fresh from every prior QA and audience session,
+  // not merely different from the immediately previous persona.
+  rememberTargetAudienceSourceSession(root,created.meta.id,'qa-session-2');
+  invalidatePhaseBoundary(root,created.meta.id,'final-customer');
+  const secondCycle=runtimeRecommendation(root,created.meta.id,{sessionId:'qa-session-2'});
+  assert.deepEqual(loadPhaseBoundary(root,created.meta.id,'final-customer').forbiddenSessionIds,['audience-1','audience-2','qa-session','qa-session-2']);
+  for (const reused of ['qa-session','qa-session-2','audience-1','audience-2']) {
+    assert.throws(()=>enterPhaseBoundary(root,created.meta.id,{sessionId:reused,handoffDigest:secondCycle.handoffDigest,handoffContentDigest:secondCycle.handoffContentDigest,handoffWords:secondCycle.handoffWords}),/requires a fresh session/i);
+  }
+  enterPhaseBoundary(root,created.meta.id,{sessionId:'audience-3',handoffDigest:secondCycle.handoffDigest,handoffContentDigest:secondCycle.handoffContentDigest,handoffWords:secondCycle.handoffWords});
+  assert.equal(loadPhaseBoundary(root,created.meta.id,'final-customer').enteredSessionId,'audience-3');
 });

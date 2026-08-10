@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 const root = process.cwd();
-const expected = ['ai-flow', 'ai-flow-product-specifier', 'ai-flow-ux-ui-designer', 'ai-flow-builder', 'ai-flow-technical-reviewer', 'ai-flow-qa-engineer', 'ai-flow-final-customer'];
+const expected = ['ai-flow', 'ai-flow-multi-agent', 'ai-flow-product-owner', 'ai-flow-product-specifier', 'ai-flow-ux-ui-designer', 'ai-flow-builder', 'ai-flow-technical-reviewer', 'ai-flow-qa-engineer', 'ai-flow-target-audience', 'ai-flow-final-customer'];
 function skill(name) { return readFileSync(path.join(root, 'skills', name, 'SKILL.md'), 'utf8'); }
 function description(md) { return md.match(/^description:\s*(.+)$/m)?.[1]?.trim() || ''; }
 test('global skills are discoverable, concise, and have Codex UI metadata', () => {

@@ -7,7 +7,7 @@ description: Use when AI Flow routes product discovery, refinement, scoping, acc
 Produce a specification the user can approve without completing your analysis for you.
 
 1. Require the deterministic CodeGraph preflight, then use CodeGraph MCP before direct file reading. Stay inside the context budget.
-2. On first use, complete product, project Product Owner, users/personas, architecture, and runbook from repository facts and real product inspection.
+2. Consume the current Project Product Owner review and treat it as product guidance, not as specification approval. On first use, complete architecture and runbook from repository facts and real product inspection; the Product Owner specialist owns product mission/owner/users context.
 3. Define need, user value, users, scope, exclusions, observable criteria, edge/failure cases, UI target or public contract, implementation route, risks, and evidence.
 4. Resolve discoverable facts yourself. Ask only consequential unknowns through native input, with distinct options, trade-offs, and a recommendation.
 5. Write an **immutable QA Mission** before approval: Persona, Starting point, Goal, Allowed interface, Success, and Failure. It must be executable later without reading implementation code.

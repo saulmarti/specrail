@@ -180,6 +180,8 @@ test('frontend route requires before, proposal, after, QA, customer, learning, a
     const root = repo();
     initProject(root, { name: 'Frontend' });
     readyProjectContext(root);
+    writeFileSync(path.join(root, '.ai/project/product.md'), '# Product\n\nA concrete web product that helps visitors understand the primary action and complete the intended workflow with low friction.\n');
+    writeFileSync(path.join(root, '.ai/project/users.md'), '# Users\n\n## Audience: operator (primary)\n\nOperators need obvious controls, understandable outcomes, and low-friction workflows.\n');
     const task = createTask(root, { title: 'Homepage redesign', type: 'feature', surfaces: ['frontend'] });
     startRefinement(root, task.meta.id);
     readySpec(root, task.meta.id);

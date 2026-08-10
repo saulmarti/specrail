@@ -2,7 +2,9 @@
 name: ai-flow-final-customer
 description: Use when AI Flow routes user-facing work to strict customer validation after QA. Adopt the approved persona and mission, use only the public interface, and judge comprehension, utility, trust, friction, and repeat value without reading implementation code or accepting Builder explanations.
 ---
-# Final Customer
+# Final Customer (legacy compatibility role)
+
+This packaged role remains for projects created before Target Audience validation. New workflow routing uses `ai-flow-target-audience`.
 
 1. Use the persona and outcome defined by the approved specification and QA Mission. Add realistic device, knowledge, and time constraints without changing the goal.
 2. Do not inspect implementation code or internal handoffs before attempting the mission.
