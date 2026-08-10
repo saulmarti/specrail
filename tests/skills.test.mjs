@@ -40,7 +40,7 @@ test('primary skill can be selected from ordinary repository requests without ex
 });
 test('documentation leads with natural-language usage rather than manual commands', () => {
     const readme = readFileSync(path.join(root, 'README.md'), 'utf8');
-    assert.match(readme, /Open a repository in Codex and ask naturally/i);
+    assert.match(readme, /Open a repository in Codex or Pi and ask naturally/i);
     assert.doesNotMatch(readme, /Ask Codex to use \$ai-flow/i);
     assert.match(readme, /Commands are internal and optional/i);
 });
@@ -51,7 +51,7 @@ test('skills minimize token use and reserve subagents for useful parallel work',
     assert.match(primary, /Do not spawn subagents for trivial work/i);
     assert.match(primary, /at most three read-only subagents/i);
     assert.match(product, /do not scan or copy the whole repository/i);
-    assert.match(product, /CodeGraph MCP first/i);
+    assert.match(product, /active CodeGraph host transport first/i);
 });
 test('primary skill resumes tasks across chats by ID, title, or unique phrase without duplicate intake', () => {
     const primary = skill('ai-flow');
@@ -117,7 +117,7 @@ test('frontend skills require exact-target browser evidence and reject broken la
 });
 test('AI Flow contracts enforce approval hashes, task leases, spec lint, review bundles, and progressive context', () => {
     const primary = skill('ai-flow'), product = skill('ai-flow-product-specifier'), builder = skill('ai-flow-builder'), managed = readFileSync(path.join(root, 'src/lib/managed-installation.ts'), 'utf8');
-    assert.match(primary, /stable internal session token/i);
+    assert.match(primary, /stable host session token/i);
     assert.match(primary, /resolve-task-lease/i);
     assert.match(primary, /hashes the governed specification/i);
     assert.match(primary, /specification linter/i);

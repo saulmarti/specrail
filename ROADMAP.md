@@ -95,6 +95,14 @@ Automatic visible-thread creation may be added only when Codex exposes a stable 
 
 **Success metric:** planning context stays bounded, every planning→implementation and implementation→review transition stops at a deterministic boundary, less-capable Builders can execute the capsule without reconstructing planning, and fresh-chat handoffs materially reduce raw repeated input context while same-chat remains available for small work.
 
+### First-class Pi host adapter
+
+**Status: Implemented**
+
+Ship the same deterministic SpecRail core as a native Pi package rather than maintaining a Pi-specific workflow. The npm manifest exposes the package extension and skills; Pi-native installs execute the bundled Bash dispatcher through `specrail_cli`, load deterministic roles through `specrail_skill`, query structural context through `specrail_codegraph`/CodeGraph `explore` without extra Pi MCP wiring, bind gates to Pi's real session identity, render exact human decisions with Pi UI, and create fresh phase sessions with `/specrail-handoff TASK-####`. Mutating CLI calls and human gates are explicitly sequential under Pi's parallel tool runtime, subprocess failures become real Pi tool failures, Taste accepts Pi, and the managed/global installer registers `~/.ai-flow` as a local Pi Package while preserving unrelated host settings/instructions and removing the obsolete loose-extension copy. Runtime compatibility tests cover the adapter rather than checking source strings only.
+
+**Guardrails:** model/thinking choice remains host-owned; no Codex-only deep-link or Visualize contract is assumed on Pi; canonical evidence + Review Cockpit is the visual fallback; unverified parallel-subagent support remains `serial-fallback`.
+
 ### Release metadata integrity
 
 **Status: Beta · Introduced: `0.8.2-beta.0`**
@@ -489,7 +497,7 @@ The Blueprint is advisory project context until explicitly accepted into governe
 
 Improve SpecRail self-update/install behavior so managed assets are compared by content, unchanged files are left alone, customized files are identified before replacement, and recoverable backups are created before any managed overwrite. Existing `.ai/` project history remains untouched.
 
-**Beta foundation:** `specrail update` preserves the installed `beta`/`latest` channel by default, updates the global npm package, and refreshes managed Codex assets from the newly installed package. Content-aware diffing and customized-file conflict handling remain planned here.
+**Beta foundation:** `specrail update` preserves the installed `beta`/`latest` channel by default, updates the global npm package, and refreshes managed Codex + Pi assets from the newly installed package. Content-aware diffing and customized-file conflict handling remain planned here.
 
 ### Release, migration, and rollback contract
 
@@ -512,7 +520,7 @@ For application changes classified as breaking, the same contract should connect
 
 Surface only tasks and decisions requiring human attention, without becoming a Kanban board. The Inbox should consume the deterministic contracts above so it can explain not merely that a task is blocked, but whether the user is resolving a requirement conflict, approving a breaking Amendment, reviewing missing NFR evidence, deciding a scope violation, or performing final approval.
 
-The Inbox remains a read-only projection; native Codex gates and deterministic CLI transitions own decisions.
+The Inbox remains a read-only projection; native host gates and deterministic CLI transitions own decisions.
 
 ## Experiment automation — priority P4
 

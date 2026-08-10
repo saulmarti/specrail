@@ -8,7 +8,7 @@ description: Use when AI Flow routes frontend, UI, UX, navigation, responsive, a
 
 Use the installed Taste Skills as documented, not a generic “taste-skill” placeholder:
 
-- Core: `gpt-taste` for the stricter Codex workflow, or `design-taste-frontend` v2.
+- Core: `gpt-taste` when that stricter host workflow is installed, or `design-taste-frontend` v2.
 - Existing product: also use `redesign-existing-projects` and perform audit-first analysis.
 - Image proposal: use `imagegen-frontend-web` or `imagegen-frontend-mobile` for the target surface.
 - Implementation handoff: require `image-to-code`.
@@ -32,4 +32,4 @@ Use `request_user_input` for material user decisions. Never print option lists o
 
 The page-top or full-page screenshot is supplementary only; the primary capture must focus the approved target. Use the official Taste Skill workflow and Image Gen, preferably by editing the focused before screenshot. Reject and regenerate visible overflow, clipped or malformed text, overlap, unreadable text, scope drift, or generic visual treatment.
 
-When the Codex skill catalog exposes `visualize`, explicitly use `$visualize` with the signed comparison plan and canonical before/proposal sources. Do not ask the user to type `/visualize`, do not call the plugin's internal renderer, and do not claim success from a generated file alone. Include the native Visualize content reference in the visible review and record the `$visualize` invocation/content reference. Because artifact/reference preparation is not trusted proof of host presentation, while `hostPresentationVerified=false` also show the canonical before/proposal images directly through the host fallback surface and offer the Review Cockpit open action.
+When the active host is Codex and its skill catalog exposes `visualize`, explicitly use `$visualize` with the signed comparison plan and canonical before/proposal sources. Do not ask the user to type `/visualize`, do not call the plugin's internal renderer, and do not claim success from a generated file alone. Include the native Visualize content reference in the visible review and record the `$visualize` invocation/content reference. Because artifact/reference preparation is not trusted proof of host presentation, while `hostPresentationVerified=false` also show the canonical before/proposal images directly through the host fallback surface and offer the Review Cockpit open action.

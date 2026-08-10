@@ -28,6 +28,13 @@ test('npm metadata exposes the SpecRail brand, backward-compatible alias, and on
   assert.ok(pkg.files.includes('dist'));
   assert.ok(!pkg.files.includes('types'));
   assert.ok(!pkg.files.includes('src'));
+  assert.ok(pkg.files.includes('extensions'));
+  assert.ok(pkg.files.includes('docs/PI.md'));
+  assert.ok(pkg.files.includes('docs/VALIDATION-0.10.3-PI.md'));
+  assert.ok(pkg.keywords.includes('pi-package'));
+  assert.deepEqual(pkg.pi,{extensions:['./extensions/specrail.js'],skills:['./skills']});
+  assert.equal(pkg.peerDependencies.typebox,'*');
+  assert.ok(existsSync(path.join(root,'extensions','specrail.js')));
 });
 
 test('the packaged CLI can install SpecRail through its public install command',()=>{
@@ -71,4 +78,21 @@ test('public CLI persists and reads integrity-checked host concurrency capabilit
 test('published package explicitly includes the trust model for host/session guarantees',()=>{
   assert.ok(pkg.files.includes('docs/TRUST-MODEL.md'));
   assert.ok(existsSync(path.join(root,'docs','TRUST-MODEL.md')));
+});
+
+test('Pi adapter source is publishable JavaScript and exposes the first-class host bridge',()=>{
+  const source=readFileSync(path.join(root,'extensions','specrail.js'),'utf8');
+  assert.equal(spawnSync(process.execPath,['--check','extensions/specrail.js'],{cwd:root,encoding:'utf8'}).status,0);
+  assert.match(source,/before_agent_start/);
+  assert.match(source,/name: 'specrail_cli'/);
+  assert.match(source,/name: 'specrail_host_context'/);
+  assert.match(source,/name: 'specrail_skill'/);
+  assert.match(source,/name: 'specrail_codegraph'/);
+  assert.match(source,/name: 'request_user_input'/);
+  assert.match(source,/sessionManager\.getSessionId\(\)/);
+  assert.match(source,/ctx\.ui\.select/);
+  assert.match(source,/registerCommand\('specrail-handoff'/);
+  assert.match(source,/path\.join\(PACKAGE_ROOT, 'scripts', 'specrail-fast\.sh'\)/);
+  assert.match(source,/`SPEC_RAIL_HOST=pi`/);
+  assert.match(source,/`SPEC_RAIL_PACKAGE_ROOT=\$\{PACKAGE_ROOT\}`/);
 });

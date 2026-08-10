@@ -55,21 +55,34 @@ export function doctor(root=process.cwd(),home=os.homedir()):DoctorResult{
  const command=process.env.AI_FLOW_CODEGRAPH_COMMAND||'codegraph';const cg=spawnSync(command,['--version'],{encoding:'utf8'});add('codegraph-command',cg.status===0,cg.status===0?String(cg.stdout||cg.stderr).trim():`${command} not found in this environment`,true,null);
  add('codegraph-index',existsSync(path.join(root,'.codegraph')),path.join(root,'.codegraph'),true,'codegraph-preflight');
  const cgState=codeGraphStatus(root);add('codegraph-preflight',cgState.status==='ready'&&cgState.contract?.compatible===true,cgState.detail||cgState.action||'Run SpecRail CodeGraph preflight',true,'codegraph-preflight');
+ const host=String(process.env.SPEC_RAIL_HOST||'codex').trim().toLowerCase();
+ const piPackageHost=host==='pi'&&Boolean(String(process.env.SPEC_RAIL_PACKAGE_ROOT||'').trim());
  const configPath=path.join(home,'.codex','config.toml'),config=existsSync(configPath)?readFileSync(configPath,'utf8'):'';
- const configured=/codegraph[\s\S]{0,300}serve[\s\S]{0,100}--mcp|command\s*=\s*["']codegraph["'][\s\S]{0,300}--mcp/i.test(config);add('codegraph-mcp-config',configured,configured?'codegraph serve --mcp found in Codex config':'CodeGraph MCP configuration is missing or not recognized',true,null);
- const nativeInput=/\[features\][\s\S]*default_mode_request_user_input\s*=\s*true/i.test(config);addManagedCheck(checks,'native-question-ui',nativeInput,nativeInput?'request_user_input enabled in Default mode':'SpecRail can safely restore request_user_input in Codex config','managed-installation');
- const specrailLauncher=launcherHealth(path.join(home,'.local','bin','specrail'));addManagedCheck(checks,'specrail-launcher',specrailLauncher.ok,specrailLauncher.detail,'managed-installation');
- const legacyLauncher=launcherHealth(path.join(home,'.local','bin','ai-flow'));add('ai-flow-compat-launcher',legacyLauncher.ok,legacyLauncher.detail,false,'managed-installation');
- const agentsPath=path.join(home,'.codex','AGENTS.md'),agents=existsSync(agentsPath)?readFileSync(agentsPath,'utf8'):'';addManagedCheck(checks,'automatic-activation',agents.includes('AI-FLOW:BEGIN'),agentsPath,'managed-installation');
- for(const base of ['.codex/skills','.agents/skills'])addManagedCheck(checks,`skill-${base}`,existsSync(path.join(home,base,'ai-flow','SKILL.md')),path.join(home,base,'ai-flow','SKILL.md'),'managed-installation');
+ if(piPackageHost){
+   add('codegraph-mcp-config',true,'Pi MCP wiring is host/extension-specific; SpecRail verifies the CodeGraph CLI/index separately and does not guess Pi extension configuration.',false,null);
+   addManagedCheck(checks,'native-question-ui',true,'Pi adapter provides exact request_user_input through ctx.ui','managed-installation');
+   addManagedCheck(checks,'specrail-launcher',true,'Pi adapter executes the bundled SpecRail dispatcher through specrail_cli','managed-installation');
+   add('ai-flow-compat-launcher',true,'Pi package uses specrail_cli; the terminal ai-flow compatibility launcher is optional.',false,null);
+   addManagedCheck(checks,'automatic-activation',true,'Pi package before_agent_start adapter is active','managed-installation');
+   const piRoot=path.resolve(String(process.env.SPEC_RAIL_PACKAGE_ROOT));
+   addManagedCheck(checks,'skill-pi-package',existsSync(path.join(piRoot,'skills','ai-flow','SKILL.md')),path.join(piRoot,'skills','ai-flow','SKILL.md'),'managed-installation');
+   addManagedCheck(checks,'pi-package-extension',existsSync(path.join(piRoot,'extensions','specrail.js')),path.join(piRoot,'extensions','specrail.js'),'managed-installation');
+ }else{
+   const configured=/codegraph[\s\S]{0,300}serve[\s\S]{0,100}--mcp|command\s*=\s*["']codegraph["'][\s\S]{0,300}--mcp/i.test(config);add('codegraph-mcp-config',configured,configured?'codegraph serve --mcp found in Codex config':'CodeGraph MCP configuration is missing or not recognized',true,null);
+   const nativeInput=/\[features\][\s\S]*default_mode_request_user_input\s*=\s*true/i.test(config);addManagedCheck(checks,'native-question-ui',nativeInput,nativeInput?'request_user_input enabled in Default mode':'SpecRail can safely restore request_user_input in Codex config','managed-installation');
+   const specrailLauncher=launcherHealth(path.join(home,'.local','bin','specrail'));addManagedCheck(checks,'specrail-launcher',specrailLauncher.ok,specrailLauncher.detail,'managed-installation');
+   const legacyLauncher=launcherHealth(path.join(home,'.local','bin','ai-flow'));add('ai-flow-compat-launcher',legacyLauncher.ok,legacyLauncher.detail,false,'managed-installation');
+   const agentsPath=path.join(home,'.codex','AGENTS.md'),agents=existsSync(agentsPath)?readFileSync(agentsPath,'utf8'):'';addManagedCheck(checks,'automatic-activation',agents.includes('AI-FLOW:BEGIN'),agentsPath,'managed-installation');
+   for(const base of ['.codex/skills','.agents/skills'])addManagedCheck(checks,`skill-${base}`,existsSync(path.join(home,base,'ai-flow','SKILL.md')),path.join(home,base,'ai-flow','SKILL.md'),'managed-installation');
+ }
  add('taste-core',hasTasteSkill(home,'design-taste-frontend')||hasTasteSkill(home,'gpt-taste'),'Expected design-taste-frontend or gpt-taste for UI/UX tasks',false,null);
  add('taste-redesign',hasTasteSkill(home,'redesign-existing-projects'),'Expected redesign-existing-projects for existing-product redesigns',false,null);
  add('taste-imagegen-web',hasTasteSkill(home,'imagegen-frontend-web'),'Expected imagegen-frontend-web for web proposals',false,null);
  add('taste-image-to-code',hasTasteSkill(home,'image-to-code'),'Expected image-to-code for implementation from an approved visual reference',false,null);
  add('ai-project',existsSync(path.join(root,'.ai','config.json')),path.join(root,'.ai','config.json'),true,null);
- const packageRoot=path.join(home,'.ai-flow');const plugin=validateAgentPlugin(packageRoot);
+ const packageRoot=piPackageHost?path.resolve(String(process.env.SPEC_RAIL_PACKAGE_ROOT)):path.join(home,'.ai-flow');const plugin=validateAgentPlugin(packageRoot);
  add('agent-plugin-manifest',plugin.valid,plugin.valid?`${plugin.manifestPath} (${plugin.name||'invalid'} ${plugin.version||''}; ${plugin.skills.length} skills)`:plugin.errors.join('; '),true,'managed-installation');
- add('visualize-host-capability',true,'Session-specific: Codex must confirm whether the current skill catalog exposes `visualize` / `$visualize`; this is optional and non-blocking.',false,null);
+ add('visualize-host-capability',true,piPackageHost?'Pi uses canonical evidence + Review Cockpit fallback unless a compatible visualization capability is independently attested.':'Session-specific: Codex must confirm whether the current skill catalog exposes `visualize` / `$visualize`; this is optional and non-blocking.',false,null);
  return{ok:checks.filter(check=>check.required).every(check=>check.ok),checks};
 }
 

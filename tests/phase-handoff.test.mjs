@@ -54,7 +54,7 @@ test('project config never stores model selection or model routing defaults',()=
 test('builder gets a fresh deterministic implementation packet and an explicit model-selector boundary notice',()=>{
   const root=repo(),id=backendAtBuilder(root),next=nextAction(root,id,{sessionId:'planning'});
   assert.equal(next.phase,'builder');assert.equal(next.runtime.role,'implementer');assert.equal(next.runtime.contextProfile,'standard');assert.equal(next.runtime.freshSessionRecommended,true);assert.equal(next.runtime.stopBeforePhaseWork,true);assert.equal(next.runtime.boundary.status,'required');assert.equal(next.runtime.boundary.recommendation,'fresh-chat-recommended');assert.equal(next.runtime.boundary.sameChatAllowed,true);
-  assert.equal(next.runtime.transitionNotice.kind,'implementation-handoff');assert.match(next.runtime.transitionNotice.message,/does not choose or store a model/i);assert.match(next.runtime.transitionNotice.message,/Codex selector/i);assert.equal(next.runtime.transitionNotice.resumePrompt,`Continue ${id}`);assert.match(next.runtime.transitionNotice.freshChatUrl,/^codex:\/\/threads\/new\?/);assert.match(next.interaction.turnPolicy.freshChatUrl,/^codex:\/\/threads\/new\?/);
+  assert.equal(next.runtime.transitionNotice.kind,'implementation-handoff');assert.match(next.runtime.transitionNotice.message,/does not choose or store a model/i);assert.match(next.runtime.transitionNotice.message,/host model\/reasoning selector/i);assert.equal(next.runtime.transitionNotice.resumePrompt,`Continue ${id}`);assert.match(next.runtime.transitionNotice.freshChatUrl,/^codex:\/\/threads\/new\?/);assert.match(next.interaction.turnPolicy.freshChatUrl,/^codex:\/\/threads\/new\?/);
   assert.match(next.runtime.handoffDigest,/^[a-f0-9]{64}$/);assert.match(next.runtime.transitionInstruction,/STOP before doing implementation/i);assert.match(next.runtime.transitionInstruction,/Do not replay the previous chat/i);
   assert.equal('preferredModel' in next.runtime,false);assert.equal('modelSelection' in next.runtime,false);assert.equal('reasoningEffort' in next.runtime,false);
   const handoff=readFileSync(next.runtime.handoffPath,'utf8');
@@ -131,9 +131,9 @@ test('phase boundary requires explicit session-bound entry and allows same-chat 
 test('phase boundary entry and execution require the stable entering session and mode cannot be forged',()=>{
   const root=repo(),id=backendAtBuilder(root),first=nextAction(root,id,{sessionId:'planner-session'});
   assert.throws(()=>enterPhaseBoundary(root,id,{handoffDigest:first.runtime.handoffDigest,handoffContentDigest:first.runtime.handoffContentDigest,handoffWords:first.runtime.handoffWords}),/persist the explicit native user choice/i);
-  assert.throws(()=>chooseBoundary(root,id,first.runtime,'fresh-chat',null),/requires the stable Codex session ID/i);
+  assert.throws(()=>chooseBoundary(root,id,first.runtime,'fresh-chat',null),/requires the stable host session ID/i);
   chooseAndEnter(root,id,first.runtime,{choice:'fresh-chat',choiceSessionId:'planner-session',entrySessionId:'builder-session'});
-  assert.throws(()=>startExecution(root,id),/requires the stable Codex session ID that entered it/i);
+  assert.throws(()=>startExecution(root,id),/requires the stable host session ID that entered it/i);
   assert.throws(()=>startExecution(root,id,{sessionId:'different-session'}),/entered by another session/i);
   assert.doesNotThrow(()=>startExecution(root,id,{sessionId:'builder-session'}));
 });
@@ -231,10 +231,10 @@ test('spec approve CLI prepares the implementation boundary in the approval sess
   assert.equal(output.interaction.turnPolicy.afterSelection,'persist-boundary-choice-and-end-turn');assert.equal(output.interaction.turnPolicy.sameTurnPhaseWork,'forbidden');assert.equal(output.interaction.turnPolicy.resumePrompt,`Continue ${id}`);assert.equal(output.interaction.turnPolicy.choiceMap['Continuar con el modelo actual'],'continue-current');
 });
 
-test('a different Codex session must explicitly re-enter an already-entered phase boundary before work continues',()=>{
+test('a different host session must explicitly re-enter an already-entered phase boundary before work continues',()=>{
   const root=repo(),id=backendAtBuilder(root),first=nextAction(root,id,{sessionId:'planner'}).runtime;
   chooseAndEnter(root,id,first,{choice:'fresh-chat',choiceSessionId:'planner',entrySessionId:'builder-a'});startExecution(root,id,{sessionId:'builder-a'});
-  const other=nextAction(root,id,{sessionId:'builder-b'});assert.equal(other.runtime.sessionEntryRequired,true);assert.equal(other.runtime.stopBeforePhaseWork,true);assert.match(other.runtime.transitionNotice.title,/ownership.*Codex session/i);assert.equal(other.action,'resolve-task-lease');
+  const other=nextAction(root,id,{sessionId:'builder-b'});assert.equal(other.runtime.sessionEntryRequired,true);assert.equal(other.runtime.stopBeforePhaseWork,true);assert.match(other.runtime.transitionNotice.title,/ownership.*host session/i);assert.equal(other.action,'resolve-task-lease');
   assert.throws(()=>chooseBoundary(root,id,other.runtime,'continue-current','builder-b'),/requires resolving the active task lease/i);
   assert.throws(()=>completePhase(root,id,{sessionId:'builder-b'}),/entered by another session|locked by another session/i);
 });

@@ -204,9 +204,9 @@ export function choosePhaseBoundary(
   });
   if (!current) throw new Error('No implementation/review phase boundary is active for this task');
   const sessionId = String(options.sessionId || '').trim();
-  if (!sessionId) throw new Error('Phase boundary choice requires the stable Codex session ID that presented the native decision');
+  if (!sessionId) throw new Error('Phase boundary choice requires the stable host session ID that presented the native decision');
   if (current.status === 'chosen') throw new Error('Phase boundary choice is already persisted; do not ask the boundary question again');
-  if (current.status === 'entered' && current.enteredSessionId === sessionId) throw new Error('This Codex session already owns the entered phase boundary; no new boundary choice is required');
+  if (current.status === 'entered' && current.enteredSessionId === sessionId) throw new Error('This host session already owns the entered phase boundary; no new boundary choice is required');
   if (current.status === 'entered' && current.enteredSessionId !== sessionId) {
     const lease = leaseStatus(root, current.taskId, sessionId);
     if (lease.conflict) throw new Error(`Phase boundary ownership transfer requires resolving the active task lease owned by ${lease.owner} before recording a new boundary choice`);
@@ -242,15 +242,15 @@ export function enterPhaseBoundary(
   // later boundary-choice state so foreign/stale lane owners fail closed.
   if (sessionId) assertConcurrencyMutationAuthority(root, current.taskId, sessionId);
   if (current.status === 'required') throw new Error('Phase boundary must persist the explicit native user choice before it can be entered');
-  if (!sessionId) throw new Error('Phase boundary entry requires a stable Codex session ID so ownership and same-chat/fresh-chat mode cannot be forged or left ambiguous');
+  if (!sessionId) throw new Error('Phase boundary entry requires a stable host session ID so ownership and same-chat/fresh-chat mode cannot be forged or left ambiguous');
   if (current.role === 'target-audience') {
     if (!current.originSessionId) throw new Error('Target Audience phase boundary requires the prior phase session ID so fresh-session isolation can be verified');
     const forbidden = [...new Set([...(current.forbiddenSessionIds || []), current.originSessionId].map(String).map(value => value.trim()).filter(Boolean))];
     if (forbidden.includes(sessionId)) throw new Error(`Target Audience requires a fresh session distinct from every implementation/QA or prior audience session in this review cycle (${forbidden.join(', ')})`);
     if (current.choice !== 'fresh-chat') throw new Error('Target Audience phase boundary must remain mechanically bound to a fresh chat');
   } else {
-    if (current.choice === 'continue-current' && current.choiceSessionId !== sessionId) throw new Error('The user chose to continue with the current Codex session; enter this boundary from the same session or request a new boundary choice');
-    if (current.choice === 'fresh-chat' && current.choiceSessionId === sessionId) throw new Error('The user chose a fresh chat; enter this boundary from a different stable Codex session');
+    if (current.choice === 'continue-current' && current.choiceSessionId !== sessionId) throw new Error('The user chose to continue with the current host session; enter this boundary from the same session or request a new boundary choice');
+    if (current.choice === 'fresh-chat' && current.choiceSessionId === sessionId) throw new Error('The user chose a fresh chat; enter this boundary from a different stable host session');
   }
   const inferredMode: BoundaryMode = current.choiceSessionId ? (current.choiceSessionId !== sessionId ? 'fresh-chat' : 'same-chat') : current.originSessionId ? (current.originSessionId !== sessionId ? 'fresh-chat' : 'same-chat') : 'unknown';
   const next = signed({
@@ -282,7 +282,7 @@ export function assertPhaseBoundaryEntered(root: string, id: string, phase: Task
   const record = loadPhaseBoundary(root, id, phase);
   if (!record || record.status !== 'entered') throw new Error(`Phase boundary for ${phase} must be explicitly entered before phase work can continue`);
   const currentSession = String(sessionId || '').trim();
-  if (!currentSession) throw new Error(`Phase boundary for ${phase} requires the stable Codex session ID that entered it`);
+  if (!currentSession) throw new Error(`Phase boundary for ${phase} requires the stable host session ID that entered it`);
   if (!record.enteredSessionId || record.enteredSessionId !== currentSession) throw new Error(`Phase boundary for ${phase} was entered by another session: ${record.enteredSessionId || 'unknown'}`);
   return record;
 }

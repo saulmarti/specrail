@@ -19,9 +19,14 @@ Within the canonical project filesystem and supported CLI/skills contract, SpecR
 
 ## Trusted execution host
 
-Codex, Claude Code, OpenCode, or another adapter is the trusted execution environment around SpecRail. The host is responsible for truthfully supplying stable session IDs and capability attestations and for launching the subagents it claims to support. SpecRail can reject reuse of the same declared session across the Target Audience boundary and can exclude implementation internals from its sealed audience packet; it cannot introspect private model memory or prove that a malicious host erased information it keeps outside the project.
+Codex, Pi, Claude Code, OpenCode, or another adapter is the trusted execution environment around SpecRail. The host is responsible for truthfully supplying stable session IDs and capability attestations and for launching the subagents it claims to support. SpecRail can reject reuse of the same declared session across the Target Audience boundary and can exclude implementation internals from its sealed audience packet; it cannot introspect private model memory or prove that a malicious host erased information it keeps outside the project.
 
 Likewise, SpecRail CLI authorization is workflow authority, not an adversarial security boundary against a user/process with unrestricted filesystem access. An administrator who can rewrite project files or invoke force-recovery commands is trusted by definition; integrity checks make such divergence visible/fail-closed, not cryptographically impossible.
+
+
+### Pi adapter trust mapping
+
+For Pi, SpecRail treats `ctx.sessionManager.getSessionId()` as the host-supplied stable session identity and `ctx.ui.select` / `ctx.ui.input` as the native human-decision surface. State-mutating SpecRail tools and blocking human gates are sequential even though Pi tool batches are parallel by default, and killed/non-zero subprocesses are surfaced by throwing so Pi records a real tool failure. Fresh phase handoffs use Pi's replacement-session `withSession` context rather than stale pre-switch objects. Pi model and thinking selection are explicitly outside SpecRail state. The adapter does not attest parallel subagents by default; until a truthful capability record exists for the current Pi session, the deterministic scheduler remains on `serial-fallback`. Codex-only Visualize capability is likewise not inferred on Pi: canonical evidence and Review Cockpit remain the safe fallback.
 
 ## Concurrency scope
 

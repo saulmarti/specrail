@@ -119,7 +119,7 @@ REQUEST_TIMEOUT_SECONDS=${SPEC_RAIL_RUNTIME_REQUEST_TIMEOUT_SECONDS:-180}
 CURL_ARGS=(--silent --show-error --max-time "$REQUEST_TIMEOUT_SECONDS" --unix-socket "$SOCKET" -X POST http://specrail/v1/execute --data-urlencode "cwd=$PWD")
 # The resident process must preserve per-invocation CLI semantics. Pass only the
 # environment keys SpecRail itself reads; do not serialize the caller's full environment.
-ENV_KEYS=(AI_FLOW_CODEGRAPH_COMMAND AI_FLOW_SESSION_ID CODEX_THREAD_ID CODEX_SESSION_ID CHATGPT_THREAD_ID AI_FLOW_HOME HOME PATH)
+ENV_KEYS=(AI_FLOW_CODEGRAPH_COMMAND AI_FLOW_SESSION_ID CODEX_THREAD_ID CODEX_SESSION_ID CHATGPT_THREAD_ID AI_FLOW_HOME SPEC_RAIL_HOST SPEC_RAIL_PACKAGE_ROOT HOME PATH)
 for key in "${ENV_KEYS[@]}"; do CURL_ARGS+=(--data-urlencode "env=$key=${!key-}"); done
 for value in "${REQUEST_ARGS[@]}"; do CURL_ARGS+=(--data-urlencode "arg=$value"); done
 TMP="$RUNTIME_DIR/.specrail-response-$$"

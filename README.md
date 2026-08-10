@@ -2,7 +2,7 @@
 
 # SpecRail
 
-### Human-approved, evidence-backed software delivery for Codex
+### Human-approved, evidence-backed software delivery for Codex and Pi
 
 Turn a natural-language request into a locked specification, focused implementation, real evidence, independent review, and an explicit delivery decision — without managing a board or memorizing commands.
 
@@ -30,7 +30,7 @@ Coding agents are fast at producing code. The expensive failures happen around t
 - shipping something that passes QA but is unclear or low-value to the intended audience;
 - approving a result from fragmented evidence.
 
-SpecRail adds **rails**, not another project-management system. Markdown remains the source of truth, Codex remains the agent, and deterministic gates protect the delivery.
+SpecRail adds **rails**, not another project-management system. Markdown remains the source of truth, the coding-agent host remains in control of execution/model choice, and deterministic gates protect the delivery.
 
 ## 60-second setup
 
@@ -38,30 +38,43 @@ SpecRail adds **rails**, not another project-management system. Markdown remains
 
 - macOS or Linux
 - Node.js 22+
-- Codex Desktop or another compatible Codex surface
-- [CodeGraph](https://github.com/colbymchenry/codegraph) available as a CLI and configured as `codegraph serve --mcp`
+- Codex Desktop/another compatible Codex surface, **or Pi**
+- [CodeGraph](https://github.com/colbymchenry/codegraph) available as a CLI; Codex normally uses `codegraph serve --mcp`, while the Pi adapter uses CodeGraph `explore` directly so no extra Pi MCP bridge is required
 - For UI work: compatible [Taste Skills](https://github.com/Leonxlnx/taste-skill)
-- Optional: the Codex Visualize plugin/skill for native interactive review surfaces
+- Optional on Codex: the Visualize plugin/skill for native interactive review surfaces; Pi uses canonical inline evidence + Review Cockpit unless a compatible visualization capability is available
 
 ### Install the beta
+
+Choose **one** host installation route.
+
+**Managed Codex + Pi installation (also installs the terminal CLI):**
 
 ```bash
 npm install -g @saulmarti/specrail@beta
 specrail install
 ```
 
+This installs the shared skills, the `specrail`/`ai-flow` launchers, Codex activation, and registers the managed `~/.ai-flow` directory as a **local Pi Package** in `~/.pi/agent/settings.json`. Pi therefore loads the same packaged extension + skills contract as the native npm route instead of relying on a loose extension copy. Existing Pi settings and `~/.pi/agent/AGENTS.md` content are preserved. Reload/restart the host after installation.
+
+**Pi-native package installation (no global SpecRail CLI required inside Pi):**
+
+```bash
+pi install npm:@saulmarti/specrail@beta
+```
+
+Pi loads the package's declared `extensions/specrail.js` and `skills/` resources. The adapter exposes `specrail_cli`, which executes the bundled deterministic CLI directly, `specrail_skill` for deterministic specialist loading, trusted Pi session bridging, CodeGraph structural context, and native human-input presentation. Mutating SpecRail calls and human gates are marked sequential because Pi executes tool batches in parallel by default; non-zero CLI exits throw so Pi records a real tool error rather than a successful-looking result. Use `pi install -l npm:@saulmarti/specrail@beta` for project-local Pi settings. If you also want the `specrail` command in a normal terminal, use the managed npm route above instead of installing both copies into Pi.
+
 The current public channel is `beta`; stable releases will later use the default `latest` tag. The exact source-tree release number is canonical in `package.json`; the README intentionally follows the dist-tag instead of hard-coding a version that can drift.
 
 The npm package is **`@saulmarti/specrail`**. The installed CLI command remains **`specrail`**; npm package scopes do not become part of executable names. The legacy `ai-flow` executable remains available as a compatibility alias.
 
-To run it without a global install, use the explicit package form:
+To run the managed installer without a global npm package, use the explicit package form:
 
 ```bash
 npx --package=@saulmarti/specrail@beta specrail install
 ```
 
-
-Restart Codex Desktop. Open a repository in Codex and ask naturally:
+Open a repository in Codex or Pi and ask naturally:
 
 ```text
 Redesign the homepage hero so the primary action is clearer on mobile.
@@ -77,7 +90,11 @@ Design the architecture for moving search indexing out of the request path.
 
 You do not need to create tasks manually, mention SpecRail, invoke a skill, or remember an ID.
 
+Pi maps the same workflow onto Pi-native primitives: real `sessionManager` identity for `--session`, `ctx.ui` for exact `request_user_input`, `specrail_codegraph` for the high-signal CodeGraph `explore` context path, `/specrail-handoff TASK-####` for fresh-session boundaries, and serial concurrency fallback until the host truthfully attests subagent capability. See [`docs/PI.md`](docs/PI.md).
+
 ### Verify or repair the installation
+
+With the managed/global route, run the commands below in a terminal. With the Pi-native package route, ask Pi to run the same arguments through `specrail_cli` (for example: `Run SpecRail doctor`); a global `specrail` executable is not required in that route.
 
 ```bash
 specrail doctor
@@ -110,7 +127,7 @@ flowchart LR
     B --> PO[Project Product Owner review]
     PO --> C[Product specification]
     C --> D{Material decisions?}
-    D -->|Yes| E[Native Codex questions]
+    D -->|Yes| E[Native host questions]
     E --> C
     D -->|No| F[Spec lint + QA mission + AC IDs + blast radius]
     F --> G[Review Bundle]
@@ -160,7 +177,7 @@ You ask:
 Fix the Home Spotlight heading. It is too dominant on mobile.
 ```
 
-SpecRail requires Codex to:
+SpecRail requires the active coding host to:
 
 1. identify the exact route and section;
 2. launch the real application;
@@ -377,7 +394,7 @@ Full-repository scans are not the default.
 
 ## Clean phase handoffs without model configuration
 
-SpecRail does **not** store a model configuration. The active model and reasoning setting are always whatever the user selected in Codex. SpecRail only separates phase context so planning can stay lean while implementation still starts with everything it needs.
+SpecRail does **not** store a model configuration. The active model and reasoning setting are always whatever the user selected in the coding host. SpecRail only separates phase context so planning can stay lean while implementation still starts with everything it needs.
 
 ```text
 Planning / refinement
@@ -387,7 +404,7 @@ Planning / refinement
   and enforces a TURN boundary
             ↓
   next turn: same chat OR fresh chat
-  user may keep or change Codex model
+  user may keep or change host model
             ↓
 Implementation
   executable capsule
@@ -399,9 +416,9 @@ Implementation
 Technical Review / QA / Final Customer
 ```
 
-At the implementation boundary, `next.runtime.transitionNotice` explains that the compiled implementation capsule is ready, while `next.userInputRequired=true` and the top-level **approval selector** / `interaction` force an explicit native choice: **continue with the current Codex selector**, **pause to change model/reasoning in the real Codex selector**, or **open a fresh chat**. The selected choice is persisted into the signed boundary record before that turn ends. No option enters implementation in the approval turn. On the next `Continue TASK-0007`, `next.action=enter-phase-boundary` prevents the selector from being asked again; the boundary is entered first, then the compiled capsule becomes execution authority before generic repository Kanban/memory/process reads. A direct `boundary enter` before an explicit choice is rejected. SpecRail does not pretend to have a trusted Codex turn ID and never changes or stores the model. It can therefore enforce the choice→entry state machine mechanically, while the one-turn pause itself remains a host/skill contract until Codex exposes a trusted turn identifier.
+At the implementation boundary, `next.runtime.transitionNotice` explains that the compiled implementation capsule is ready, while `next.userInputRequired=true` and the top-level **approval selector** / `interaction` force an explicit native choice: **continue with the current host selector**, **pause to change model/reasoning in the real host selector**, or **open a fresh session/chat**. The selected choice is persisted into the signed boundary record before that turn ends. No option enters implementation in the approval turn. On the next `Continue TASK-0007`, `next.action=enter-phase-boundary` prevents the selector from being asked again; the boundary is entered first, then the compiled capsule becomes execution authority before generic repository Kanban/memory/process reads. A direct `boundary enter` before an explicit choice is rejected. SpecRail never changes or stores the model. It enforces the choice→entry state machine mechanically while the host adapter supplies the stable session identity and native transition surface it can actually prove. Codex keeps its existing turn-boundary contract; Pi supplies its real session ID through `specrail_host_context`.
 
-If the stable session is unchanged SpecRail records `same-chat`; if a new Codex chat enters it records `fresh-chat`. The recommendation is contextual: small low-risk work can return `same-chat-ok`; normal, large, risky, or context-heavy work returns `fresh-chat-recommended`. Same-chat continuation preserves correctness through a logical authority reset, but it does not remove previous conversation tokens. Fresh-chat continuation gives both the logical reset and real context/token isolation. Preparing either boundary resets active CodeGraph file/symbol context even when the old and new phases happen to use the same context profile; the relevant prior seeds have already been compiled into the handoff.
+If the stable session is unchanged SpecRail records `same-chat`; if a new host session/chat enters it records `fresh-chat`. The recommendation is contextual: small low-risk work can return `same-chat-ok`; normal, large, risky, or context-heavy work returns `fresh-chat-recommended`. Same-chat continuation preserves correctness through a logical authority reset, but it does not remove previous conversation tokens. Fresh-chat continuation gives both the logical reset and real context/token isolation. Preparing either boundary resets active CodeGraph file/symbol context even when the old and new phases happen to use the same context profile; the relevant prior seeds have already been compiled into the handoff.
 
 The implementation handoff is a **compiled execution capsule**, not a prose summary. It explicitly states execution authority, required step order, effective ACs, Scope Guard, immutable QA Mission, UI target and approved proposal, canonical Before/Proposal/After evidence, implementation plan, architecture/decision constraints, CodeGraph seeds, Definition of Done, and exact stop/escalation conditions. Previous conversational reasoning is non-authoritative. A Builder should not reload the entire task unless the capsule says a section was truncated, a conflict needs source verification, or a concrete missing detail is required. This is deliberately designed so a less-capable implementation model can execute rather than reinterpret the plan.
 
@@ -412,9 +429,9 @@ specrail boundary status TASK-0007 --session my-session
 specrail boundary estimate TASK-0007 --history-tokens 25000 --turns 6
 ```
 
-The estimate is model-independent and uses a transparent UTF-8 chars/4 token heuristic. It measures only raw **prior-phase carryover**, assuming that prefix would otherwise remain in each measured turn. It is not Codex billing telemetry: host compaction/summarization, context-window behavior, prompt caching, and the selected model/provider can make actual token and monetary savings different.
+The estimate is model-independent and uses a transparent UTF-8 chars/4 token heuristic. It measures only raw **prior-phase carryover**, assuming that prefix would otherwise remain in each measured turn. It is not host billing telemetry: host compaction/summarization, context-window behavior, prompt caching, and the selected model/provider can make actual token and monetary savings different.
 
-SpecRail uses **phase-boundary handoffs**, not model-routed `spawn_agent`. For the fresh-chat choice, Codex Desktop's supported `codex://threads/new?prompt=...&path=...` deep link opens a new local chat in the same workspace with `Continue TASK-####` prefilled; the user still sends the prepared prompt. Model selection remains entirely in the user's Codex selector.
+SpecRail uses **phase-boundary handoffs**, not model-routed `spawn_agent`. Codex Desktop can use its supported `codex://threads/new?prompt=...&path=...` deep link. Pi uses `/specrail-handoff TASK-####`, which calls Pi's native `ctx.newSession(...)` and sends `Continue TASK-####` in the replacement session. Model/reasoning selection remains entirely host-owned in both cases.
 
 ## UI/UX and Taste Skills
 
@@ -475,7 +492,7 @@ At specification and final approval gates the local fallback is generated automa
 - the latest Harness experiment, exact reported token usage, and adaptive recommendation when enough history exists;
 - the available decision paths.
 
-It is deliberately read-only. Approval still happens through Codex's native decision prompt so a stale HTML file cannot mutate task state. The Cockpit performs no network requests and embeds registered raster evidence locally. See [`docs/REVIEW-COCKPIT.md`](docs/REVIEW-COCKPIT.md).
+It is deliberately read-only. Approval still happens through the active host's native decision prompt so a stale HTML file cannot mutate task state. The Cockpit performs no network requests and embeds registered raster evidence locally. See [`docs/REVIEW-COCKPIT.md`](docs/REVIEW-COCKPIT.md).
 
 ## GitHub PR and CI delivery — deferred
 
@@ -581,7 +598,7 @@ Implementa la tarea “Rediseñar la homepage principal”.
 Retoma la tarea de la homepage.
 ```
 
-SpecRail resolves IDs, exact titles, unique phrases, or the only open task. Ambiguity produces a native Codex selector instead of a guess.
+SpecRail resolves IDs, exact titles, unique phrases, or the only open task. Ambiguity produces a native host selector instead of a guess.
 
 ## Commands
 
@@ -631,7 +648,7 @@ After final approval, a worktree task offers the explicit delivery choices **Fus
 specrail update
 ```
 
-`specrail update` keeps the current release channel automatically: beta installations stay on `beta`, while stable installations use `latest`. It updates the global npm package and then refreshes the managed Codex skills, launchers, configuration, and global instructions from the newly installed package.
+`specrail update` keeps the current release channel automatically: beta installations stay on `beta`, while stable installations use `latest`. It updates the global npm package and then refreshes the managed Codex + Pi skills/adapters, launchers, configuration, and global instructions from the newly installed package.
 
 Switch channels explicitly when needed:
 
@@ -646,7 +663,7 @@ Preview the update without network or filesystem changes:
 specrail update --dry-run --json
 ```
 
-The installer preserves existing `.ai/` projects and creates one-time `.ai-flow.bak` backups before changing Codex configuration or global instructions.
+The installer preserves existing `.ai/` projects and creates one-time `.ai-flow.bak` backups before changing managed host configuration or global instructions.
 
 ## Uninstall
 
@@ -657,9 +674,12 @@ rm -rf ~/.ai-flow
 rm -f ~/.local/bin/specrail ~/.local/bin/ai-flow
 rm -rf ~/.agents/skills/ai-flow*
 rm -rf ~/.codex/skills/ai-flow*
+# Remove the managed local Pi Package entry (`~/.ai-flow`) from ~/.pi/agent/settings.json first.
+# `pi remove ~/.ai-flow` may be used while the directory still exists.
+rm -f ~/.pi/agent/extensions/specrail.js  # legacy pre-0.10.3 cleanup only
 ```
 
-Then remove the managed block between `<!-- AI-FLOW:BEGIN -->` and `<!-- AI-FLOW:END -->` in `~/.codex/AGENTS.md`. Restore `.ai-flow.bak` files only when you want to revert all installer changes.
+For the managed/global route, also remove the block between `<!-- AI-FLOW:PI-BEGIN -->` and `<!-- AI-FLOW:PI-END -->` in `~/.pi/agent/AGENTS.md`. Then remove the managed block between `<!-- AI-FLOW:BEGIN -->` and `<!-- AI-FLOW:END -->` in `~/.codex/AGENTS.md`. Restore `.ai-flow.bak` files only when you want to revert all installer changes.
 
 ## Privacy and security
 
@@ -689,9 +709,9 @@ npm pack --dry-run
 
 No. It is a delivery workflow. Markdown task artifacts and chat-native reviews replace a separate board UI.
 
-### Does it replace Codex?
+### Does it replace Codex or Pi?
 
-No. Codex reasons and uses tools; SpecRail controls state, gates, evidence and delivery invariants.
+No. The coding host reasons and uses tools; SpecRail controls state, gates, evidence and delivery invariants.
 
 ### Does it make every task slower?
 
@@ -707,7 +727,7 @@ No. It is a supplementary host capability with Markdown and attachment fallback.
 
 ### Is this an official OpenAI product?
 
-No. SpecRail is an independent, community-built workflow for Codex-compatible environments.
+No. SpecRail is an independent, community-built workflow for supported coding-agent hosts such as Codex and Pi.
 
 ## License
 

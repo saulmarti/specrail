@@ -4,6 +4,8 @@ import path from 'node:path';
 export const SPEC_RAIL_SKILL_NAMES=['ai-flow','ai-flow-multi-agent','ai-flow-product-owner','ai-flow-product-specifier','ai-flow-ux-ui-designer','ai-flow-builder','ai-flow-technical-reviewer','ai-flow-qa-engineer','ai-flow-target-audience','ai-flow-final-customer'] as const;
 export const ACTIVATION_START='<!-- AI-FLOW:BEGIN -->';
 export const ACTIVATION_END='<!-- AI-FLOW:END -->';
+export const PI_ACTIVATION_START='<!-- AI-FLOW:PI-BEGIN -->';
+export const PI_ACTIVATION_END='<!-- AI-FLOW:PI-END -->';
 export const ACTIVATION_BODY=[
   '# Automatic SpecRail',
   '',
@@ -12,6 +14,15 @@ export const ACTIVATION_BODY=[
   'For every delivery request, open and follow `$HOME/.agents/skills/ai-flow/SKILL.md`, using the absolute launcher `$HOME/.local/bin/specrail`. That skill is the complete workflow contract. `specrail next` failure blocks routing; readiness diagnostics never replace it.',
   '',
   'At approval gates use a stable session token and the exact SpecRail interaction; never invent request_user_input. For visual gates, host_actions means show the complete Review Bundle, execute exact actions, record actual outcomes with presentationDigest/action ID, then call next. Required visuals stay in conversation; local paths never count as shown evidence; unavailable required images block approval. Generated Cockpit HTML is not proof of display: record opened only after real open, otherwise expose openUrl and record offered. Never pre-acknowledge or reuse stale/cross-session/tampered acknowledgments. $visualize preparation leaves hostPresentation unverified. Frontend preview uses served presentation.previewUrl, not raw files. Shell localhost failure differs from Browser failure. Codex owns model/effort. Obey next.autonomy. At phase boundaries persist the native choice, end turn, then Continue/Resume enters before generic context reads. Never implement before specification approval or finish before final approval/delivery.'
+].join('\n');
+export const PI_ACTIVATION_BODY=[
+  '# Automatic SpecRail for Pi',
+  '',
+  'Automatically apply SpecRail to repository delivery work: create, change, fix, redesign, implement, continue, review, validate, or finish software/UI/UX/architecture/database tasks, including Spanish. Read-only research does not create tasks. `Sin SpecRail:` / `No SpecRail:` is a total bypass; `SpecRail Fast:` requests the low-overhead governed path.',
+  '',
+  'For every delivery request, first call `specrail_skill` with exact name `ai-flow` and follow that packaged orchestrator contract. On Pi use the installed `specrail_cli` tool for SpecRail argv rather than assuming a global executable, use `specrail_host_context` for the exact Pi session ID whenever `--session` is required, use `specrail_skill` again for deterministically recommended specialist contracts, and use `specrail_codegraph` for high-signal structural context instead of requiring Pi-specific MCP wiring. The packaged skill is the complete workflow contract; `next` failure blocks routing.',
+  '',
+  'Forward only exact SpecRail `request_user_input` payloads through the Pi adapter tool. Pi owns model/thinking selection. Fresh-session boundaries use `/specrail-handoff TASK-####` or `/new` + `Continue TASK-####`; never depend on Codex deep links. Codex Visualize is optional/host-specific: use canonical inline evidence and Review Cockpit/openUrl fallback unless a compatible visualization capability is actually discovered. Do not claim Pi parallel subagents without a truthful host capability attestation.'
 ].join('\n');
 
 function backupOnce(file:string):void{if(existsSync(file)&&!existsSync(`${file}.ai-flow.bak`))cpSync(file,`${file}.ai-flow.bak`);}
@@ -42,7 +53,26 @@ function configureCodex(home:string):void{
   const configFile=path.join(codex,'config.toml');backupOnce(configFile);const currentConfig=existsSync(configFile)?readFileSync(configFile,'utf8'):'';writeFileSync(configFile,enableFeature(currentConfig,'default_mode_request_user_input'));
   const agentsFile=path.join(codex,'AGENTS.md');backupOnce(agentsFile);const currentAgents=existsSync(agentsFile)?readFileSync(agentsFile,'utf8'):'';writeFileSync(agentsFile,managedBlock(currentAgents,ACTIVATION_START,ACTIVATION_END,ACTIVATION_BODY));
 }
-export function restoreManagedInstallation(packageRoot:string,home:string):{bins:string[];skills:number;activationPath:string;configPath:string}{
-  const root=path.resolve(packageRoot),targetHome=path.resolve(home);const bins=installLaunchers(root,targetHome);installSkills(root,path.join(targetHome,'.agents','skills'));installSkills(root,path.join(targetHome,'.codex','skills'));configureCodex(targetHome);
-  return{bins,skills:SPEC_RAIL_SKILL_NAMES.length,activationPath:path.join(targetHome,'.codex','AGENTS.md'),configPath:path.join(targetHome,'.codex','config.toml')};
+function piPackageSource(entry:unknown):string|null{
+  if(typeof entry==='string')return entry;
+  if(entry&&typeof entry==='object'&&typeof (entry as {source?:unknown}).source==='string')return String((entry as {source:string}).source);
+  return null;
+}
+function configurePi(packageRoot:string,home:string):{activationPath:string;settingsPath:string;packageSource:string;extensionPath:string}{
+  const piRoot=path.join(home,'.pi','agent');mkdirSync(piRoot,{recursive:true});
+  const agentsFile=path.join(piRoot,'AGENTS.md');backupOnce(agentsFile);const currentAgents=existsSync(agentsFile)?readFileSync(agentsFile,'utf8'):'';writeFileSync(agentsFile,managedBlock(currentAgents,PI_ACTIVATION_START,PI_ACTIVATION_END,PI_ACTIVATION_BODY));
+  const extensionPath=path.join(packageRoot,'extensions','specrail.js');if(!existsSync(extensionPath))throw new Error(`Packaged SpecRail Pi extension is missing: ${extensionPath}`);
+  const settingsFile=path.join(piRoot,'settings.json');backupOnce(settingsFile);let settings:Record<string,unknown>={};
+  if(existsSync(settingsFile)){
+    try{const parsed=JSON.parse(readFileSync(settingsFile,'utf8'));if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw new Error('root must be an object');settings=parsed as Record<string,unknown>;}catch(error){throw new Error(`Cannot safely update Pi settings ${settingsFile}: ${error instanceof Error?error.message:String(error)}`);}
+  }
+  const packageSource=path.resolve(packageRoot);const current=Array.isArray(settings.packages)?settings.packages:[];const managedRoot=path.resolve(home,'.ai-flow');
+  settings.packages=current.filter(entry=>{const source=piPackageSource(entry);if(!source)return true;if(/^npm:@saulmarti\/specrail(?:@|$)/i.test(source))return false;try{return path.resolve(source)!==packageSource&&path.resolve(source)!==managedRoot;}catch{return true;}});
+  (settings.packages as unknown[]).push(packageSource);writeFileSync(settingsFile,`${JSON.stringify(settings,null,2)}\n`);
+  rmSync(path.join(piRoot,'extensions','specrail.js'),{force:true});
+  return{activationPath:agentsFile,settingsPath:settingsFile,packageSource,extensionPath};
+}
+export function restoreManagedInstallation(packageRoot:string,home:string):{bins:string[];skills:number;activationPath:string;configPath:string;piActivationPath:string;piSettingsPath:string;piPackageSource:string;piExtensionPath:string}{
+  const root=path.resolve(packageRoot),targetHome=path.resolve(home);const bins=installLaunchers(root,targetHome);installSkills(root,path.join(targetHome,'.agents','skills'));installSkills(root,path.join(targetHome,'.codex','skills'));configureCodex(targetHome);const pi=configurePi(root,targetHome);
+  return{bins,skills:SPEC_RAIL_SKILL_NAMES.length,activationPath:path.join(targetHome,'.codex','AGENTS.md'),configPath:path.join(targetHome,'.codex','config.toml'),piActivationPath:pi.activationPath,piSettingsPath:pi.settingsPath,piPackageSource:pi.packageSource,piExtensionPath:pi.extensionPath};
 }

@@ -37,7 +37,7 @@ function presentationHostActions(presentation: Presentation): HostActionInteract
  if(acknowledgement.approvalReady)return null;
  const retryIds=new Set([...acknowledgement.pendingActionIds,...acknowledgement.blockingActionIds]);
  const actions=presentation.presentationContract.fallback.requiredHostActions.filter(action=>retryIds.has(action.id));
- const session=presentation.presentationContract.sessionId==='unspecified'?'<stable-codex-session-id>':presentation.presentationContract.sessionId;
+ const session=presentation.presentationContract.sessionId==='unspecified'?'<stable-host-session-id>':presentation.presentationContract.sessionId;
  return{tool:'host_actions',presentation,actions,reason:acknowledgement.status==='blocked'?'Required review evidence was not successfully presented. Retry the blocking host actions before approval.':'Review presentation must be completed and acknowledged before the approval question can be emitted.',recordCommand:`specrail presentation record ${acknowledgement.taskId} --gate ${presentation.presentationContract.gate} --session ${session} --presentation-digest ${presentation.presentationContract.presentationDigest} --action <ACTION_ID> --outcome <presented|opened|offered|failed|unavailable> [--detail ...]`};
 }
 
@@ -135,8 +135,8 @@ export function interactionForTask(root:string,id:string,kind='current',input:In
     'Abrir un chat nuevo':'fresh-chat'
   } as const;
   return{tool:'request_user_input',turnPolicy:{afterSelection:'persist-boundary-choice-and-end-turn',sameTurnPhaseWork:'forbidden',resumePrompt:`Continue ${task.meta.id}`,choiceMap,...(runtime.transitionNotice?.freshChatUrl?{freshChatUrl:runtime.transitionNotice.freshChatUrl}:{})},questions:[{id:'phase-boundary',header:implementation?'Implementation Boundary':'Review Boundary',question:`${task.meta.id} — ${task.meta.title} está sellada para ${phaseLabel}. ¿Cómo quieres continuar? Ninguna opción inicia ${phaseLabel} en este turno.`,options:[
-    option('Continuar con el modelo actual',`Terminar este turno. En el siguiente turno continuar ${task.meta.id} con el modelo/reasoning que ya está seleccionado en Codex.`),
-    option('Pausar para cambiar modelo o razonamiento',`Terminar aquí. Cambia el selector real de Codex y después continúa con: Continue ${task.meta.id}. SpecRail no cambia ni guarda el modelo.`),
+    option('Continuar con el modelo actual',`Terminar este turno. En el siguiente turno continuar ${task.meta.id} con el modelo/reasoning que ya está seleccionado en el host.`),
+    option('Pausar para cambiar modelo o razonamiento',`Terminar aquí. Cambia el selector real del host y después continúa con: Continue ${task.meta.id}. SpecRail no cambia ni guarda el modelo.`),
     option('Abrir un chat nuevo',`${freshRecommended?'Recomendado para este boundary. ':''}Abrir un chat nuevo para mayor aislamiento de contexto y continuar allí con: Continue ${task.meta.id}.`)
   ],isOther:false}]};
  }

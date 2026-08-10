@@ -16,6 +16,8 @@ const quickFiles=[
   'architecture-integrity.test.mjs',
   'control-profile.test.mjs',
   'core.test.mjs',
+  'pi-compatibility.test.mjs',
+  'pi-adapter-runtime.test.mjs',
   'revisions.test.mjs',
   'skills.test.mjs',
   'user-overrides.test.mjs',

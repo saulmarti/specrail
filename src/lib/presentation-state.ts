@@ -76,7 +76,7 @@ export function presentationAcknowledgementState(root: string, input: { taskId: 
 
 export function recordPresentationAction(root: string, input: { taskId: string; gate: PresentationGate; sessionId: string; presentationDigest: string; actions: PresentationHostAction[]; actionId: string; outcome: PresentationActionOutcome; detail?: string | null; }): PresentationAcknowledgementState {
   const sessionId = normalizedSession(input.sessionId);
-  if (sessionId === 'unspecified') throw new Error('Presentation acknowledgement requires --session <stable-codex-session-id>');
+  if (sessionId === 'unspecified') throw new Error('Presentation acknowledgement requires --session <stable-host-session-id>');
   const action = input.actions.find(item => item.id === input.actionId);
   if (!action) throw new Error(`Unknown or stale presentation action: ${input.actionId}`);
   if (!validOutcome(action, input.outcome)) throw new Error(`Invalid outcome ${input.outcome} for ${action.type}`);
@@ -96,7 +96,7 @@ export function recordPresentationAction(root: string, input: { taskId: string; 
 
 export function assertPresentationReady(root: string, input: { taskId: string; gate: PresentationGate; sessionId?: string | null; presentationDigest: string; actions: PresentationHostAction[]; }): PresentationAcknowledgementState {
   const state = presentationAcknowledgementState(root, input);
-  if (!input.sessionId || !String(input.sessionId).trim()) throw new Error('Approval requires --session <stable-codex-session-id> after presentation acknowledgement');
+  if (!input.sessionId || !String(input.sessionId).trim()) throw new Error('Approval requires --session <stable-host-session-id> after presentation acknowledgement');
   if (!state.approvalReady) {
     const details = [...state.pendingActionIds.map(id => `${id}:pending`), ...state.blockingActionIds.map(id => `${id}:blocked`)].join(', ');
     throw new Error(`Review presentation is not ready for approval${details ? `: ${details}` : ''}. Execute and acknowledge the current presentation host actions first.`);

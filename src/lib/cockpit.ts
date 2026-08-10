@@ -250,7 +250,7 @@ ${blockers.length > 1 ? `<ul>${blockers.slice(1).map(item => `<li>${escapeHtml(i
 <aside class="panel">
 <h2 class="section-title">Decision and delivery</h2><p>${escapeHtml(action)}</p>
 ${decisionItems.length ? decisionItems.map(item => `<button type="button" class="choice" data-choice="${escapeHtml(item.label)}"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(item.detail)}</span></button>`).join('') : '<div class="callout">No user decision is required at the current phase.</div>'}
-<div id="decision-note" class="callout" aria-live="polite">This Cockpit is read-only. Make the decision through the native Codex prompt so SpecRail can update the task deterministically.</div>
+<div id="decision-note" class="callout" aria-live="polite">This Cockpit is read-only. Make the decision through the native host prompt so SpecRail can update the task deterministically.</div>
 <h3>Delivery metrics</h3><ul class="evidence-list"><li>Elapsed: <strong>${metrics.elapsedSeconds}s</strong></li><li>Context expansions: <strong>${metrics.contextExpansions}</strong></li><li>User rejections: <strong>${metrics.userRejections}</strong></li><li>QA returns: <strong>${metrics.qaReturns}</strong></li><li>Delivery: <strong>${escapeHtml(String(metrics.deliveryStatus))}</strong></li></ul>
 </aside>
 </div>

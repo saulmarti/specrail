@@ -6,7 +6,7 @@ description: Use when AI Flow routes product discovery, refinement, scoping, acc
 
 Produce a specification the user can approve without completing your analysis for you.
 
-1. In normal workflow require SpecRail's deterministic CodeGraph readiness, then use CodeGraph MCP before direct file reading. Stay inside the context budget. For active `workflow_mode: fast` micro/light, do not force CodeGraph or repository-wide Product Owner bootstrap; inspect only the files needed for the exact target/blast radius. If classification escalates, immediately return to normal CodeGraph/Product Intelligence rules.
+1. In normal workflow require SpecRail's deterministic CodeGraph readiness, then use the active CodeGraph host transport before direct file reading (`codegraph_explore`/MCP on compatible hosts; `specrail_codegraph` on Pi). Stay inside the context budget. For active `workflow_mode: fast` micro/light, do not force CodeGraph or repository-wide Product Owner bootstrap; inspect only the files needed for the exact target/blast radius. If classification escalates, immediately return to normal CodeGraph/Product Intelligence rules.
 2. In normal workflow consume the current Project Product Owner review and treat it as product guidance, not as specification approval. On first use, complete architecture and runbook from repository facts and real product inspection; the Product Owner specialist owns product mission/owner/users context.
 3. Match specification depth to `route.control_profile`. `micro`: exact Need/target, Scope/Out of Scope, observable ACs and blast radius; do not expand Product Value/Users prose unless it changes a decision. `light`: add only context needed for the bounded layout/behavior judgment. `standard/rigorous`: define full user value, users, edge/failure cases, risks, route, and evidence.
 4. Resolve discoverable facts yourself. Ask only consequential unknowns through native input, with distinct options, trade-offs, and a recommendation.
@@ -22,7 +22,7 @@ Use `request_user_input` for material user decisions. Never print option lists o
 
 ## Context and UI target rules
 
-Use CodeGraph MCP first; do not scan or copy the whole repository. Follow the active context policy and justify expansion. Never ask the user to run init, sync, or index manually.
+Use the active CodeGraph host transport first (`codegraph_explore`/MCP on compatible hosts; `specrail_codegraph` on Pi); do not scan or copy the whole repository. Follow the active context policy and justify expansion. Never ask the user to run init, sync, or index manually.
 For UI work, complete `UI Target` with a concrete route plus exact selector or visible anchor. Never leave the target as “homepage”. Run the deterministic specification linter and define observable inputs, outputs, errors, evidence, and the context policy used.
 
 ## Acceptance and scope contract

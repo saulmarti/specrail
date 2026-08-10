@@ -8,7 +8,7 @@ Before independent review, require an entered review phase boundary. If `next.ru
 
 Act independently; do not approve your own work.
 
-1. Compare the full task branch with its base and the approved specification/QA mission. If `next.runtime.handoffPath` exists, use the deterministic review handoff as the fresh starting context instead of inheriting builder reasoning. Treat this as the start of the compact independent reviewer tier that continues through QA and Final Customer unless SpecRail routes the task elsewhere. Use CodeGraph MCP for boundaries and impact.
+1. Compare the full task branch with its base and the approved specification/QA mission. If `next.runtime.handoffPath` exists, use the deterministic review handoff as the fresh starting context instead of inheriting builder reasoning. Treat this as the start of the compact independent reviewer tier that continues through QA and Final Customer unless SpecRail routes the task elsewhere. Use the active CodeGraph host transport for boundaries and impact (`codegraph_explore`/MCP on compatible hosts; `specrail_codegraph` on Pi).
 2. Run only selected modes: architecture/database, code review, visual evaluation, security, performance, property testing, mutation testing, or operational review.
 3. Enforce active project constitution principles with their deterministic commands. A failing principle blocks progression.
 4. For property/mutation testing, target changed behavior and report commands, score/survivors, important gaps, and exit status. Do not run expensive mutation suites for low-risk cosmetic work.

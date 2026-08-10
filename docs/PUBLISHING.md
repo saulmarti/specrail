@@ -74,7 +74,7 @@ After installation, users can stay on their current channel with:
 specrail update
 ```
 
-A beta build preserves `beta` automatically; `specrail update --latest` explicitly switches to the stable channel once a stable release exists. The update command must refresh the managed Codex installation from the newly installed global package rather than re-running an older `~/.ai-flow` copy.
+A beta build preserves `beta` automatically; `specrail update --latest` explicitly switches to the stable channel once a stable release exists. The update command must refresh the managed Codex + Pi installation from the newly installed global package rather than re-running an older `~/.ai-flow` copy.
 
 For a one-shot install without a global npm package:
 

@@ -10,7 +10,7 @@ const install=path.join(home,'.ai-flow');
 
 function copyPackage(){
   const same=path.resolve(root)===path.resolve(install);
-  if(!same){rmSync(install,{recursive:true,force:true});mkdirSync(install,{recursive:true});for(const item of ['dist','skills','docs','evals','scripts','plugin.json','README.md','ROADMAP.md','AGENTS.md','package.json','LICENSE','CHANGELOG.md']){const source=path.join(root,item);if(existsSync(source))cpSync(source,path.join(install,item),{recursive:true});}}
+  if(!same){rmSync(install,{recursive:true,force:true});mkdirSync(install,{recursive:true});for(const item of ['dist','skills','extensions','docs','evals','scripts','plugin.json','README.md','ROADMAP.md','AGENTS.md','package.json','LICENSE','CHANGELOG.md']){const source=path.join(root,item);if(existsSync(source))cpSync(source,path.join(install,item),{recursive:true});}}
   return same?root:install;
 }
 
@@ -19,5 +19,8 @@ const managedUrl=pathToFileURL(path.join(packageRoot,'dist','src','lib','managed
 const {restoreManagedInstallation}=await import(managedUrl);
 const result=restoreManagedInstallation(packageRoot,home);
 console.log(`SpecRail installed: ${result.bins.join(', ')}`);
-console.log('Codex will apply SpecRail automatically to repository delivery requests after restart.');
-console.log('Native request_user_input was enabled in ~/.codex/config.toml.');
+console.log('SpecRail activation installed for Codex and Pi repository-delivery requests.');
+console.log('Codex native request_user_input was enabled in ~/.codex/config.toml.');
+console.log(`Pi package registered in ${result.piSettingsPath}: ${result.piPackageSource}`);
+console.log(`Pi adapter source: ${result.piExtensionPath}`);
+console.log('Reload/restart the active coding-agent host before the first managed request.');

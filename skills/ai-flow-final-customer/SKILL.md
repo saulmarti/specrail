@@ -13,7 +13,7 @@ This packaged role remains for projects created before Target Audience validatio
 4. Record completion, confusion, friction, trust, usefulness, and whether the persona would use it again. Separate functional, usability, and value failures.
 5. Save and register `customer-report` with real supporting evidence. Do not manufacture success.
 6. A rejection returns to the correct phase, records a classified failure, consumes the repair budget, and may create a user-approved regression-eval candidate.
-7. Present a concise interactive journey with `$visualize` only when the installed Codex Visualize skill is available and useful; it cannot replace evidence or decide for the user. Never ask the user to type `/visualize` and never invoke the plugin's internal renderer directly.
+7. Present a concise interactive journey with `$visualize` only when the active host exposes the installed Codex Visualize skill and it is useful; it cannot replace evidence or decide for the user. Never ask the user to type `/visualize` and never invoke the plugin's internal renderer directly.
 
 Use `request_user_input` for material user decisions. Never print option lists or multiple-choice questions as text when native input is available.
 

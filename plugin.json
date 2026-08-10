@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "specrail",
-  "version": "0.10.2",
-  "description": "Human-approved, evidence-backed software delivery workflow for Codex, with immutable specifications, real evidence, QA gates, and branch-aware traces.",
+  "version": "0.10.3",
+  "description": "Human-approved, evidence-backed software delivery workflow for Codex and Pi, with immutable specifications, real evidence, QA gates, and branch-aware traces.",
   "license": "MIT",
   "keywords": [
     "codex",
@@ -11,6 +11,7 @@
     "specification",
     "human-in-the-loop",
     "ui-ux",
-    "codegraph"
+    "codegraph",
+    "pi"
   ]
 }

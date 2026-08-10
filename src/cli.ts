@@ -121,9 +121,9 @@ export async function runCli(argv: string[], io: CliIo = {}): Promise<void> {
             if (!json) writeOut(`Updating SpecRail ${VERSION} from the ${channel} channel...`);
             const result = updateSpecRail({ currentVersion: VERSION, channel, dryRun: Boolean(flags['dry-run']) });
             if (json) output(result, true);
-            else if (result.status === 'planned') writeOut(`Update plan: ${result.target}; then refresh the managed Codex installation.`);
-            else if (result.changed) writeOut(`SpecRail updated ${result.fromVersion} → ${result.toVersion} (${result.channel}); managed Codex assets refreshed.`);
-            else writeOut(`SpecRail ${result.toVersion} is current on ${result.channel}; managed Codex assets refreshed.`);
+            else if (result.status === 'planned') writeOut(`Update plan: ${result.target}; then refresh the managed host installation.`);
+            else if (result.changed) writeOut(`SpecRail updated ${result.fromVersion} → ${result.toVersion} (${result.channel}); managed host assets refreshed.`);
+            else writeOut(`SpecRail ${result.toVersion} is current on ${result.channel}; managed host assets refreshed.`);
             break;
         }
         case 'init':
@@ -465,7 +465,7 @@ export async function runCli(argv: string[], io: CliIo = {}): Promise<void> {
             } else if (sub === 'choose') {
                 const runtime = runtimeRecommendation(root, taskId, { sessionId: flags.session });
                 if (!runtime.handoffDigest) throw new Error('No active implementation/review boundary for this task');
-                if (!flags.session) throw new Error('Boundary choose requires --session <stable-codex-session-id>');
+                if (!flags.session) throw new Error('Boundary choose requires --session <stable-host-session-id>');
                 const rawChoice=String(requireFlag(flags,'choice'));
                 const choice=rawChoice==='current'?'continue-current':rawChoice==='pause'?'pause-model-change':rawChoice==='fresh'?'fresh-chat':rawChoice;
                 const boundary = choosePhaseBoundary(root, taskId, choice as 'continue-current'|'pause-model-change'|'fresh-chat', { sessionId: flags.session, handoffDigest: runtime.handoffDigest, handoffContentDigest: runtime.handoffContentDigest, handoffWords: runtime.handoffWords });
@@ -473,7 +473,7 @@ export async function runCli(argv: string[], io: CliIo = {}): Promise<void> {
             } else if (sub === 'enter') {
                 const runtime = runtimeRecommendation(root, taskId, { sessionId: flags.session });
                 if (!runtime.handoffDigest) throw new Error('No active implementation/review boundary for this task');
-                if (!flags.session) throw new Error('Boundary enter requires --session <stable-codex-session-id>');
+                if (!flags.session) throw new Error('Boundary enter requires --session <stable-host-session-id>');
                 if (flags.mode) throw new Error('Boundary mode is inferred from stable session IDs and cannot be supplied manually');
                 const boundary = enterPhaseBoundary(root, taskId, { sessionId: flags.session, handoffDigest: runtime.handoffDigest, handoffContentDigest: runtime.handoffContentDigest, handoffWords: runtime.handoffWords });
                 output({ boundary, runtime: runtimeRecommendation(root, taskId, { sessionId: flags.session }) }, true);
@@ -634,7 +634,7 @@ export async function runCli(argv: string[], io: CliIo = {}): Promise<void> {
             if (sub === 'status') {
                 output({ taskId, gate, presentationDigest: contract.presentationDigest, acknowledgement: contract.acknowledgement, actions: contract.fallback.requiredHostActions }, true);
             } else if (sub === 'record') {
-                if (!sessionId) throw new Error('Presentation record requires --session <stable-codex-session-id>');
+                if (!sessionId) throw new Error('Presentation record requires --session <stable-host-session-id>');
                 const suppliedDigest = String(requireFlag(flags, 'presentation-digest'));
                 if (suppliedDigest !== contract.presentationDigest) throw new Error('Stale presentation digest; fetch the current presentation status and execute its host actions');
                 output(recordPresentationAction(root, { taskId, gate, sessionId, presentationDigest: contract.presentationDigest, actions: contract.fallback.requiredHostActions, actionId: String(requireFlag(flags, 'action')), outcome: String(requireFlag(flags, 'outcome')) as PresentationActionOutcome, detail: flags.detail ? String(flags.detail) : null }), true);
