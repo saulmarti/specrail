@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import http from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,10 +16,15 @@ const loadedBuildId=textFile(buildIdFile);
 if(!loadedBuildId)throw new Error('SpecRail runtime requires dist/.specrail-build-id');
 const runtimeId=randomUUID();
 const runtimeDir=path.join(root,'.ai','runtime');
-const socketPath=arg('--socket')||path.join(runtimeDir,`specrail-${loadedBuildId.slice(0,16)}.sock`);
+const uid=typeof process.getuid==='function'?String(process.getuid()):'user';
+const defaultSocketDir=process.env.SPEC_RAIL_RUNTIME_SOCKET_DIR||path.join('/tmp',`specrail-${uid}`);
+const rootKey=createHash('sha256').update(root).digest('hex').slice(0,12);
+const socketPath=arg('--socket')||path.join(defaultSocketDir,`r-${rootKey}-${loadedBuildId.slice(0,16)}.sock`);
 const metaPath=arg('--meta')||path.join(runtimeDir,`specrail-runtime-${loadedBuildId.slice(0,16)}.json`);
 const configuredIdle=Number(process.env.SPEC_RAIL_RUNTIME_IDLE_MS||15*60*1000),idleMs=Number.isFinite(configuredIdle)&&configuredIdle>=1000?configuredIdle:15*60*1000;
 mkdirSync(runtimeDir,{recursive:true});
+mkdirSync(path.dirname(socketPath),{recursive:true});
+try{chmodSync(path.dirname(socketPath),0o700);}catch{}
 if(existsSync(socketPath))rmSync(socketPath,{force:true});
 function currentBuild():boolean{return textFile(buildIdFile)===loadedBuildId;}
 function send(res:http.ServerResponse,status:number,body:string,contentType='text/plain; charset=utf-8',headers:Record<string,string>={}):void{res.writeHead(status,{'content-type':contentType,'content-length':String(Buffer.byteLength(body)),...headers});res.end(body);}

@@ -8,7 +8,19 @@ import { spawnSync } from 'node:child_process';
 import { createFakeCodeGraph } from './helpers.mjs';
 const fakeCodeGraph = createFakeCodeGraph();
 process.env.AI_FLOW_CODEGRAPH_COMMAND = fakeCodeGraph.command;
-function run(command, args, options = {}) { const result = spawnSync(command, args, { encoding: 'utf8', ...options }); assert.equal(result.status, 0, result.stderr || result.stdout); return result.stdout.trim(); }
+const e2eCommandTimeoutMs = Number(process.env.SPEC_RAIL_E2E_COMMAND_TIMEOUT_MS || 30_000);
+const e2eTrace = ['1','true','yes'].includes(String(process.env.SPEC_RAIL_E2E_TRACE || '').toLowerCase());
+function run(command, args, options = {}) {
+    const label = `${command} ${args.join(' ')}`;
+    if (e2eTrace) process.stderr.write(`[installed-e2e] START ${label}\n`);
+    const started = Date.now();
+    const result = spawnSync(command, args, { encoding: 'utf8', timeout: e2eCommandTimeoutMs, ...options });
+    if (result.error?.code === 'ETIMEDOUT') throw new Error(`Installed E2E command timed out after ${e2eCommandTimeoutMs}ms: ${label}`);
+    if (result.error) throw result.error;
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    if (e2eTrace) process.stderr.write(`[installed-e2e] PASS ${Date.now() - started}ms ${label}\n`);
+    return result.stdout.trim();
+}
 function json(command, args, options = {}) { return JSON.parse(run(command, args, options)); }
 test('installed CLI reports the packaged version', () => {
     const source = process.cwd(), home = mkdtempSync(path.join(tmpdir(), 'ai-flow-version-home-'));

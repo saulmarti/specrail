@@ -25,6 +25,7 @@ test('resident dispatcher preserves the full TypeScript argv parser for generic 
   } finally { stop(root); }
 });
 
+
 test('stale startup locks are recovered instead of permanently forcing cold fallback',()=>{
   const root=repo();direct(root,'init');
   const build=readFileSync(path.join(pkg,'dist/.specrail-build-id'),'utf8').trim().slice(0,16),lock=path.join(root,'.ai/runtime',`specrail-start-${build}.lock`);

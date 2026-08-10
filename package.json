@@ -45,13 +45,13 @@
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc -p tsconfig.json && node scripts/ensure-cli-executable.mjs && node scripts/write-build-id.mjs",
-    "test": "npm run build && node scripts/run-tests.mjs",
-    "check": "npm run version:check && npm test && node --check dist/src/cli.js",
+    "test": "npm run test:quick",
+    "check": "npm run build && npm run version:check && node scripts/run-tests.mjs --tier quick && node --check dist/src/cli.js && node --check dist/src/runtime-server.js",
     "evals": "npm run build && node --test tests/visualization-evals.test.mjs",
-    "pack:check": "npm run check && npm pack --dry-run",
+    "pack:check": "npm run release:check",
     "prepublishOnly": "npm run check",
     "version": "npm run version:sync && npm run version:check",
-    "release:check": "npm run check && npm pack --dry-run",
+    "release:check": "npm run build && npm run version:check && node scripts/run-tests.mjs --tier full && node --check dist/src/cli.js && node --check dist/src/runtime-server.js && npm pack --dry-run",
     "release:major": "npm run release:check && npm version major && npm publish --access public --tag latest",
     "release:minor": "npm run release:check && npm version minor && npm publish --access public --tag latest",
     "release:patch": "npm run release:check && npm version patch && npm publish --access public --tag latest",
@@ -62,7 +62,11 @@
     "version:sync": "node scripts/sync-version.mjs",
     "version:check": "node scripts/sync-version.mjs --check",
     "tar": "COPYFILE_DISABLE=1 tar --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='.ai' --exclude='.codegraph' --exclude='._*' --exclude='*/._*' --exclude='.DS_Store' --exclude='*/.DS_Store' --exclude='*.zip' --exclude='*.tgz' -czf ~/Desktop/specrail-current.tgz .",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "test:quick": "npm run build && node scripts/run-tests.mjs --tier quick",
+    "test:unit": "npm run build && node scripts/run-tests.mjs --tier unit",
+    "test:e2e": "npm run build && node scripts/run-tests.mjs --tier e2e",
+    "test:full": "npm run build && node scripts/run-tests.mjs --tier full"
   },
   "engines": {
     "node": ">=22.0.0"

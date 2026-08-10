@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 import path from 'node:path';
-import { readFileSync, existsSync } from 'node:fs';
+import {
+  readFileSync,
+  existsSync,
+  realpathSync
+} from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { initProject, findProjectRoot, resolveRepositoryRoot, projectContextStatus, completeProjectContext, appendProjectLearning } from './lib/project.js';
@@ -744,5 +748,22 @@ export async function runCli(argv: string[], io: CliIo = {}): Promise<void> {
 }
 
 async function directMain():Promise<void>{try{await runCli(process.argv.slice(2));}catch(error){writeErr(`specrail: ${error instanceof Error?error.message:String(error)}`);process.exitCode=1;}}
-const invokedPath=process.argv[1]?path.resolve(process.argv[1]):'';
-if(invokedPath===path.resolve(fileURLToPath(import.meta.url))) void directMain();
+function canonicalPath(value: string): string {
+  try {
+    return realpathSync(value);
+  } catch {
+    return path.resolve(value);
+  }
+}
+
+const invokedPath = process.argv[1]
+  ? canonicalPath(process.argv[1])
+  : '';
+
+const modulePath = canonicalPath(
+  fileURLToPath(import.meta.url)
+);
+
+if (invokedPath === modulePath) {
+  void directMain();
+}

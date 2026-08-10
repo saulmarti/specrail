@@ -28,17 +28,32 @@ for ((i=0;i<${#ARGS[@]};i++)); do
   if [ "${ARGS[$i]}" = "--root" ] && (( i + 1 < ${#ARGS[@]} )); then ROOT_ARG=${ARGS[$((i+1))]}; break; fi
 done
 if [ -n "$ROOT_ARG" ]; then
-  ROOT=$(git -C "$ROOT_ARG" rev-parse --show-toplevel 2>/dev/null || (CDPATH= cd -- "$ROOT_ARG" && pwd))
+  ROOT=$(git -C "$ROOT_ARG" rev-parse --show-toplevel 2>/dev/null || (CDPATH= cd -- "$ROOT_ARG" && pwd -P))
   REQUEST_ARGS=("${ARGS[@]}")
 else
-  ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+  ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)
   REQUEST_ARGS=("${ARGS[@]}" --root "$ROOT")
 fi
+# Canonicalize the repository path so /var/... and /private/var/... on macOS
+# identify the same resident runtime.
+ROOT=$(CDPATH= cd -- "$ROOT" && pwd -P)
 RUNTIME_DIR="$ROOT/.ai/runtime"
-SOCKET="$RUNTIME_DIR/specrail-${BUILD_SHORT}.sock"
 META="$RUNTIME_DIR/specrail-runtime-${BUILD_SHORT}.json"
 START_LOCK="$RUNTIME_DIR/specrail-start-${BUILD_SHORT}.lock"
-mkdir -p "$RUNTIME_DIR"
+# Darwin's sockaddr_un path is very short (~104 bytes). Repository-local
+# sockets fail in normal macOS temp/worktree paths, so keep only the socket in
+# a short private system directory; metadata/locks remain repo-local.
+SOCKET_BASE=${SPEC_RAIL_RUNTIME_SOCKET_DIR:-"/tmp/specrail-$(id -u)"}
+mkdir -p "$RUNTIME_DIR" "$SOCKET_BASE"
+chmod 700 "$SOCKET_BASE" 2>/dev/null || true
+if command -v shasum >/dev/null 2>&1; then
+  ROOT_KEY=$(printf '%s' "$ROOT" | shasum -a 256 | awk '{print substr($1,1,16)}')
+elif command -v sha256sum >/dev/null 2>&1; then
+  ROOT_KEY=$(printf '%s' "$ROOT" | sha256sum | awk '{print substr($1,1,16)}')
+else
+  ROOT_KEY=$(printf '%s' "$ROOT" | cksum | awk '{print $1 "-" $2}')
+fi
+SOCKET="$SOCKET_BASE/r-${ROOT_KEY}-${BUILD_SHORT}.sock"
 
 health(){ curl -fsS --max-time 0.35 --unix-socket "$SOCKET" http://specrail/v1/health >/dev/null 2>&1; }
 pid_alive(){ [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
@@ -100,7 +115,8 @@ if [ "$CMD" = "runtime-stop" ]; then
 fi
 ensure_runtime || exec node "$CLI" "$@"
 
-CURL_ARGS=(--silent --show-error --unix-socket "$SOCKET" -X POST http://specrail/v1/execute --data-urlencode "cwd=$PWD")
+REQUEST_TIMEOUT_SECONDS=${SPEC_RAIL_RUNTIME_REQUEST_TIMEOUT_SECONDS:-180}
+CURL_ARGS=(--silent --show-error --max-time "$REQUEST_TIMEOUT_SECONDS" --unix-socket "$SOCKET" -X POST http://specrail/v1/execute --data-urlencode "cwd=$PWD")
 # The resident process must preserve per-invocation CLI semantics. Pass only the
 # environment keys SpecRail itself reads; do not serialize the caller's full environment.
 ENV_KEYS=(AI_FLOW_CODEGRAPH_COMMAND AI_FLOW_SESSION_ID CODEX_THREAD_ID CODEX_SESSION_ID CHATGPT_THREAD_ID AI_FLOW_HOME HOME PATH)
@@ -108,7 +124,19 @@ for key in "${ENV_KEYS[@]}"; do CURL_ARGS+=(--data-urlencode "env=$key=${!key-}"
 for value in "${REQUEST_ARGS[@]}"; do CURL_ARGS+=(--data-urlencode "arg=$value"); done
 TMP="$RUNTIME_DIR/.specrail-response-$$"
 trap 'rm -f "$TMP"' EXIT INT TERM
-HTTP=$(curl "${CURL_ARGS[@]}" -o "$TMP" -w '%{http_code}' || true)
+set +e
+HTTP=$(curl "${CURL_ARGS[@]}" -o "$TMP" -w '%{http_code}')
+CURL_STATUS=$?
+set -e
+if [ "$CURL_STATUS" -eq 28 ]; then
+  printf 'specrail: resident runtime request timed out after %ss; command was not retried because it may have mutated state: %s\n' "$REQUEST_TIMEOUT_SECONDS" "$*" >&2
+  exit 124
+fi
+if [ "$CURL_STATUS" -ne 0 ]; then
+  cat "$TMP" >&2
+  printf 'specrail: resident runtime transport failed (curl exit %s); command was not retried automatically: %s\n' "$CURL_STATUS" "$*" >&2
+  exit "$CURL_STATUS"
+fi
 case "$HTTP" in
   2*) cat "$TMP"; exit 0;;
   409) rm -f "$SOCKET"; exec node "$CLI" "$@";;
