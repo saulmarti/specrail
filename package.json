@@ -1,6 +1,6 @@
 {
   "name": "@saulmarti/specrail",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Human-approved, evidence-backed software delivery workflow for Codex coding agents.",
   "type": "module",
   "bin": {
