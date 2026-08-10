@@ -4,8 +4,8 @@
   "description": "Human-approved, evidence-backed software delivery workflow for Codex coding agents.",
   "type": "module",
   "bin": {
-    "specrail": "dist/src/cli.js",
-    "ai-flow": "dist/src/cli.js"
+    "specrail": "scripts/specrail-fast.sh",
+    "ai-flow": "scripts/specrail-fast.sh"
   },
   "files": [
     "dist",
@@ -23,6 +23,7 @@
     "docs/GITHUB-DELIVERY.md",
     "docs/BRANDING.md",
     "docs/prototypes/review-cockpit.html",
+    "docs/CONTROL-PROFILES.md",
     "docs/READINESS.md",
     "docs/DOCTOR.md",
     "docs/REPLAY.md",
@@ -43,8 +44,8 @@
   ],
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && tsc -p tsconfig.json && node scripts/ensure-cli-executable.mjs",
-    "test": "npm run build && node --test tests/*.test.mjs",
+    "build": "npm run clean && tsc -p tsconfig.json && node scripts/ensure-cli-executable.mjs && node scripts/write-build-id.mjs",
+    "test": "npm run build && node scripts/run-tests.mjs",
     "check": "npm run version:check && npm test && node --check dist/src/cli.js",
     "evals": "npm run build && node --test tests/visualization-evals.test.mjs",
     "pack:check": "npm run check && npm pack --dry-run",

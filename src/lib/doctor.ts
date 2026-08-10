@@ -79,7 +79,7 @@ function fixCatalog(result:DoctorResult,packageRoot:string):DoctorFix[]{
   if([...failed].some(name=>['native-question-ui','specrail-launcher','ai-flow-compat-launcher','automatic-activation','skill-.codex/skills','skill-.agents/skills','agent-plugin-manifest'].includes(name))){
     fixes.push({id:'managed-installation',title:'Restore SpecRail managed files',description:`Re-run the packaged installer from ${packageRoot} to restore launchers, SpecRail skills, the compact Codex activation block, and native question UI. Existing Codex files are backed up by the installer.`,scope:'user-config',reversible:true,automatic:true,resolves:['native-question-ui','specrail-launcher','ai-flow-compat-launcher','automatic-activation','skill-.codex/skills','skill-.agents/skills','agent-plugin-manifest']});
   }
-  if(failed.has('codegraph-index')||failed.has('codegraph-preflight'))fixes.push({id:'codegraph-preflight',title:'Repair CodeGraph local index',description:'Run the deterministic CodeGraph preflight (sync/index/status) in this repository. This only changes the repository-local .codegraph index.',scope:'repository',reversible:true,automatic:true,resolves:['codegraph-index','codegraph-preflight']});
+  if(failed.has('codegraph-index')||failed.has('codegraph-preflight'))fixes.push({id:'codegraph-preflight',title:'Repair CodeGraph local index',description:'Run explicit CodeGraph recovery (health/sync and, only when required, a full rebuild) in this repository. This only changes the repository-local .codegraph index.',scope:'repository',reversible:true,automatic:true,resolves:['codegraph-index','codegraph-preflight']});
   if(failed.has('codegraph-command'))fixes.push({id:'install-codegraph',title:'Install or expose CodeGraph',description:'CodeGraph is an external dependency. SpecRail will not install it silently; install it using its official instructions, then rerun doctor.',scope:'external',reversible:false,automatic:false,resolves:['codegraph-command']});
   if(failed.has('codegraph-mcp-config'))fixes.push({id:'configure-codegraph-mcp',title:'Configure CodeGraph MCP in Codex',description:'Configure the installed CodeGraph server as `codegraph serve --mcp` using the Codex MCP settings available in the current host. SpecRail does not guess or rewrite an unknown host MCP schema.',scope:'external',reversible:true,automatic:false,resolves:['codegraph-mcp-config']});
   if(failed.has('node'))fixes.push({id:'upgrade-node',title:'Upgrade Node.js',description:'Install Node.js 22 or newer. SpecRail will not replace the system/runtime Node installation automatically.',scope:'external',reversible:false,automatic:false,resolves:['node']});
@@ -100,7 +100,7 @@ export function applyDoctorFixes(root=process.cwd(),home=os.homedir(),packageRoo
     if(!fix.automatic||!fix.reversible)throw new Error(`Doctor fix requires manual action and cannot be auto-applied: ${fix.id}`);
     if(fix.id==='managed-installation'){restoreManagedInstallation(packageRoot,home);applied.push(fix.id);continue;}
     if(fix.id==='codegraph-preflight'){
-      const result=prepareCodeGraph(root,{force:true});if(!result.ok)throw new Error(`CodeGraph repair failed: ${result.detail||result.action}`);applied.push(fix.id);continue;
+      const result=prepareCodeGraph(root,{force:true,forceSync:true,allowFullReindex:true,reason:'doctor-repair'});if(!result.ok)throw new Error(`CodeGraph repair failed: ${result.detail||result.action}`);applied.push(fix.id);continue;
     }
   }
   const after=doctor(root,home);return{applied,skipped,before,after};

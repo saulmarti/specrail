@@ -38,6 +38,8 @@ export interface TaskMeta {
   size: string;
   risk: string;
   execution_profile: string;
+  workflow_mode: 'standard' | 'fast';
+  fast_authorized_at?: string | null;
   surfaces: string[];
   route: TaskRoute;
   spec_approval: string;
@@ -107,6 +109,7 @@ export interface TaskInput {
   size?: string;
   risk?: string;
   executionProfile?: string;
+  workflowMode?: 'standard' | 'fast';
   parentId?: string | null;
   fileScope?: string[];
 }
@@ -146,6 +149,7 @@ export interface NativeInteraction {
     sameTurnPhaseWork: 'forbidden';
     resumePrompt: string;
     choiceMap: Record<string, 'continue-current' | 'pause-model-change' | 'fresh-chat'>;
+    freshChatUrl?: string;
   };
 }
 
@@ -470,12 +474,14 @@ export interface CodeGraphState {
   action: string | null;
   projectRoot?: string;
   command?: string;
-  versionDetail?: string;
+  versionDetail?: string | undefined;
   contract?: CodeGraphContractReport;
   lastCheckedAt: string | null;
   lastReadyAt?: string;
   detail?: string;
   cached?: boolean;
+  lastMaintenanceAt?: string;
+  binary?: { resolvedCommand:string; size:number|null; mtimeMs:number|null } | undefined;
 }
 
 export interface CodeGraphContractReport {
@@ -521,7 +527,7 @@ export type RuntimeRole = 'thinker' | 'implementer' | 'reviewer' | 'target-audie
 
 export interface RuntimeRecommendation {
   role: RuntimeRole;
-  strategy: 'phase-boundary-handoff';
+  strategy: 'phase-boundary-handoff' | 'direct-capsule-handoff';
   contextProfile: string | null;
   freshSessionRecommended: boolean;
   stopBeforePhaseWork: boolean;
@@ -550,6 +556,7 @@ export interface RuntimeRecommendation {
     title: string;
     message: string;
     resumePrompt: string;
+    freshChatUrl: string;
   };
   transitionInstruction: string | null;
 }

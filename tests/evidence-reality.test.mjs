@@ -47,7 +47,7 @@ test('Spanish Pantalla can still name a screen when it is not a viewport dimensi
 });
 test('every exact viewport declared by UI Target requires its own canonical Before and Proposal', () => {
     const root=repo();initProject(root,{name:'Viewport completeness'});readyProjectContext(root);
-    const task=createTask(root,{title:'Refine hero on desktop and mobile',type:'task',surfaces:['frontend'],size:'small',risk:'low'});startRefinement(root,task.meta.id);readySpec(root,task.meta.id);
+    const task=createTask(root,{title:'Redesign hero on desktop and mobile',type:'task',surfaces:['frontend'],size:'small',risk:'low'});startRefinement(root,task.meta.id);readySpec(root,task.meta.id);
     let t=loadTask(findTask(root,task.meta.id));t.body=setSection(t.body,'UI Target','- Route: `/`\n- Target: `section#hero`\n- Viewport: `1440x1000` and `390x844`\n- Capture: focused section');t.meta.route.design=true;saveTask(t);
     addApprovedImageGenProposal(root,task.meta.id,{target:'section#hero',viewport:'1440x1000'});
     const missing=validateEvidence(root,task.meta.id,'pre-approval');assert.equal(missing.valid,false);assert.match(missing.errors.join('; '),/390x844.*missing canonical Before/i);assert.match(missing.errors.join('; '),/390x844.*missing canonical Proposal/i);

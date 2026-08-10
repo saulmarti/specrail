@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from
 import path from 'node:path';
 import { parseDocument, serializeDocument } from './frontmatter.js';
 import { defaultRoute, type NativeInteraction, type TaskDocument, type TaskInput, type TaskMeta, type TaskStatus, type TaskSummary } from './types.js';
+import { applyControlProfile, applyFastModeRoute } from './control-profile.js';
 
 const SECTION_NAMES = ['Need','Product Value','Users','Product Owner Review','Product Owner Final Review','Scope','UI Target','Blast Radius','Out of Scope','Questions','Acceptance Criteria','Gherkin','QA Mission','Quality Strategy','Operational Evidence','Vertical Slices','Constitution Impact','UX/UI Proposal','Architecture and Data Design','Implementation Plan','Decisions','Evidence','QA','Target Audience Review','Final Customer','Handoff','Workflow Log'] as const;
 const FOLDER_BY_STATUS: Record<TaskStatus, string> = {
@@ -80,6 +81,8 @@ function asTaskMeta(raw: Record<string, unknown>): TaskMeta {
     size: typeof raw.size === 'string' ? raw.size : 'small',
     risk: typeof raw.risk === 'string' ? raw.risk : 'low',
     execution_profile: typeof raw.execution_profile === 'string' ? raw.execution_profile : 'standard',
+    workflow_mode: raw.workflow_mode === 'fast' ? 'fast' : 'standard',
+    fast_authorized_at: typeof raw.fast_authorized_at === 'string' ? raw.fast_authorized_at : null,
     surfaces,
     route: { ...defaults, ...routeRaw } as TaskMeta['route'],
     spec_approval: typeof raw.spec_approval === 'string' ? raw.spec_approval : 'pending',
@@ -200,7 +203,7 @@ export function createTask(root: string, input: TaskInput): TaskDocument {
   const stamp=now();
   const meta: TaskMeta = {
     id, title: input.title, type: input.type || 'task', status: 'draft', phase: 'product-specifier', size: input.size || 'small', risk: input.risk || 'low',
-    execution_profile: input.executionProfile || 'standard', surfaces, route: defaultRoute(surfaces, input.type || 'task'),
+    execution_profile: input.executionProfile || 'standard', workflow_mode: input.workflowMode === 'fast' ? 'fast' : 'standard', fast_authorized_at: input.workflowMode === 'fast' ? stamp : null, surfaces, route: defaultRoute(surfaces, input.type || 'task'),
     spec_approval: 'pending', spec_approval_hash: null, spec_effective_hash: null, spec_approved_at: null, spec_integrity_version: 1, project_governance_hash: null, qa_mission_hash: null, scope_guard_hash: null, scope_baseline_commit: null, delivery_strategy: input.size === 'large' && (input.type || 'task') === 'feature' ? 'vertical-slices' : 'single', slice_ids: [], final_approval: 'pending', waiting_for: 'none', open_questions: 0, learning_recorded: false,
     dependencies: [], parent_id: input.parentId || null, file_scope: input.fileScope || [], resume_status: null, resume_phase: null,
     worktree_path: null, worktree_branch: null, worktree_base: null, delivery_status: 'not_required',
@@ -210,6 +213,8 @@ export function createTask(root: string, input: TaskInput): TaskDocument {
   let body = taskBody(input.title);
   if (input.need) body = setSection(body, 'Need', String(input.need));
   const task: TaskDocument = { path: file, meta, body };
+  applyControlProfile(task,{lock:false});
+  applyFastModeRoute(task);
   saveTask(task); return task;
 }
 export function listTasks(root: string): TaskDocument[] { return scan(root).map(loadTask).sort((a,b)=>a.meta.id.localeCompare(b.meta.id)); }
@@ -235,5 +240,6 @@ export function patchTask(root: string,id: string,patch: Record<string, unknown>
     if (!allowed.has(key)) throw new Error(`Field cannot be patched directly: ${key}`);
     task.meta[key]=value;
   }
+  if(task.meta.phase==='product-specifier'&&task.meta.spec_approval!=='approved'){applyControlProfile(task,{lock:false});applyFastModeRoute(task);}
   appendLog(task,'Task classification updated.'); return saveTask(task);
 }

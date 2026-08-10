@@ -44,6 +44,9 @@ When instructions conflict, stop and surface the conflict rather than silently c
 - TypeScript must remain strict: no `@ts-nocheck`, broad `any` escapes, or disabled compiler guarantees without explicit justification.
 - Deterministic state transitions belong in the CLI/library, not only in skill prose.
 - External contracts such as CodeGraph must be probed and validated before use.
+- Keep CodeGraph lifecycle bounded: validated contract/health may be cached, watcher/catch-up is the normal freshness path, and normal task flow must never trigger an automatic full reindex.
+- Keep `next`, `readiness`, and `interaction` as independent deterministic contracts even when they share a resident TypeScript runtime.
+- Proportional controls must be conservative and monotonic after sealing: `micro/light` may remove non-load-bearing phases, but sensitive/material scope escalates and `SpecRail Fast` may never override that escalation.
 - Changes to persisted schemas require backward-compatible readers or an explicit migration with regression tests.
 - File writes must be atomic where concurrent chats or processes can race.
 - Multi-agent writes require scheduler-approved child tasks, separate worktrees, current sealed non-overlapping Scope Guard boundaries, reservation-specific lane sessions, and normal task leases; uncertain overlap must serialize.

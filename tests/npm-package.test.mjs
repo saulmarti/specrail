@@ -17,8 +17,11 @@ function run(command,args,options={}){
 
 test('npm metadata exposes the SpecRail brand, backward-compatible alias, and one package version',()=>{
   assert.equal(pkg.name,'@saulmarti/specrail');
-  assert.equal(pkg.bin.specrail,'dist/src/cli.js');
-  assert.equal(pkg.bin['ai-flow'],'dist/src/cli.js');
+  assert.equal(pkg.bin.specrail,'scripts/specrail-fast.sh');
+  assert.equal(pkg.bin['ai-flow'],'scripts/specrail-fast.sh');
+  assert.ok(pkg.files.includes('scripts'));
+  assert.ok(existsSync(path.join(root,'scripts','specrail-fast.sh')));
+  assert.ok(existsSync(path.join(root,'dist','src','cli.js')),'direct TypeScript CLI remains packaged as the runtime/fallback implementation');
   assert.equal(plugin.name,'specrail');
   assert.equal(plugin.version,pkg.version);
   assert.equal(pkg.publishConfig.access,'public');

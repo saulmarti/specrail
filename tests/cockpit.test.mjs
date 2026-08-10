@@ -16,10 +16,10 @@ import { addEvidence } from '../dist/src/lib/evidence.js';
 const repo=()=>mkdtempSync(path.join(tmpdir(),'specrail-cockpit-'));
 function preparedSpec(root){
   initProject(root,{name:'Cockpit Test'});readyProjectContext(root);
-  const task=createTask(root,{title:'Improve Home Spotlight heading',type:'task',surfaces:['frontend']});
+  const task=createTask(root,{title:'Redesign Home Spotlight heading hierarchy',type:'task',surfaces:['frontend']});
   startRefinement(root,task.meta.id);
   const loaded=loadTask(findTask(root,task.meta.id));
-  loaded.body=setSection(loaded.body,'Need','Reduce the Home Spotlight heading dominance on mobile.');
+  loaded.body=setSection(loaded.body,'Need','Redesign the Home Spotlight heading hierarchy across mobile and desktop.');
   loaded.body=setSection(loaded.body,'Product Value','Make the section hierarchy easier to scan.');
   loaded.body=setSection(loaded.body,'Users','Homepage visitors on mobile and desktop.');
   loaded.body=setSection(loaded.body,'Scope','Only the Home Spotlight heading.');

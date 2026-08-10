@@ -9,6 +9,8 @@ SpecRail Product Intelligence adds two independent product roles around the dete
 
 These roles do not replace specification, QA, evidence, Scope Guard, or human product judgment. They add product-value and audience-understanding checks that technical gates cannot prove.
 
+**Proportional routing:** deterministic `micro`/`light` tasks do not run separate Project Product Owner, Target Audience, final Product Owner, or durable-learning passes. Those roles remain first-class for `standard`/`rigorous` work, where product/audience judgment can materially change the decision. `SpecRail Fast:` may additionally omit project-wide CodeGraph/project bootstrap and the separate pre-implementation approval while the sealed profile remains `micro`/`light`; if refinement reveals broader behavior or risk, Fast deactivates and the normal Product Intelligence workflow returns automatically.
+
 ## Governed product loop
 
 ```text

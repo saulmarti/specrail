@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SOURCE="$0"
+while [ -L "$SOURCE" ]; do
+  DIR=$(CDPATH= cd -- "$(dirname -- "$SOURCE")" && pwd)
+  LINK=$(readlink "$SOURCE")
+  case "$LINK" in /*) SOURCE="$LINK";; *) SOURCE="$DIR/$LINK";; esac
+done
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$SOURCE")" && pwd)
+PKG_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+CLI="$PKG_ROOT/dist/src/cli.js"
+SERVER="$PKG_ROOT/dist/src/runtime-server.js"
+BUILD_FILE="$PKG_ROOT/dist/.specrail-build-id"
+case "${SPEC_RAIL_DISABLE_RUNTIME:-}" in 1|true|TRUE|yes|YES) exec node "$CLI" "$@";; esac
+
+# Commands that bootstrap/update the package itself stay outside the resident runtime.
+CMD=${1:-}
+case "$CMD" in install|update|version|--version|-v|--help|-h|'') exec node "$CLI" "$@";; esac
+command -v curl >/dev/null 2>&1 || exec node "$CLI" "$@"
+[ -f "$BUILD_FILE" ] || exec node "$CLI" "$@"
+BUILD_ID=$(tr -d '\r\n' < "$BUILD_FILE")
+[ -n "$BUILD_ID" ] || exec node "$CLI" "$@"
+BUILD_SHORT=${BUILD_ID:0:16}
+
+ROOT_ARG=""
+ARGS=("$@")
+for ((i=0;i<${#ARGS[@]};i++)); do
+  if [ "${ARGS[$i]}" = "--root" ] && (( i + 1 < ${#ARGS[@]} )); then ROOT_ARG=${ARGS[$((i+1))]}; break; fi
+done
+if [ -n "$ROOT_ARG" ]; then
+  ROOT=$(git -C "$ROOT_ARG" rev-parse --show-toplevel 2>/dev/null || (CDPATH= cd -- "$ROOT_ARG" && pwd))
+  REQUEST_ARGS=("${ARGS[@]}")
+else
+  ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+  REQUEST_ARGS=("${ARGS[@]}" --root "$ROOT")
+fi
+RUNTIME_DIR="$ROOT/.ai/runtime"
+SOCKET="$RUNTIME_DIR/specrail-${BUILD_SHORT}.sock"
+META="$RUNTIME_DIR/specrail-runtime-${BUILD_SHORT}.json"
+START_LOCK="$RUNTIME_DIR/specrail-start-${BUILD_SHORT}.lock"
+mkdir -p "$RUNTIME_DIR"
+
+health(){ curl -fsS --max-time 0.35 --unix-socket "$SOCKET" http://specrail/v1/health >/dev/null 2>&1; }
+pid_alive(){ [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
+runtime_pid(){ sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$META" 2>/dev/null | head -n 1 || true; }
+runtime_process_alive(){
+  local pid cmdline
+  pid=$(runtime_pid); pid_alive "$pid" || return 1
+  cmdline=$(ps -p "$pid" -o command= 2>/dev/null || true)
+  case "$cmdline" in *"$SERVER"*"$SOCKET"*) return 0;; *) return 1;; esac
+}
+lock_stale(){
+  local owner created now
+  owner=$(cat "$START_LOCK/pid" 2>/dev/null || true); created=$(cat "$START_LOCK/created_at" 2>/dev/null || true); now=$(date +%s)
+  if [ -z "$owner" ] || ! pid_alive "$owner"; then return 0; fi
+  case "$created" in ''|*[!0-9]*) return 1;; esac
+  [ $((now-created)) -gt 30 ]
+}
+release_own_lock(){ if [ -d "$START_LOCK" ] && [ "$(cat "$START_LOCK/pid" 2>/dev/null || true)" = "$$" ]; then rm -rf "$START_LOCK"; fi; }
+acquire_start_lock(){
+  local tries=0 owner=""
+  while ! mkdir "$START_LOCK" 2>/dev/null; do
+    owner=$(cat "$START_LOCK/pid" 2>/dev/null || true)
+    if lock_stale; then rm -rf "$START_LOCK" 2>/dev/null || true; continue; fi
+    if health || runtime_process_alive; then return 1; fi
+    tries=$((tries+1))
+    if [ "$tries" -ge 50 ]; then
+      owner=$(cat "$START_LOCK/pid" 2>/dev/null || true)
+      if lock_stale; then rm -rf "$START_LOCK" 2>/dev/null || true; tries=0; continue; fi
+      return 1
+    fi
+    sleep 0.02
+  done
+  printf '%s\n' "$$" > "$START_LOCK/pid"
+  date +%s > "$START_LOCK/created_at"
+  return 0
+}
+ensure_runtime(){
+  if health || runtime_process_alive; then return 0; fi
+  if acquire_start_lock; then
+    trap release_own_lock EXIT INT TERM
+    rm -f "$SOCKET"
+    SPEC_RAIL_RUNTIME_IDLE_MS=${SPEC_RAIL_RUNTIME_IDLE_MS:-900000} nohup node "$SERVER" --root "$ROOT" --socket "$SOCKET" --meta "$META" </dev/null >/dev/null 2>&1 &
+    local tries=0
+    until health; do tries=$((tries+1)); if [ "$tries" -gt 100 ]; then release_own_lock; trap - EXIT INT TERM; return 1; fi; sleep 0.02; done
+    release_own_lock; trap - EXIT INT TERM
+    return 0
+  fi
+  local tries=0
+  until health || runtime_process_alive; do tries=$((tries+1)); [ "$tries" -gt 100 ] && return 1; sleep 0.02; done
+}
+
+if [ "$CMD" = "runtime-status" ]; then
+  if health; then curl -fsS --unix-socket "$SOCKET" http://specrail/v1/health; elif runtime_process_alive; then printf '{"ok":true,"runtime":"busy","pid":%s,"buildId":"%s"}\n' "$(runtime_pid)" "$BUILD_ID"; else printf '{"ok":false,"runtime":"stopped","buildId":"%s"}\n' "$BUILD_ID"; fi
+  exit 0
+fi
+if [ "$CMD" = "runtime-stop" ]; then
+  if health; then curl -fsS --unix-socket "$SOCKET" -X POST http://specrail/v1/shutdown; else printf '{"ok":true,"runtime":"already-stopped","buildId":"%s"}\n' "$BUILD_ID"; fi
+  exit 0
+fi
+ensure_runtime || exec node "$CLI" "$@"
+
+CURL_ARGS=(--silent --show-error --unix-socket "$SOCKET" -X POST http://specrail/v1/execute --data-urlencode "cwd=$PWD")
+# The resident process must preserve per-invocation CLI semantics. Pass only the
+# environment keys SpecRail itself reads; do not serialize the caller's full environment.
+ENV_KEYS=(AI_FLOW_CODEGRAPH_COMMAND AI_FLOW_SESSION_ID CODEX_THREAD_ID CODEX_SESSION_ID CHATGPT_THREAD_ID AI_FLOW_HOME HOME PATH)
+for key in "${ENV_KEYS[@]}"; do CURL_ARGS+=(--data-urlencode "env=$key=${!key-}"); done
+for value in "${REQUEST_ARGS[@]}"; do CURL_ARGS+=(--data-urlencode "arg=$value"); done
+TMP="$RUNTIME_DIR/.specrail-response-$$"
+trap 'rm -f "$TMP"' EXIT INT TERM
+HTTP=$(curl "${CURL_ARGS[@]}" -o "$TMP" -w '%{http_code}' || true)
+case "$HTTP" in
+  2*) cat "$TMP"; exit 0;;
+  409) rm -f "$SOCKET"; exec node "$CLI" "$@";;
+  *) cat "$TMP" >&2; exit 1;;
+esac

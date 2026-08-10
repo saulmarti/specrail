@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { findTask, loadTask, saveTask, getSection, setSection, appendLog } from './task.js';
+import { controlProfile, isMicroControl } from './control-profile.js';
 import type { EvidenceInput, EvidenceManifest, EvidenceRecord, TaskDocument } from './types.js';
 import { validateTasteBrief } from './taste.js';
 import { qaMissionHash } from './qa.js';
@@ -376,44 +377,39 @@ export function addEvidence(root: string, id: string, input: EvidenceInput): Evi
 }
 export function listEvidence(root: string, id: string): EvidenceRecord[] { return readManifest(root, id).evidence; }
 function requiredKinds(task: TaskDocument, stage: string): string[] {
-    const route = task.meta.route, surfaces = task.meta.surfaces, required: string[] = [];
+    const route = task.meta.route, surfaces = task.meta.surfaces, required: string[] = [], controls=controlProfile(task), micro=controls==='micro';
     const root=task.path.slice(0,task.path.indexOf(`${path.sep}.ai${path.sep}`));
     if(stage==='technical-review'&&hasUserWaiver(root,task.meta.id,'technical-review'))return required;
     if(stage==='qa'&&hasUserWaiver(root,task.meta.id,'qa'))return required;
     const frontend = surfaces.includes('frontend') || surfaces.includes('ui') || surfaces.includes('ux'), backend = surfaces.includes('backend') || surfaces.includes('api'), database = surfaces.includes('database') || route.database;
     if (stage === 'pre-approval') {
         if ((frontend || route.design) && !hasUserWaiver(root,task.meta.id,'design')) {
-            required.push('frontend-before', 'ui-design-brief', 'frontend-proposal', 'ui-proposal-review');
-            if (['medium','high','critical'].includes(String(task.meta.risk).toLowerCase()) || ['medium','large'].includes(String(task.meta.size).toLowerCase())) required.push('visual-proposal-evaluator-report');
+            if (controls === 'light') required.push('frontend-before');
+            else if (!micro) {
+                required.push('frontend-before', 'ui-design-brief', 'frontend-proposal', 'ui-proposal-review');
+                if (['medium','high','critical'].includes(String(task.meta.risk).toLowerCase()) || ['medium','large'].includes(String(task.meta.size).toLowerCase())) required.push('visual-proposal-evaluator-report');
+            }
         }
-        if (route.architecture && !hasUserWaiver(root,task.meta.id,'technical-architecture'))
-            required.push('architecture-source', 'architecture-rendered');
-        if (database && !hasUserWaiver(root,task.meta.id,'technical-architecture'))
-            required.push('database-source', 'database-rendered', 'migration-plan');
+        if (route.architecture && !hasUserWaiver(root,task.meta.id,'technical-architecture')) required.push('architecture-source', 'architecture-rendered');
+        if (database && !hasUserWaiver(root,task.meta.id,'technical-architecture')) required.push('database-source', 'database-rendered', 'migration-plan');
     }
-    if (stage === 'technical-review' && route.technical_review !== 'none')
-        required.push('technical-review-report');
+    if (stage === 'technical-review' && route.technical_review !== 'none') required.push('technical-review-report');
     if (stage === 'qa') {
-        if (frontend && route.implementation)
-            required.push('frontend-after', 'ui-after-validation');
-        if (backend && route.implementation)
-            required.push('backend-demo', 'test-log');
-        if (database && route.implementation)
-            required.push('database-final', 'migration-log');
-        if (route.architecture && route.implementation && !hasUserWaiver(root,task.meta.id,'technical-architecture'))
-            required.push('architecture-final');
+        if (frontend && route.implementation) required.push('frontend-after', 'ui-after-validation');
+        if (backend && route.implementation) required.push('backend-demo', 'test-log');
+        if (database && route.implementation) required.push('database-final', 'migration-log');
+        if (route.architecture && route.implementation && !hasUserWaiver(root,task.meta.id,'technical-architecture')) required.push('architecture-final');
         if (route.technical_review !== 'none' && !hasUserWaiver(root,task.meta.id,'technical-review')) required.push('technical-review-report');
         const q=qualityPolicy(task); if(q.propertyTesting==='required') required.push('property-test-report'); if(q.mutationTesting==='required') required.push('mutation-test-report');
         const ops=operationalPolicy(task); required.push(...ops.requiredEvidence);
-        if(route.technical_review!=='none' && listConstitution(task.path.slice(0,task.path.indexOf(`${path.sep}.ai${path.sep}`))).some(item=>item.status==='active')) required.push('constitution-report');
-        if (route.qa !== 'none')
-            required.push('qa-report');
+        if(route.technical_review!=='none' && listConstitution(root).some(item=>item.status==='active')) required.push('constitution-report');
+        if (route.qa !== 'none') required.push('qa-report');
     }
     if (stage === 'revision') required.push(...revisionRequiredEvidenceKinds(root, task.meta.id));
     if (stage === 'final') {
         required.push(...requiredKinds(task, 'qa'));
         if (route.final_customer&&!hasUserWaiver(root,task.meta.id,'target-audience')) required.push('customer-report');
-        if ((frontend || route.design) && (['medium','high','critical'].includes(String(task.meta.risk).toLowerCase()) || ['medium','large'].includes(String(task.meta.size).toLowerCase()))) required.push('visual-final-evaluator-report');
+        if (!micro && (frontend || route.design) && ['standard','rigorous'].includes(controls) && (['medium','high','critical'].includes(String(task.meta.risk).toLowerCase()) || ['medium','large'].includes(String(task.meta.size).toLowerCase()))) required.push('visual-final-evaluator-report');
     }
     return [...new Set(required)];
 }
@@ -524,11 +520,13 @@ export function validateEvidence(root: string, id: string, stage = 'all') {
     const activeProposalItems=canonicalFrontend.filter(item=>PROPOSAL_KINDS.has(item.kind));
     const activeAfterItems=canonicalFrontend.filter(item=>AFTER_KINDS.has(item.kind));
     const itemIndex=new Map(items.map((item,index)=>[item.id,index] as const));
-    const requiresPlannedVisuals=['pre-approval','qa','final','all'].includes(stage);
+    const controls=controlProfile(task),micro=controls==='micro';
+    const requiresBeforeVisuals=['pre-approval','qa','final','all'].includes(stage)&&controls!=='micro';
+    const requiresProposalVisuals=['pre-approval','qa','final','all'].includes(stage)&&['standard','rigorous'].includes(controls);
     const requiresAfterVisuals=['qa','final','all'].includes(stage)&&task.meta.route.implementation;
-    if(requiresPlannedVisuals) for(const context of expectedContexts){
-        if(!activeBeforeItems.some((item:any)=>matchesExpectedVisualContext(item,context))) errors.push(`UI Target context ${visualContextLabel(context)} is missing canonical Before evidence`);
-        if(!activeProposalItems.some((item:any)=>matchesExpectedVisualContext(item,context))) errors.push(`UI Target context ${visualContextLabel(context)} is missing canonical Proposal evidence`);
+    for(const context of expectedContexts){
+        if(requiresBeforeVisuals&&!activeBeforeItems.some((item:any)=>matchesExpectedVisualContext(item,context))) errors.push(`UI Target context ${visualContextLabel(context)} is missing canonical Before evidence`);
+        if(requiresProposalVisuals&&!activeProposalItems.some((item:any)=>matchesExpectedVisualContext(item,context))) errors.push(`UI Target context ${visualContextLabel(context)} is missing canonical Proposal evidence`);
         if(requiresAfterVisuals&&!activeAfterItems.some((item:any)=>matchesExpectedVisualContext(item,context))) errors.push(`UI Target context ${visualContextLabel(context)} is missing canonical After evidence`);
     }
     for (const proposal of activeProposalItems) {
@@ -545,7 +543,7 @@ export function validateEvidence(root: string, id: string, stage = 'all') {
     }
     for (const after of activeAfterItems) {
         const baseline = [...activeProposalItems, ...activeBeforeItems].find((item: any) => sameVisualFrame(item, after));
-        if (!baseline)
+        if (!baseline && !micro)
             errors.push(`${after.id}: no matching before/proposal evidence for exact route, target, and viewport (${visualContextLabel(after)})`);
         const afterIndex=itemIndex.get(after.id) ?? -1;
         const report = [...layoutReports.entries()].filter(([evidenceId,value]: any) => reportMatchesScreenshot(value, after)&&(itemIndex.get(evidenceId)??-1)>afterIndex).sort(([left]:any,[right]:any)=>(itemIndex.get(left)??-1)-(itemIndex.get(right)??-1))[0]?.[1];

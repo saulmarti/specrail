@@ -150,13 +150,13 @@ test('installed CLI requires Taste Skill plus Image Gen and rejects a visibly br
     const source = process.cwd(), home = mkdtempSync(path.join(tmpdir(), 'ai-flow-ui-home-')), repo = mkdtempSync(path.join(tmpdir(), 'ai-flow-ui-repo-'));
     run(process.execPath, ['scripts/install.mjs'], { cwd: source, env: { ...process.env, AI_FLOW_HOME: home } });
     const bin = path.join(home, '.local', 'bin', 'ai-flow');
-    const intake = json(bin, ['intake', 'Ajustar el H3 de Home Spotlight', '--need', 'Improve the exact spotlight heading hierarchy.', '--type', 'task', '--surfaces', 'frontend', '--root', repo]);
+    const intake = json(bin, ['intake', 'Rediseñar la jerarquía de Home Spotlight', '--need', 'Redesign the exact spotlight visual hierarchy.', '--type', 'task', '--surfaces', 'frontend', '--root', repo]);
     const id = intake.task.id;
     const docs = { 'product.md': '# Product\n\nA real web product whose homepage helps visitors discover and understand its primary content.', 'product-owner.md': '# Product Owner\n\nProtect focused user value, existing homepage hierarchy, and evidence-based visual delivery.', 'users.md': '# Users\n\n## Audience: homepage visitor (primary)\n\nHomepage visitors use desktop and mobile layouts and need clear readable section headings.', 'architecture.md': '# Architecture\n\nThe existing frontend has bounded homepage sections and reusable typography components.', 'runbook.md': '# Runbook\n\nStart the real application with the repository command and validate the target route in a browser.' };
     for (const [name, content] of Object.entries(docs))
         writeFileSync(path.join(repo, '.ai', 'project', name), content);
     json(bin, ['project', 'complete', '--root', repo]);
-    const sections = { Need: 'Reduce the exact Home Spotlight H3 size.', 'Product Value': 'Improve hierarchy without changing other homepage sections.', Scope: 'Only the Home Spotlight heading.', 'UI Target': '- Route: `/`\n- Target: `section#home-spotlight`\n- Viewport: `1440x1000`\n- Capture: focused section', 'Out of Scope': 'Hero, navigation, cards, and backend.', 'Acceptance Criteria': '- Exact section is shown before and after\n- No overflow or clipped text' };
+    const sections = { Need: 'Redesign the exact Home Spotlight heading hierarchy across the focused section.', 'Product Value': 'Improve the section hierarchy and visual comprehension without changing unrelated homepage areas.', Scope: 'Only the Home Spotlight heading.', 'UI Target': '- Route: `/`\n- Target: `section#home-spotlight`\n- Viewport: `1440x1000`\n- Capture: focused section', 'Out of Scope': 'Hero, navigation, cards, and backend.', 'Acceptance Criteria': '- Exact section is shown before and after\n- No overflow or clipped text' };
     for (const [heading, text] of Object.entries(sections))
         json(bin, ['section', 'set', id, heading, '--text', text, '--root', repo]);
     json(bin, ['product','owner','review',id,'--verdict','build','--summary','The hierarchy adjustment is a focused product-quality improvement for homepage visitors.','--value','Clearer heading hierarchy improves comprehension without adding product complexity.','--root',repo]);
@@ -201,3 +201,32 @@ description: Official Taste Skill ${name}.
     assert.deepEqual(review.presentation.attachments.map(x => x.kind), ['review-cockpit', 'review-bundle', 'frontend-before', 'frontend-proposal', 'ui-design-brief', 'ui-proposal-review']);
 });
 //# sourceMappingURL=installed-e2e.test.js.map
+test('installed SpecRail Fast completes a micro UI change with one compact governed pass and no CodeGraph/worktree/reviewer/QA chain', () => {
+    const source=process.cwd(),home=mkdtempSync(path.join(tmpdir(),'specrail-fast-e2e-home-')),repo=mkdtempSync(path.join(tmpdir(),'specrail-fast-e2e-repo-'));
+    run('git',['init','-b','main'],{cwd:repo});run('git',['config','user.email','test@example.test'],{cwd:repo});run('git',['config','user.name','Test'],{cwd:repo});
+    mkdirSync(path.join(repo,'src'),{recursive:true});writeFileSync(path.join(repo,'src','button.css'),'#primary { color: blue; }\n');run('git',['add','.'],{cwd:repo});run('git',['commit','-m','seed'],{cwd:repo});
+    run(process.execPath,['scripts/install.mjs'],{cwd:source,env:{...process.env,AI_FLOW_HOME:home}});const bin=path.join(home,'.local','bin','specrail');
+    const env={...process.env,AI_FLOW_CODEGRAPH_COMMAND:path.join(repo,'definitely-missing-codegraph'),SPEC_RAIL_RUNTIME_IDLE_MS:'1000'};
+    const j=(args)=>json(bin,args,{env});
+    const intake=j(['intake','Cambia el color del botón principal a verde','--need','Only change the primary button color to green.','--type','task','--surfaces','frontend','--mode','fast','--root',repo]);const id=intake.task.id;
+    assert.equal(intake.task.workflowMode,'fast');assert.equal(intake.task.fastActive,true);assert.equal(intake.codegraph.action,'fast-mode-on-demand');
+    const sections={Need:'Only change the primary button color to green.',Scope:'Only `src/button.css` and `button#primary` color.', 'UI Target':'- Route: `/`\n- Target: `button#primary`\n- Viewport: `390x844`\n- Capture: focused element','Out of Scope':'Layout, responsive behavior, interactions, backend and data.','Acceptance Criteria':'- At 390x844 `button#primary` uses the requested green color with no clipped or overlapping content.'};
+    for(const [heading,text] of Object.entries(sections))j(['section','set',id,heading,'--text',text,'--root',repo]);
+    j(['scope','set',id,'--allowed-files','src/button.css','--reason','Exact localized color change','--root',repo]);
+    const sealed=j(['phase','complete',id,'--root',repo]);
+    assert.equal(sealed.controlProfile,'micro');assert.equal(sealed.workflowMode,'fast');assert.equal(sealed.fastActive,true);assert.equal(sealed.phase,'builder');assert.equal(sealed.status,'ready');assert.equal(sealed.specApproval,'approved');
+    const next=j(['next',id,'--root',repo]);assert.equal(next.phase,'builder');assert.equal(next.action,'continue');assert.equal(next.userInputRequired,false);assert.equal(next.recommendedSkill,'ai-flow-builder');
+    j(['run',id,'--session','fast-builder','--root',repo]);writeFileSync(path.join(repo,'src','button.css'),'#primary { color: green; }\n');
+    const evidenceDir=path.join(repo,'.ai','evidence',id,'frontend');mkdirSync(evidenceDir,{recursive:true});
+    const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z7h8AAAAASUVORK5CYII=', 'base64'),after=path.join(evidenceDir,'after.png');writeFileSync(after,Buffer.concat([png,Buffer.from([33])]));
+    j(['evidence','add',id,'--kind','frontend-after','--path',after,'--source','browser-capture','--label','Fast final button','--tool','Codex browser','--route','/','--viewport','390x844','--target','button#primary','--capture-scope','focused-element','--url','http://127.0.0.1:4173/','--proves','AC-001','--root',repo]);
+    const audit=path.join(evidenceDir,'after-layout.json');writeFileSync(audit,JSON.stringify({schemaVersion:1,screenshotKind:'frontend-after',route:'/',target:'button#primary',viewport:{width:390,height:844},capture:{scope:'focused-element',targetFound:true,targetVisible:true,targetCoverage:0.5},checks:{horizontalOverflow:false,textClipping:false,overlappingElements:false,unreadableText:false},measurements:[{selector:'button#primary',clientWidth:120,scrollWidth:120,clientHeight:44,scrollHeight:44}]}));
+    j(['evidence','add',id,'--kind','ui-after-validation','--path',audit,'--source','browser-layout-validation','--label','Fast layout audit','--tool','Chrome DevTools','--root',repo]);
+    const completed=j(['phase','complete',id,'--session','fast-builder','--root',repo]);assert.equal(completed.phase,'final-approval');assert.equal(completed.status,'awaiting_final_approval');
+    const readiness=j(['readiness',id,'--root',repo]);for(const gate of ['codegraph','project-context','product-owner-review','target-audience-review','product-owner-final-review','project-learning'])assert.equal(readiness.gates.find(item=>item.id===gate)?.status,'not-applicable');assert.equal(readiness.gates.find(item=>item.id==='acceptance-coverage')?.status,'pass');
+    let review=j(['interaction',id,'--kind','final-approval','--session','fast-review','--root',repo]);assert.equal(review.tool,'host_actions');assert.deepEqual(review.actions.filter(action=>action.blocking).map(action=>action.type),['present-image']);
+    for(const action of review.actions)j(['presentation','record',id,'--gate','final','--session','fast-review','--presentation-digest',review.presentation.presentationContract.presentationDigest,'--action',action.id,'--outcome',action.type==='present-image'?'presented':'offered','--root',repo]);
+    review=j(['interaction',id,'--kind','final-approval','--session','fast-review','--root',repo]);assert.equal(review.tool,'request_user_input');assert.equal(review.questions[0].options[0].label,'Aprobar resultado');
+    const approved=j(['final','approve',id,'--session','fast-review','--root',repo]);assert.equal(approved.status,'done');assert.equal(approved.deliveryStatus,'not_required');assert.equal(readFileSync(path.join(repo,'src','button.css'),'utf8'),'#primary { color: green; }\n');assert.equal(existsSync(path.join(repo,'.ai-flow-worktrees',id)),false);
+    spawnSync(bin,['runtime-stop','--root',repo],{encoding:'utf8',env});
+});

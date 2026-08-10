@@ -174,7 +174,7 @@ test('Guided also routes readiness-only human blockers to the user instead of se
 
 test('Autonomous and Headless never ask the user to choose a mechanical Builder phase boundary', () => {
   const autonomousRoot=root(); initProject(autonomousRoot); readyProjectContext(autonomousRoot);
-  const autonomousTask=createTask(autonomousRoot,{title:'Autonomous boundary',type:'task',surfaces:['backend'],size:'small',risk:'low'});
+  const autonomousTask=createTask(autonomousRoot,{title:'Autonomous update saved record behavior',type:'task',surfaces:['backend'],size:'small',risk:'low'});
   startRefinement(autonomousRoot,autonomousTask.meta.id); readyBackendSpec(autonomousRoot,autonomousTask.meta.id); completePhase(autonomousRoot,autonomousTask.meta.id);
   setAutonomyPolicy(autonomousRoot,'autonomous');
   advanceAutonomy(autonomousRoot,autonomousTask.meta.id);
@@ -190,7 +190,7 @@ test('Autonomous and Headless never ask the user to choose a mechanical Builder 
   assert.equal(next.runtime.boundary.choiceSessionId,'autonomous-builder');
 
   const headlessRoot=root(); initProject(headlessRoot); readyProjectContext(headlessRoot);
-  const headlessTask=createTask(headlessRoot,{title:'Headless boundary',type:'task',surfaces:['backend'],size:'small',risk:'low'});
+  const headlessTask=createTask(headlessRoot,{title:'Headless update saved record behavior',type:'task',surfaces:['backend'],size:'small',risk:'low'});
   startRefinement(headlessRoot,headlessTask.meta.id); readyBackendSpec(headlessRoot,headlessTask.meta.id); completePhase(headlessRoot,headlessTask.meta.id);
   setAutonomyPolicy(headlessRoot,'headless');
   advanceAutonomy(headlessRoot,headlessTask.meta.id);

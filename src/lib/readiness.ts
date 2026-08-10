@@ -18,6 +18,7 @@ import { finalProductOwnerRequired, finalProductOwnerReviewStatus, productOwnerR
 import { autonomyPolicy, type AutonomyPolicy } from './autonomy-policy.js';
 import { activeRevision, revisionPreservesArtifact } from './revisions.js';
 import { hasUserCloseOverride, hasUserWaiver } from './user-overrides.js';
+import { controlProfile, fastModeActive, isLowControl, isMicroControl } from './control-profile.js';
 import type { TaskDocument } from './types.js';
 
 export type ReadinessGateStatus = 'pass' | 'pending' | 'fail' | 'stale' | 'warning' | 'not-applicable';
@@ -40,6 +41,8 @@ export interface ReadinessResult {
   status: string;
   phase: string;
   milestone: ReadinessMilestone;
+  controlProfile: 'micro' | 'light' | 'standard' | 'rigorous';
+  controlReasons: string[];
   ready: boolean;
   score: { value: number; passed: number; applicable: number; explanation: string };
   blockers: ReadinessGate[];
@@ -59,7 +62,7 @@ function milestoneFor(task: TaskDocument): ReadinessMilestone {
   return 'specification';
 }
 function requiredPreApproval(task: TaskDocument): boolean {
-  return Boolean(task.meta.route.design || task.meta.route.architecture || task.meta.route.database || task.meta.surfaces.some(item => ['frontend', 'ui', 'ux'].includes(item)));
+  return !isMicroControl(task) && Boolean(task.meta.route.design || task.meta.route.architecture || task.meta.route.database || task.meta.surfaces.some(item => ['frontend', 'ui', 'ux'].includes(item)));
 }
 function staleEvidence(messages: string[]): boolean { return messages.some(message => /stale|changed|hash|digest|modified|mismatch/i.test(message)); }
 function explicitBlockOwner(reason: string): ReadinessOwner {
@@ -108,13 +111,16 @@ export function taskReadiness(root: string, reference: string, options: Readines
   const scope=scopeGuardStatus(projectRoot,task.meta.id);
   const autonomy=autonomyPolicy(projectRoot);
   const approved = task.meta.spec_approval === 'approved' && Boolean(task.meta.spec_approval_hash);
+  const fastActive=fastModeActive(task);
+  const lowControl=isLowControl(task);
+  const productIntelligenceActive=!lowControl;
   const integrityVersion=Number(task.meta.spec_integrity_version||1),currentGovernanceHash=projectGovernanceHash(projectRoot),governanceValid=!approved||(integrityVersion>=2&&Boolean(task.meta.project_governance_hash)&&task.meta.project_governance_hash===currentGovernanceHash);
   const preMessages = [...pre.missing, ...pre.errors];
   const finalMessages = [...final.missing, ...final.errors];
 
-  gates.push(gate('project-context', 'Project context', projectContext.status === 'ready' ? 'pass' : task.meta.phase === 'product-specifier' ? 'pending' : 'fail', 'agent', projectContext.status === 'ready' ? 'Product, users, architecture and runbook are ready.' : 'Project context is not complete.', 'Complete the project context before finishing refinement.'));
+  gates.push(gate('project-context', 'Project context', fastActive ? 'not-applicable' : projectContext.status === 'ready' ? 'pass' : task.meta.phase === 'product-specifier' ? 'pending' : 'fail', 'agent', fastActive ? 'SpecRail Fast defers repository-wide Product Owner context for this low-risk task.' : projectContext.status === 'ready' ? 'Product, users, architecture and runbook are ready.' : 'Project context is not complete.', fastActive ? null : 'Complete the project context before finishing refinement.'));
   const cgReady = codegraph.status === 'ready' && codegraph.contract?.compatible === true && existsSync(path.join(projectRoot, '.codegraph'));
-  gates.push(gate('codegraph', 'CodeGraph preflight', cgReady ? 'pass' : 'fail', 'system', cgReady ? 'CodeGraph index and CLI contract are ready.' : codegraph.detail || 'CodeGraph preflight has not completed.', 'Run the deterministic CodeGraph preflight and repair the environment if it fails.'));
+  gates.push(gate('codegraph', 'CodeGraph preflight', fastActive ? 'not-applicable' : cgReady ? 'pass' : 'fail', 'system', fastActive ? 'SpecRail Fast defers CodeGraph for this micro/light task; escalation restores the preflight.' : cgReady ? 'CodeGraph index and CLI contract are ready.' : codegraph.detail || 'CodeGraph preflight has not completed.', fastActive ? null : 'Run the deterministic CodeGraph preflight and repair the environment if it fails.'));
   gates.push(gate('open-questions', 'Material questions', task.meta.open_questions === 0 ? 'pass' : 'fail', 'user', task.meta.open_questions === 0 ? 'No material user question is open.' : `${task.meta.open_questions} material question(s) still need an answer.`, 'Answer the outstanding material question(s).'));
   gates.push(gate('dependencies', 'Task dependencies', dependencies.length === 0 ? 'pass' : 'fail', 'system', dependencies.length === 0 ? 'No unfinished dependency.' : `Waiting for ${dependencies.map(item => item.meta.id).join(', ')}.`, 'Complete or explicitly change the blocking dependency relationship.'));
   gates.push(gate('lease', 'Task lease', lease.conflict ? 'fail' : 'pass', lease.conflict ? 'user' : 'system', lease.conflict ? `Another session owns the task lease (${lease.owner || 'unknown session'}).` : 'No conflicting writer session.', lease.conflict ? 'Resolve the competing session before writing to the task.' : null));
@@ -123,7 +129,7 @@ export function taskReadiness(root: string, reference: string, options: Readines
   const contextExceeded = context.files.length > context.policy.maxFiles || context.expansionCount > context.policy.maxAutomaticExpansions;
   gates.push(gate('context-budget', 'Context budget', contextExceeded ? 'fail' : 'pass', contextExceeded ? 'user' : 'system', `${context.files.length}/${context.policy.maxFiles} files and ${context.expansionCount}/${context.policy.maxAutomaticExpansions} automatic expansion(s).`, contextExceeded ? 'Review and explicitly authorize any further context expansion.' : null));
   gates.push(gate('spec-amendments','Specification amendments',amendments.length?'fail':'pass',amendments.length?'user':'system',amendments.length?`${amendments.length} proposed amendment(s) await a user decision.`:'No proposed amendment is waiting for approval.',amendments.length?'Review, approve, or reject each proposed amendment before execution continues.':null));
-  if (productOwnerRequired(projectRoot)) {
+  if (productIntelligenceActive && !fastActive && productOwnerRequired(projectRoot)) {
     if (approved) {
       // The Product Owner opinion is a pre-specification product gate. Its rendered
       // section is part of the approved specification hash, so later durable
@@ -172,7 +178,7 @@ export function taskReadiness(root: string, reference: string, options: Readines
     const status: ReadinessGateStatus = audience.valid || preserved ? 'pass' : audience.stale ? 'stale' : task.meta.phase === 'final-customer' ? 'fail' : 'pending';
     gates.push(gate('target-audience-review', 'Target Audience validation', status, !audience.configurationValid || audience.requiresProductDecision ? 'user' : status === 'pass' ? 'system' : 'agent', preserved ? `Previous Target Audience validation is intentionally preserved for bounded ${revision!.id}; the revision does not invalidate audience/product judgment.` : audience.detail, !audience.configurationValid ? 'Resolve the Target Audience profile configuration before validation can continue.' : audience.requiresProductDecision ? 'Resolve the product trade-off raised by the Target Audience review.' : status === 'pass' ? null : 'Run the configured primary Target Audience profiles against the public result.'));
   } else gates.push(gate('target-audience-review', 'Target Audience validation', needsFinal&&hasUserWaiver(projectRoot,task.meta.id,'target-audience')?'pass':'not-applicable', 'system', needsFinal&&hasUserWaiver(projectRoot,task.meta.id,'target-audience')?'Explicit user governance override waived Target Audience validation for this task.':needsFinal ? 'This task route does not require Target Audience validation.' : 'Target Audience validation becomes applicable during final review.'));
-  if (needsFinal && finalProductOwnerRequired(projectRoot) && !hasUserWaiver(projectRoot,task.meta.id,'final-product-owner')) {
+  if (needsFinal && productIntelligenceActive && finalProductOwnerRequired(projectRoot) && !hasUserWaiver(projectRoot,task.meta.id,'final-product-owner')) {
     const finalOwner = finalProductOwnerReviewStatus(projectRoot, task.meta.id);
     const preserved = Boolean(revision?.status === 'validated' && revisionPreservesArtifact(projectRoot, task.meta.id, 'product-owner') && finalOwner.review);
     const guidedAcknowledgement = autonomy.level === 'guided' && Boolean(finalOwner.review) && finalOwner.integrityValid && !finalOwner.stale && !finalOwner.review?.humanDecision;
@@ -184,7 +190,7 @@ export function taskReadiness(root: string, reference: string, options: Readines
     gates.push(gate('product-owner-final-review', 'Final Product Owner outcome review', status, owner, detail, action));
   } else gates.push(gate('product-owner-final-review', 'Final Product Owner outcome review', needsFinal&&hasUserWaiver(projectRoot,task.meta.id,'final-product-owner')?'pass':'not-applicable', 'system', needsFinal&&hasUserWaiver(projectRoot,task.meta.id,'final-product-owner')?'Explicit user governance override waived the final Product Owner review for this task.':needsFinal ? 'Final Product Owner outcome review is disabled by Product Intelligence policy.' : 'Final Product Owner outcome review becomes applicable during final review.'));
   const learningMissingStatus: ReadinessGateStatus = ['final-approval','delivery'].includes(task.meta.phase) || ['delivery','complete'].includes(milestone) ? 'fail' : 'pending';
-  {const waived=needsFinal&&hasUserWaiver(projectRoot,task.meta.id,'project-learning');gates.push(gate('project-learning', 'Durable project learning', needsFinal ? (waived||task.meta.learning_recorded ? 'pass' : learningMissingStatus) : 'not-applicable', waived?'system':'agent', waived?'Explicit user governance override waived durable project learning for this task.':task.meta.learning_recorded ? 'Durable project learning has been recorded.' : 'Learning is recorded before final approval when the task produced reusable facts.', needsFinal && !waived && !task.meta.learning_recorded ? 'Record durable project learning before final approval.' : null));}
+  {const waived=needsFinal&&hasUserWaiver(projectRoot,task.meta.id,'project-learning');const applicable=needsFinal&&!lowControl&&!fastActive;gates.push(gate('project-learning', 'Durable project learning', !applicable?'not-applicable':(waived||task.meta.learning_recorded?'pass':learningMissingStatus), waived?'system':applicable?'agent':'system', waived?'Explicit user governance override waived durable project learning for this task.':!applicable?'Durable project learning is omitted for proportional micro/light work.':task.meta.learning_recorded?'Durable project learning has been recorded.':'Learning is recorded before final approval when the task produced reusable facts.', applicable&&!waived&&!task.meta.learning_recorded?'Record durable project learning before final approval.':null));}
   const finalApproved = task.meta.final_approval === 'approved';
   gates.push(gate('final-approval', 'Final approval', ['delivery', 'complete'].includes(milestone) ? (finalApproved ? 'pass' : 'pending') : needsFinal ? (finalApproved ? 'pass' : 'pending') : 'not-applicable', autonomy.level==='guided'?'user':'system', finalApproved ? 'The final result is accepted under the recorded approval policy.' : autonomy.level==='guided'?'The final result has not been accepted by the user.':'The final result awaits a mechanically safe autonomy-policy transition.', needsFinal && !finalApproved ? (autonomy.level==='guided'?'Review the final result and explicitly approve it or request changes.':'Advance only when all deterministic final-review blockers are clear.') : null));
   const deliveryApplicable = task.meta.worktree_path !== null || task.meta.delivery_status === 'completed' || milestone === 'delivery';
@@ -219,6 +225,8 @@ export function taskReadiness(root: string, reference: string, options: Readines
     status: task.meta.status,
     phase: task.meta.phase,
     milestone,
+    controlProfile: controlProfile(task),
+    controlReasons: Array.isArray(task.meta.route.control_reasons) ? task.meta.route.control_reasons.map(String) : [],
     ready: blockers.length === 0 && (task.meta.status === 'done' || task.meta.status === 'rejected' || applicable.every(item => item.status === 'pass' || item.status === 'pending')),
     score: { value: scoreValue, passed, applicable: applicable.length, explanation: `${passed}/${applicable.length} applicable deterministic gates currently pass; warnings and non-applicable gates are excluded.` },
     blockers,

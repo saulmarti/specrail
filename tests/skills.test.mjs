@@ -21,6 +21,15 @@ test('global skills are discoverable, concise, and have Codex UI metadata', () =
         assert.match(md, /never[^\n]*(?:option lists|multiple-choice)[^\n]*text/i);
     }
 });
+test('explicit bypass and Fast prefixes are unambiguous at activation', () => {
+    const primary=skill('ai-flow'),managed=readFileSync(path.join(root,'src/lib/managed-installation.ts'),'utf8');
+    for(const text of [primary,managed]){assert.match(text,/Sin SpecRail:/i);assert.match(text,/SpecRail Fast:/i);}
+    assert.match(primary,/bypass SpecRail completely/i);
+    assert.match(primary,/no SpecRail CLI, task, CodeGraph preflight, gate, evidence state, or learning/i);
+    assert.match(primary,/Never infer total bypass/i);
+    assert.match(primary,/--mode fast/i);
+    assert.match(primary,/normal 0\.10 workflow.*resumes/i);
+});
 test('primary skill can be selected from ordinary repository requests without explicit invocation', () => {
     const desc = description(skill('ai-flow')).toLowerCase();
     for (const trigger of ['create', 'change', 'fix', 'redesign', 'implement', 'review', 'continue', 'architecture', 'database', 'frontend', 'backend', 'crea', 'corrige', 'rediseña', 'implementa', 'continúa', 'valida'])
@@ -75,15 +84,14 @@ test('orchestrator explains cross-chat references and deterministic delivery wit
     assert.match(readme, /Fusionar localmente/);
     assert.match(readme, /Confirmar entrega externa/);
 });
-test('CodeGraph maintenance is deterministic and automatic before agent reasoning', () => {
-    const primary = skill('ai-flow'), product = skill('ai-flow-product-specifier'), readme = readFileSync(path.join(root, 'README.md'), 'utf8'), managed = readFileSync(path.join(root, 'src/lib/managed-installation.ts'), 'utf8');
-    for (const text of [primary, readme]) {
-        assert.match(text, /codegraph init.*--index/i);
-        assert.match(text, /codegraph sync/i);
-        assert.match(text, /codegraph index.*--force.*--quiet/i);
-        assert.match(text, /codegraph status/i);
-    }
-    assert.match(primary, /Do not ask the user to initialize or sync it manually/i);
+test('CodeGraph maintenance is deterministic, cached, and never full-reindexes during healthy task routing', () => {
+    const primary = skill('ai-flow'), product = skill('ai-flow-product-specifier'), readme = readFileSync(path.join(root, 'README.md'), 'utf8'), doctor = readFileSync(path.join(root, 'docs/DOCTOR.md'), 'utf8'), managed = readFileSync(path.join(root, 'src/lib/managed-installation.ts'), 'utf8');
+    assert.match(primary, /SpecRail own CodeGraph lifecycle/i);
+    assert.match(primary, /Do not manually run `codegraph init`, `sync`, `status`, or `index`/i);
+    assert.match(primary, /full reindex is an explicit Doctor repair only/i);
+    assert.match(readme, /healthy state inside the TTL launches no CodeGraph subprocesses/i);
+    assert.match(readme, /Full reindex is never an automatic fallback/i);
+    assert.match(doctor, /full rebuild is only attempted during this explicit Doctor recovery/i);
     assert.match(product, /Never ask the user to run init, sync, or index manually/i);
     assert.match(managed, /complete workflow contract/i);
     assert.match(managed, /ai-flow\/SKILL\.md/i);

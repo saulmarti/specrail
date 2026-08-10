@@ -88,14 +88,19 @@ specrail doctor --fix --apply safe
 
 `doctor --fix` never silently installs Node, Git, CodeGraph, plugins, or rewrites an unknown MCP schema. See [`docs/DOCTOR.md`](docs/DOCTOR.md).
 
-SpecRail maintains CodeGraph deterministically before agent reasoning:
+SpecRail owns CodeGraph lifecycle without reindexing on every task:
 
 ```text
-codegraph init PROJECT --index       # first use
-codegraph sync PROJECT               # normal refresh
-codegraph index PROJECT --force --quiet  # recovery
-codegraph status PROJECT             # verified readiness
+codegraph init PROJECT               # first use; current CodeGraph builds the graph in one step
+MCP watcher / catch-up               # normal incremental freshness
+codegraph status PROJECT             # bounded health check after TTL
+codegraph sync PROJECT               # recovery only
+codegraph index PROJECT --force --quiet  # explicit Doctor rebuild only
 ```
+
+The validated CodeGraph CLI contract is cached against the actual binary identity, so unchanged binaries are not re-probed with repeated `--help` processes. A healthy state inside the TTL launches no CodeGraph subprocesses. Full reindex is never an automatic fallback for a normal task. Local timing records are written to `.ai/runtime/codegraph-metrics.jsonl`.
+
+The canonical `specrail` launcher transparently keeps the TypeScript CLI resident behind a repository-local Unix socket. The same TypeScript argv parser executes every normal workflow command, so references and behavior are identical to the direct CLI while repeated Node/module cold starts disappear. Each request carries its invocation CWD plus only the SpecRail-relevant environment keys, so relative paths and session/CodeGraph environment changes retain normal CLI semantics. `next`, `readiness`, and `interaction` remain separate operations and separate contracts. Package bootstrap/update/version commands stay direct; long external work still dominates its own runtime regardless of transport. The resident launcher currently targets macOS/Linux explicitly; package metadata reflects that support boundary instead of silently degrading on Windows.
 
 ## What happens after a request
 
@@ -123,7 +128,29 @@ flowchart LR
     O -->|Approve| P[Merge / external delivery / keep open]
 ```
 
-The workflow adapts by surface, size, and risk. A small copy fix does not receive the same verification burden as a critical migration.
+The workflow adapts by surface, size, risk, and the governed task content. SpecRail records a separate `route.control_profile` so a small copy/color fix does not receive the same verification burden as a critical migration. Classification reads Need, Scope, Acceptance Criteria, and UI Target; a seemingly cosmetic title is escalated when the specification reveals behavior, auth/data, broad layout, or other material risk. See [`docs/CONTROL-PROFILES.md`](docs/CONTROL-PROFILES.md).
+
+| Control profile | Typical path |
+| --- | --- |
+| `micro` | compact spec approval → Builder → real After/layout proof → final approval; no separate Product Owner/Target Audience/durable-learning passes |
+| `light` | focused Before → spec approval → Builder → focused QA → final approval; no separate Product Owner/Target Audience/durable-learning passes |
+| `standard` | normal routed design/review/QA/customer controls |
+| `rigorous` | full independent/risk-selected controls |
+
+A request such as `Change the primary button from blue to green` can therefore avoid Product Owner/Target Audience passes, UX proposal/ImageGen, independent Technical Review, a separate QA agent, Final Customer, and mandatory durable learning while still requiring Scope Guard, the real implemented target, layout validation, AC coverage, and final approval. A shared design token is at least `light`; responsive/layout judgment is `light`; a redesign or behavior change is `standard`; auth/security/data/API/migration/performance/concurrency signals are `rigorous`.
+
+
+### Choose how much SpecRail you want
+
+You normally do not need a mode prefix: the deterministic control profile automatically makes proven `micro`/`light` work cheaper. For an intentionally shorter governed pass, prefix the request with `SpecRail Fast:`. Fast is allowed only while the sealed profile remains `micro`/`light`; material behavior, redesign, auth/security/data/API/migration/performance/concurrency, or broader Acceptance Criteria automatically restore normal governance. Fast keeps Scope Guard, stable ACs/spec integrity, real evidence, Acceptance Coverage, and final approval, while omitting project-wide CodeGraph/Product Owner bootstrap, separate pre-implementation approval, boundary/worktree, UX/ImageGen, independent reviewer/QA/customer passes, and durable learning.
+
+For a one-request total escape hatch, use `Sin SpecRail:` or `No SpecRail:`. That prefix is intercepted before SpecRail: no task, CLI call, CodeGraph preflight, gate, evidence state, or learning is created for that request. It is intentionally different from Fast, which remains governed.
+
+```text
+Cambia el color de este botón a verde.              # automatic micro
+SpecRail Fast: cambia el padding de esta card.      # ultra-light governed
+Sin SpecRail: corrige este typo.                     # total bypass
+```
 
 ## A concrete UI example
 
@@ -139,14 +166,15 @@ SpecRail requires Codex to:
 2. launch the real application;
 3. capture the focused section, not the top of the page;
 4. select the appropriate Taste Skills by their installed frontmatter names;
-5. use Image Gen for the visual proposal when design exploration is warranted;
-6. review the proposal for target mismatch, overflow, clipping, overlap, readability, and design-system consistency;
-7. show the specification, before image, design brief, proposal, and critique in chat;
-8. wait for your approval;
-9. implement in an isolated worktree;
-10. capture the same target in the real application;
-11. measure the final DOM/layout and compare before → proposal → after;
-12. request final approval and delivery.
+5. classify this mobile hierarchy adjustment as `light` when refinement confirms it is a bounded responsive/layout change;
+6. capture a focused real-app Before without manufacturing an ImageGen proposal;
+7. show the specification and required focused evidence, then wait for approval;
+8. implement the bounded change;
+9. capture the same target in the real application;
+10. run focused Before → After DOM/layout validation;
+11. request final approval and delivery.
+
+If refinement instead reveals a material redesign, the profile escalates to `standard` and the full Taste Skill + ImageGen proposal/review path becomes applicable before approval.
 
 Image Gen is valid as a **proposal**. Only the real implemented application is valid as **final evidence**.
 
@@ -386,7 +414,7 @@ specrail boundary estimate TASK-0007 --history-tokens 25000 --turns 6
 
 The estimate is model-independent and uses a transparent UTF-8 chars/4 token heuristic. It measures only raw **prior-phase carryover**, assuming that prefix would otherwise remain in each measured turn. It is not Codex billing telemetry: host compaction/summarization, context-window behavior, prompt caching, and the selected model/provider can make actual token and monetary savings different.
 
-SpecRail uses **phase-boundary handoffs**, not model-routed `spawn_agent`. If Codex later exposes a stable thread API, SpecRail may automate visible thread creation, but model selection remains entirely in the user's Codex selector.
+SpecRail uses **phase-boundary handoffs**, not model-routed `spawn_agent`. For the fresh-chat choice, Codex Desktop's supported `codex://threads/new?prompt=...&path=...` deep link opens a new local chat in the same workspace with `Continue TASK-####` prefilled; the user still sends the prepared prompt. Model selection remains entirely in the user's Codex selector.
 
 ## UI/UX and Taste Skills
 

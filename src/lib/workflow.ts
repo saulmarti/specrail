@@ -30,6 +30,7 @@ import { advanceImplementationGeneration } from './implementation-generation.js'
 import { assertConcurrencyMutationAuthority, assertConcurrencyReservation, concurrencyPlansForTask, releaseConcurrencyTaskReservation } from './concurrency.js';
 import { hasUserWaiver, recordUserOverride, type UserOverrideTarget } from './user-overrides.js';
 import { workflowGate } from './workflow-gates.js';
+import { applyControlProfile, applyFastModeRoute, fastModeActive, fastModeRequested, isLowControl, requiresPhaseBoundary, requiresProductIntelligenceControls } from './control-profile.js';
 import type { JsonValue, TaskDocument, TaskPhase } from './types.js';
 
 function session(options: Record<string, unknown> = {}): string | null {
@@ -114,6 +115,18 @@ function ensureApprovedSpecUnchanged(root:string, task: TaskDocument): string {
   }
   return task.meta.spec_effective_hash||effective;
 }
+function sealFastSpecification(root:string,task:TaskDocument,options:Record<string,unknown>={}):TaskDocument{
+  task=ensureAcceptanceCriteriaIds(ensureStrategySections(ensureQAMissionContent(task)));
+  task.meta.spec_integrity_version=2;task.meta.project_governance_hash=projectGovernanceHash(root);saveTask(task);
+  if(task.meta.route.implementation)sealBlastRadius(root,task.meta.id);
+  task=loadTask(findTask(root,task.meta.id));
+  const lint=validateSpec(task,'approval');const evidence=validateEvidence(root,task.meta.id,'pre-approval');
+  if(!evidence.valid)throw new Error(`Missing required evidence: ${[...evidence.missing,...evidence.errors].join(', ')}`);
+  const missionErrors=validateQAMission(task);if(missionErrors.length)throw new Error(`QA Mission invalid: ${missionErrors.join(', ')}`);
+  task.meta.spec_approval='approved';task.meta.spec_approval_hash=lint.hash;task.meta.spec_effective_hash=effectiveSpecificationHash(root,task.meta.id,lint.hash);task.meta.spec_approved_at=new Date().toISOString();task.meta.qa_mission_hash=qaMissionHash(task);task.meta.phase=nextAfterApproval(root,task);task.meta.status=task.meta.phase==='builder'?'ready':statusForPhase(task.meta.phase);task.meta.waiting_for='none';
+  appendLog(task,'SpecRail Fast sealed the low-risk specification without a separate pre-implementation approval; final user approval remains required.');
+  const saved=saveTask(task);trace(root,saved,'fast-specification-sealed',{controlProfile:String(saved.meta.route.control_profile||'unknown')},options);return saved;
+}
 function executionPhase(phase: TaskPhase): boolean { return ['builder','technical-reviewer','qa-engineer','final-customer'].includes(phase); }
 function ensureConstitutionEvidence(root: string, task: TaskDocument): void {
   if (!listConstitution(root).some(item => item.status === 'active')) return;
@@ -146,7 +159,7 @@ export function startRefinement(root: string, id: string, options: Record<string
   if (productIntelligenceEnabled(root) && getSection(task.body,'Product Owner Review').trim()) invalidateProductOwnerReview(root,id,'Refinement restarted');
   task=loadTask(findTask(root,id));
   task.meta.status='refining'; task.meta.phase='product-specifier'; task.meta.waiting_for='none'; task.meta.spec_approval='pending';
-  task.meta.spec_approval_hash=null; task.meta.spec_effective_hash=null; task.meta.spec_approved_at=null; task.meta.qa_mission_hash=null; task.meta.scope_guard_hash=null; task.meta.scope_baseline_commit=null;
+  task.meta.spec_approval_hash=null; task.meta.spec_effective_hash=null; task.meta.spec_approved_at=null; task.meta.qa_mission_hash=null; task.meta.scope_guard_hash=null; task.meta.scope_baseline_commit=null; task.meta.route.control_profile_provisional=true;
   if(!session(options)) releaseTaskLease(root,task.meta.id,{force:true}); appendLog(task,'Refinement started.'); const saved=saveTask(task); trace(root,saved,'refinement-started',{},options); return saved;
 }
 
@@ -154,19 +167,25 @@ export function completePhase(root: string, id: string, options: Record<string, 
   assertConcurrencyMutationAuthority(root, id, session(options));
   let task=loadTask(findTask(root,id));
   if(task.meta.open_questions>0)throw new Error('Cannot complete phase while there are open questions');
-  if(executionPhase(task.meta.phase)){ensureApprovedSpecUnchanged(root,task);if(task.meta.phase==='builder'||task.meta.phase==='technical-reviewer'||(task.meta.phase==='final-customer'&&targetAudienceRequired(root)))assertPhaseBoundaryEntered(root,task.meta.id,task.meta.phase,session(options));assertTaskLease(root,task.meta.id,{sessionId:session(options)??undefined});}
+  if(executionPhase(task.meta.phase)){ensureApprovedSpecUnchanged(root,task);if((task.meta.phase==='final-customer'&&targetAudienceRequired(root))||requiresPhaseBoundary(task,task.meta.phase))assertPhaseBoundaryEntered(root,task.meta.id,task.meta.phase,session(options));assertTaskLease(root,task.meta.id,{sessionId:session(options)??undefined});}
   const handoff=validateHandoffBudget(root,task);if(!handoff.valid)throw new Error(handoff.errors.join(', '));
   const completedPhase=task.meta.phase;
   switch(task.meta.phase){
     case 'product-specifier':{
-      requireCodeGraphReady(root);if(projectContextStatus(root).status!=='ready')throw new Error('Project Product Owner context must be generated before specification approval');
-      if (productOwnerRequired(root)) {
-        const productReview=productOwnerReviewStatus(root,id);
-        if(!productReview.valid) throw new Error(productReview.detail);
-        if(autonomyPolicy(root).level==='guided'&&productReview.review&&!productReview.review.humanDecision) throw new Error('Guided autonomy requires the user to review and acknowledge the Product Owner opinion before specification work continues');
+      const profileUpdate=applyControlProfile(task,{lock:true});const fastActive=applyFastModeRoute(task);
+      appendLog(task,`Control profile ${profileUpdate.escalated?'escalated':profileUpdate.downgraded?'reduced after refinement':'sealed'}: ${profileUpdate.profile} — ${profileUpdate.reasons.join('; ')}.`);
+      if(fastModeRequested(task)&&!fastActive)appendLog(task,`SpecRail Fast escalated to the standard governed workflow because the sealed control profile is ${profileUpdate.profile}.`);
+      if(!fastActive){
+        requireCodeGraphReady(root);if(projectContextStatus(root).status!=='ready')throw new Error('Project context must be generated before specification approval');
+        if (requiresProductIntelligenceControls(task) && productOwnerRequired(root)) {
+          const productReview=productOwnerReviewStatus(root,id);
+          if(!productReview.valid) throw new Error(productReview.detail);
+          if(autonomyPolicy(root).level==='guided'&&productReview.review&&!productReview.review.humanDecision) throw new Error('Guided autonomy requires the user to review and acknowledge the Product Owner opinion before specification work continues');
+        }
       }
-      task=ensureStrategySections(ensureQAMissionContent(task));
-      validateSpec(task,'product');const next=nextPreApproval(root,task);if(next==='spec-approval')setAwaitingSpec(task);else{task.meta.phase=next;task.meta.status='refining';appendLog(task,`Product specification completed; next phase: ${next}.`);}break;
+      task=ensureStrategySections(ensureQAMissionContent(task));validateSpec(task,'product');
+      if(fastActive){task=sealFastSpecification(root,task,options);break;}
+      const next=nextPreApproval(root,task);if(next==='spec-approval')setAwaitingSpec(task);else{task.meta.phase=next;task.meta.status='refining';appendLog(task,`Product specification completed; next phase: ${next}.`);}break;
     }
     case 'ux-ui-designer':{
       const validation=validateEvidence(root,id,'pre-approval');if(!validation.valid)throw new Error(`Missing required evidence: ${[...validation.missing,...validation.errors].join(', ')}`);
@@ -192,7 +211,7 @@ export function completePhase(root: string, id: string, options: Record<string, 
       const validation=validateEvidence(root,id,'technical-review');if(!validation.valid)throw new Error(`Missing required evidence: ${[...validation.missing,...validation.errors].join(', ')}`);
       const revision=activeRevision(root,task.meta.id);
       task.meta.phase=revision?nextRevisionPhase(root,task.meta.id,'technical-reviewer'):nextAfterTechnicalReview(root,task);
-      task.meta.status=statusForPhase(task.meta.phase);task.meta.waiting_for=task.meta.phase==='final-approval'?(revision?'user':(finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?'none':'user')):'none';appendLog(task,revision?`${revision.id} technical-review artifact refreshed; next required revision phase: ${task.meta.phase}.`:`Technical review completed; next phase: ${task.meta.phase}.`);break;
+      task.meta.status=statusForPhase(task.meta.phase);task.meta.waiting_for=task.meta.phase==='final-approval'?(revision?'user':(requiresProductIntelligenceControls(task)&&finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?'none':'user')):'none';appendLog(task,revision?`${revision.id} technical-review artifact refreshed; next required revision phase: ${task.meta.phase}.`:`Technical review completed; next phase: ${task.meta.phase}.`);break;
     }
     case 'qa-engineer':{
       const revision=activeRevision(root,task.meta.id);
@@ -203,12 +222,12 @@ export function completePhase(root: string, id: string, options: Record<string, 
         task.meta.phase=next;task.meta.status=statusForPhase(next);task.meta.waiting_for=next==='final-approval'?'user':'none';
         appendLog(task,next==='final-approval'?`${revision.id} passed all dependency-selected validation; preserved artifacts remain authoritative and final user review is next.`:`${revision.id} QA artifact refreshed; next dependency-selected phase: ${next}.`);break;
       }
-      task.meta.phase=needsTargetAudience(root,task)?'final-customer':'final-approval';task.meta.status=statusForPhase(task.meta.phase);task.meta.waiting_for=task.meta.phase==='final-approval'?(finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?'none':'user'):'none';appendLog(task,`QA completed; next phase: ${task.meta.phase}.`);break;
+      task.meta.phase=needsTargetAudience(root,task)?'final-customer':'final-approval';task.meta.status=statusForPhase(task.meta.phase);task.meta.waiting_for=task.meta.phase==='final-approval'?(requiresProductIntelligenceControls(task)&&finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?'none':'user'):'none';appendLog(task,`QA completed; next phase: ${task.meta.phase}.`);break;
     }
     case 'final-customer':{
       const validation=validateEvidence(root,id,'final');if(!validation.valid)throw new Error(`Missing required evidence: ${[...validation.missing,...validation.errors].join(', ')}`);
       if (targetAudienceRequired(root)) { const audience=targetAudienceReviewStatus(root,id); if(!audience.valid)throw new Error(audience.detail); }
-      task.meta.phase='final-approval';task.meta.status='awaiting_final_approval';task.meta.waiting_for=finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?'none':'user';appendLog(task,finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?'Target Audience validation completed; final Product Owner outcome review is required before approval.':'Target Audience validation completed; task awaits user approval.');break;
+      task.meta.phase='final-approval';task.meta.status='awaiting_final_approval';task.meta.waiting_for=requiresProductIntelligenceControls(task)&&finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?'none':'user';appendLog(task,requiresProductIntelligenceControls(task)&&finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?'Target Audience validation completed; final Product Owner outcome review is required before approval.':'Target Audience validation completed; task awaits user approval.');break;
     }
     default:throw new Error(`Phase cannot be completed: ${task.meta.phase}`);
   }
@@ -267,7 +286,7 @@ export function startExecution(root:string,id:string,options:Record<string,unkno
   const scope=scopeGuardStatus(root,id);if(scope.applicable&&!scope.valid)throw new Error(`Scope Guard is not ready: ${scope.detail}`);
   const unfinished=unfinishedDependencies(root,task);if(unfinished.length)throw new Error(`Unfinished dependencies: ${unfinished.map(x=>x.meta.id).join(', ')}`);
   if(task.meta.status!=='ready')throw new Error(`Task is not ready for execution: ${task.meta.status}`);
-  if(task.meta.phase==='builder')assertPhaseBoundaryEntered(root,task.meta.id,'builder',session(options));
+  if(requiresPhaseBoundary(task,'builder'))assertPhaseBoundaryEntered(root,task.meta.id,'builder',session(options));
   const executionSession=session(options);acquireTaskLease(root,task.meta.id,{sessionId:executionSession??undefined,ttlMs:typeof options.ttlMs==='number'?options.ttlMs:undefined,phase:task.meta.phase});
   try{assertConcurrencyMutationAuthority(root,task.meta.id,executionSession);}catch(error){releaseTaskLease(root,task.meta.id,{sessionId:executionSession??undefined});throw error;}
   task.meta.status=statusForPhase(task.meta.phase);task.meta.waiting_for='none';appendLog(task,`Execution started at phase ${task.meta.phase}.`);
@@ -281,7 +300,7 @@ export function blockTask(root:string,id:string,reason:string,options:Record<str
 export function resumeTask(root:string,id:string,options:Record<string,unknown>={}){
   const task=loadTask(findTask(root,id));if(task.meta.status!=='blocked')throw new Error('Task is not blocked');if(task.meta.open_questions>0)throw new Error('Cannot resume with open questions');
   const resumePhase=task.meta.resume_phase||'product-specifier';const schedulerOwned=concurrencyPlansForTask(root,task.meta.id).length>0;
-  if(!schedulerOwned&&(resumePhase==='builder'||resumePhase==='technical-reviewer'))assertPhaseBoundaryEntered(root,task.meta.id,resumePhase,session(options));
+  if(!schedulerOwned&&requiresPhaseBoundary(task,resumePhase))assertPhaseBoundaryEntered(root,task.meta.id,resumePhase,session(options));
   task.meta.status=task.meta.resume_status||'refining';task.meta.phase=resumePhase;task.meta.resume_status=null;task.meta.resume_phase=null;task.meta.block_reason=null;task.meta.waiting_for='none';
   if(schedulerOwned){releaseConcurrencyTaskReservation(root,task.meta.id,{force:true});releaseTaskLease(root,task.meta.id,{force:true});if(resumePhase==='builder'||resumePhase==='technical-reviewer')invalidatePhaseBoundary(root,task.meta.id,resumePhase);}
   else if(executionPhase(task.meta.phase))acquireTaskLease(root,task.meta.id,{sessionId:session(options)??undefined,phase:task.meta.phase});
@@ -342,7 +361,7 @@ export function resolveFinalProductOwnerDecision(root:string,id:string,decision:
 
 export function approveFinal(root:string,id:string,note='Accepted by user',options:Record<string,unknown>={}){
   const task=loadTask(findTask(root,id));if(task.meta.status!=='awaiting_final_approval'||task.meta.phase!=='final-approval')throw new Error('Task is not awaiting final approval');
-  if(finalProductOwnerRequired(root)&&!hasUserWaiver(root,id,'final-product-owner')){
+  if(requiresProductIntelligenceControls(task)&&!fastModeActive(task)&&finalProductOwnerRequired(root)&&!hasUserWaiver(root,id,'final-product-owner')){
     const finalOwner=finalProductOwnerReviewStatus(root,id);
     const preservedByRevision=revisionAllowsPreservedFinalProductOwner(root,id)&&Boolean(finalOwner.review);
     if(!finalOwner.valid&&!preservedByRevision)throw new Error(finalOwner.detail);
@@ -352,7 +371,7 @@ export function approveFinal(root:string,id:string,note='Accepted by user',optio
   ensureApprovedSpecUnchanged(root,task);
   if(!hasUserWaiver(root,id,'acceptance-coverage')){const coverage=acceptanceCoverage(root,id);if(!coverage.complete)throw new Error(`Acceptance coverage incomplete: ${coverage.uncovered.join(', ')||coverage.invalidReferences.join(', ')}`);}
   if(!hasUserWaiver(root,id,'scope-guard')){const scope=scopeGuardStatus(root,id);if(scope.applicable&&!scope.valid)throw new Error(`Scope Guard failed: ${scope.detail}`);}
-  if(!hasUserWaiver(root,id,'project-learning')&&!task.meta.learning_recorded)throw new Error('Durable project learning must be recorded before final approval');
+  if(!hasUserWaiver(root,id,'project-learning')&&!task.meta.learning_recorded&&!isLowControl(task)&&!fastModeActive(task))throw new Error('Durable project learning must be recorded before final approval');
   if(!hasUserWaiver(root,id,'final-evidence')){const evidence=validateEvidence(root,id,'final');if(!evidence.valid)throw new Error(`Missing required evidence: ${[...evidence.missing,...evidence.errors].join(', ')}`);}
   const revision=activeRevision(root,id);if(revision){acceptRevision(root,id);task.meta.active_revision_id=null;}
   task.meta.final_approval='approved';task.meta.final_approved_at=new Date().toISOString();

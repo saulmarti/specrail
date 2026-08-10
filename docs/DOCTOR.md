@@ -9,7 +9,7 @@ specrail doctor --fix
 
 The plan separates:
 
-- **safe automatic fixes** — local and reversible changes owned by SpecRail, such as restoring the `specrail` launcher, installed SpecRail skills, the compact Codex activation block, native question UI, or rebuilding the repository-local CodeGraph index;
+- **safe automatic fixes** — local and reversible changes owned by SpecRail, such as restoring the `specrail` launcher, installed SpecRail skills, the compact Codex activation block, native question UI, or repairing repository-local CodeGraph health; a full rebuild is only attempted during this explicit Doctor recovery, never during normal task routing;
 - **manual/external fixes** — Node, Git, installing CodeGraph, or host-specific MCP configuration.
 
 After the native user gate approves safe repairs, the agent may execute:

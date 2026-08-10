@@ -2,8 +2,10 @@
 import path from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { initProject, findProjectRoot, resolveRepositoryRoot, projectContextStatus, completeProjectContext, appendProjectLearning } from './lib/project.js';
 import { createTask, listTasks, findTask, loadTask, saveTask, setSection, patchTask, addDependency, createSubtask, resolveTaskReference } from './lib/task.js';
+import { applyControlProfile, applyFastModeRoute } from './lib/control-profile.js';
 import { addQuestion, answerQuestion, listQuestions } from './lib/questions.js';
 import { addEvidence, listEvidence, validateEvidence, visualEvidenceDigest } from './lib/evidence.js';
 import { startRefinement, completePhase, approveSpecification, requestSpecChanges, rejectTask, startExecution, blockTask, resumeTask, returnTask, approveFinal, rejectFinal, startIncrementalRevision, completeDelivery, approveAmendmentDecision, rejectAmendmentDecision, resolveFinalProductOwnerDecision, resolveTargetAudienceDecision, routeTargetAudienceRevision, waiveWorkflowStep, closeTaskByUserOverride } from './lib/workflow.js';
@@ -55,6 +57,11 @@ const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const PACKAGE_META = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')) as { version?: string };
 const VERSION = PACKAGE_META.version || '0.0.0';
 type Flags = Record<string, any>;
+export interface CliIo { stdout?: (text:string)=>void; stderr?: (text:string)=>void; }
+const CLI_IO = new AsyncLocalStorage<Required<CliIo>>();
+function activeIo():Required<CliIo>{return CLI_IO.getStore()??{stdout:(text)=>process.stdout.write(text),stderr:(text)=>process.stderr.write(text)};}
+function writeOut(text:string):void{activeIo().stdout(text.endsWith('\n')?text:`${text}\n`);}
+function writeErr(text:string):void{activeIo().stderr(text.endsWith('\n')?text:`${text}\n`);}
 function parse(argv: string[]): { positional: string[]; flags: Flags } { const positional: string[] = []; const flags: Flags = {}; for (let i = 0; i < argv.length; i++) {
     const v = argv[i]!;
     if (v.startsWith('--')) {
@@ -71,11 +78,11 @@ function parse(argv: string[]): { positional: string[]; flags: Flags } { const p
         positional.push(v);
 } return { positional, flags }; }
 function output(value: unknown, json = false) { if (json)
-    console.log(JSON.stringify(value, null, 2));
+    writeOut(JSON.stringify(value, null, 2));
 else if (typeof value === 'string')
-    console.log(value);
+    writeOut(value);
 else
-    console.log(JSON.stringify(value, null, 2)); }
+    writeOut(JSON.stringify(value, null, 2)); }
 function requireFlag(flags: Flags, name: string): any { if (flags[name] === undefined)
     throw new Error(`Missing --${name}`); return flags[name]; }
 function surfaces(value: unknown): string[] { return String(value || '').split(',').map((x: any) => x.trim()).filter(Boolean); }
@@ -84,12 +91,14 @@ function jsonValue(value: unknown): any { if (value === undefined) return undefi
 function booleanFlag(value: unknown, defaultValue = true): boolean { if (value === undefined)
     return defaultValue; if (value === true)
     return true; return !['false', '0', 'no', 'off'].includes(String(value).trim().toLowerCase()); }
-function taskSummary(task: any): Record<string, unknown> { return { id: task.meta.id, title: task.meta.title, status: task.meta.status, phase: task.meta.phase, waitingFor: task.meta.waiting_for, openQuestions: task.meta.open_questions, specApproval: task.meta.spec_approval, finalApproval: task.meta.final_approval, deliveryStatus: task.meta.delivery_status || null, path: task.path }; }
+function taskSummary(task: any): Record<string, unknown> { return { id: task.meta.id, title: task.meta.title, status: task.meta.status, phase: task.meta.phase, workflowMode: task.meta.workflow_mode || 'standard', fastActive: task.meta.workflow_mode === 'fast' && ['micro','light'].includes(task.meta.route?.control_profile), controlProfile: task.meta.route?.control_profile || null, controlReasons: task.meta.route?.control_reasons || [], waitingFor: task.meta.waiting_for, openQuestions: task.meta.open_questions, specApproval: task.meta.spec_approval, finalApproval: task.meta.final_approval, deliveryStatus: task.meta.delivery_status || null, path: task.path }; }
 function reference(parts: string[], start = 1): string { return parts.slice(start).join(' ').trim(); }
 function mutationSession(flags: Flags): string | null { return flags.session === undefined ? null : String(flags.session); }
 function assertAgentMutation(root: string, id: string, flags: Flags): void { assertConcurrencyMutationAuthority(root, id, mutationSession(flags)); }
-async function main() {
-    const { positional: p, flags } = parse(process.argv.slice(2));
+export async function runCli(argv: string[], io: CliIo = {}): Promise<void> {
+  const resolved:Required<CliIo>={stdout:io.stdout??((text)=>process.stdout.write(text)),stderr:io.stderr??((text)=>process.stderr.write(text))};
+  await CLI_IO.run(resolved, async()=>{
+    const { positional: p, flags } = parse(argv);
     const arg = (index: number): string => p[index] ?? '';
     const command = arg(0);
     const json = Boolean(flags.json);
@@ -105,12 +114,12 @@ async function main() {
         case 'update': {
             if (flags.beta && flags.latest) throw new Error('Use only one update channel: --beta or --latest');
             const channel: UpdateChannel = flags.beta ? 'beta' : flags.latest ? 'latest' : inferUpdateChannel(VERSION);
-            if (!json) console.log(`Updating SpecRail ${VERSION} from the ${channel} channel...`);
+            if (!json) writeOut(`Updating SpecRail ${VERSION} from the ${channel} channel...`);
             const result = updateSpecRail({ currentVersion: VERSION, channel, dryRun: Boolean(flags['dry-run']) });
             if (json) output(result, true);
-            else if (result.status === 'planned') console.log(`Update plan: ${result.target}; then refresh the managed Codex installation.`);
-            else if (result.changed) console.log(`SpecRail updated ${result.fromVersion} → ${result.toVersion} (${result.channel}); managed Codex assets refreshed.`);
-            else console.log(`SpecRail ${result.toVersion} is current on ${result.channel}; managed Codex assets refreshed.`);
+            else if (result.status === 'planned') writeOut(`Update plan: ${result.target}; then refresh the managed Codex installation.`);
+            else if (result.changed) writeOut(`SpecRail updated ${result.fromVersion} → ${result.toVersion} (${result.channel}); managed Codex assets refreshed.`);
+            else writeOut(`SpecRail ${result.toVersion} is current on ${result.channel}; managed Codex assets refreshed.`);
             break;
         }
         case 'init':
@@ -119,7 +128,7 @@ async function main() {
             break;
         case 'intake': {
             root = rootFrom(flags);
-            const result = intakeTask(root, { title: p.slice(1).join(' ') || requireFlag(flags, 'title'), need: flags.need, type: flags.type || 'task', surfaces: surfaces(flags.surfaces), size: flags.size, risk: flags.risk, executionProfile: flags.profile, projectName: flags['project-name'] });
+            const result = intakeTask(root, { title: p.slice(1).join(' ') || requireFlag(flags, 'title'), need: flags.need, type: flags.type || 'task', surfaces: surfaces(flags.surfaces), size: flags.size, risk: flags.risk, executionProfile: flags.profile, workflowMode: flags.mode === 'fast' ? 'fast' : 'standard', projectName: flags['project-name'] });
             output({ ...result, task: taskSummary(result.task) }, true);
             break;
         }
@@ -240,7 +249,7 @@ async function main() {
         }
         case 'create':
             root = findProjectRoot(rootFrom(flags));
-            output(taskSummary(createTask(root, { title: p.slice(1).join(' ') || requireFlag(flags, 'title'), type: flags.type || 'task', surfaces: surfaces(flags.surfaces), size: flags.size, risk: flags.risk, executionProfile: flags.profile })), json);
+            output(taskSummary(createTask(root, { title: p.slice(1).join(' ') || requireFlag(flags, 'title'), type: flags.type || 'task', surfaces: surfaces(flags.surfaces), size: flags.size, risk: flags.risk, executionProfile: flags.profile, workflowMode: flags.mode === 'fast' ? 'fast' : 'standard' })), json);
             break;
         case 'list':
             root = findProjectRoot(rootFrom(flags));
@@ -297,6 +306,7 @@ async function main() {
             const task = loadTask(findTask(root, arg(2)));
             const content = flags.file ? readFileSync(path.resolve(flags.file), 'utf8') : requireFlag(flags, 'text');
             task.body = setSection(task.body, arg(3), content);
+            if(task.meta.phase==='product-specifier'&&task.meta.spec_approval!=='approved'){applyControlProfile(task,{lock:false});applyFastModeRoute(task);}
             output(taskSummary(saveTask(task)), true);
             break;
         }
@@ -719,7 +729,7 @@ async function main() {
                 } else output(doctorFixPlan(root, process.env.AI_FLOW_HOME ? path.resolve(process.env.AI_FLOW_HOME) : undefined, PACKAGE_ROOT), true);
             } else output(doctor(root, process.env.AI_FLOW_HOME ? path.resolve(process.env.AI_FLOW_HOME) : undefined), true);
             break;
-        default: console.log(`specrail commands:\n  init, preflight, intake, autonomy status|set|advance, concurrency plan|status|next|prepare|heartbeat|release|cancel, product intelligence status|enable|disable, product owner status|review|reset|decide, product owner final status|review|reset|decide, audience profiles|status|review|reset|route|decide, project status|complete|learn, create, list, resolve, status, readiness, why-blocked, next, interaction, patch, refine\n  section set, question add|answer|list, phase complete\n  spec approve|changes|reject|lint, run, block, resume, return
+        default: writeOut(`specrail commands:\n  init, preflight, intake, autonomy status|set|advance, concurrency plan|status|next|prepare|heartbeat|release|cancel, product intelligence status|enable|disable, product owner status|review|reset|decide, product owner final status|review|reset|decide, audience profiles|status|review|reset|route|decide, project status|complete|learn, create, list, resolve, status, readiness, why-blocked, next, interaction, patch, refine\n  section set, question add|answer|list, phase complete\n  spec approve|changes|reject|lint, run, block, resume, return
   lease status|acquire|take|release, boundary status|choose|enter|estimate|reset TASK, context status|request, review bundle|cockpit, cockpit TASK\n  evidence add|list|validate, acceptance coverage, scope set|status, revision start|status|list, override waive|close|list, amendment propose|list|approve|reject, dependency add, subtask create\n  worktree create|checkpoint|remove, final approve|reject, delivery merge|external|keep
   capability visualize status|record [--skill visualize], capability host status|record|reset, visualization status|record|validate-plan
   presentation status|record TASK --gate spec-approval|final-approval --session ID
@@ -730,5 +740,9 @@ async function main() {
   plugin validate, doctor [--fix [--apply safe]]
   install, update [--beta|--latest] [--dry-run]`);
     }
+  });
 }
-main().catch((error: any) => { console.error(`specrail: ${error.message}`); process.exitCode = 1; });
+
+async function directMain():Promise<void>{try{await runCli(process.argv.slice(2));}catch(error){writeErr(`specrail: ${error instanceof Error?error.message:String(error)}`);process.exitCode=1;}}
+const invokedPath=process.argv[1]?path.resolve(process.argv[1]):'';
+if(invokedPath===path.resolve(fileURLToPath(import.meta.url))) void directMain();

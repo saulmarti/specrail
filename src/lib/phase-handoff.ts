@@ -7,7 +7,9 @@ import { loadProjectConfig } from './project.js';
 import { scopeGuardStatus } from './scope-guard.js';
 import { findTask, getSection, loadTask } from './task.js';
 import { loadPhaseBoundary, phaseBoundaryStatus } from './phase-boundary.js';
+import { codexFreshChatUrl } from './codex-deeplink.js';
 import { targetAudienceRequired } from './product-intelligence.js';
+import { isMicroControl, requiresPhaseBoundary } from './control-profile.js';
 import { contextProfileForTask, runtimeRoleForPhase } from './phase-role.js';
 import { activeRevision } from './revisions.js';
 import type { RuntimeRecommendation, TaskDocument } from './types.js';
@@ -192,7 +194,7 @@ export function writeRuntimeHandoff(root: string, id: string, role: HandoffRole 
       `2. Inspect the listed context seeds and allowed files first; do not proactively search generic Kanban, memory, process, or task-instruction files unless they are listed here or a concrete implementation need requires them. Expand through CodeGraph only with a concrete implementation reason.\n` +
       `3. Implement the smallest coherent change that satisfies every effective AC without touching protected scope.\n` +
       `4. Run the required build/tests and the immutable QA Mission.\n` +
-      `${task.meta.surfaces.includes('frontend') ? `5. Run frontend work through its HTTP dev/preview server, capture AFTER evidence from that served URL, and compare Before / Proposal / After through the governed visual flow. Never validate raw index.html or file://.\n6. Record implementation evidence and return the task to independent Technical Review; do not self-approve.\n\n` : `5. Record implementation evidence and return the task to independent Technical Review; do not self-approve.\n\n`}` +
+      `${task.meta.surfaces.includes('frontend') ? (isMicroControl(task) ? `5. Run the changed frontend through its HTTP dev/preview server, capture focused AFTER evidence from that served URL, and record matching layout validation. A micro change does not require Before/Proposal/ImageGen. Never validate raw index.html or file://.\n6. Record implementation evidence and stop at Final Approval; do not self-approve.\n\n` : `5. Run frontend work through its HTTP dev/preview server, capture AFTER evidence from that served URL, and compare the evidence required by the governed control profile. Never validate raw index.html or file://.\n6. Record implementation evidence and ${task.meta.route.technical_review!=='none'?'return the task to independent Technical Review':'continue only through the routed validation phases'}; do not self-approve.\n\n`) : `5. Record implementation evidence and ${task.meta.route.technical_review!=='none'?'return the task to independent Technical Review':'continue only through the routed validation phases'}; do not self-approve.\n\n`}` +
       `## Need\n\n${bounded(sections.need, 120)}\n\n` +
       `## Product value / users\n\n${bounded(`${sections.productValue}\n\n${sections.users}`, 120)}\n\n` +
       `## Scope\n\n${bounded(sections.scope, 180)}\n\n` +
@@ -209,7 +211,7 @@ export function writeRuntimeHandoff(root: string, id: string, role: HandoffRole 
       `${'expectedSymbols' in scope && Array.isArray(scope.expectedSymbols) && scope.expectedSymbols.length ? `- Expected symbols: ${boundedList(scope.expectedSymbols)}\n` : ''}\n` +
       `## Progressive context seeds\n\n- Files already justified: ${source.contextFiles.slice(0, 16).map(x => `\`${x}\``).join(', ') || 'none'}\n- Symbols already justified: ${source.contextSymbols.slice(0, 24).map(x => `\`${x}\``).join(', ') || 'none'}\n- Expand through progressive CodeGraph reads only when implementation requires it; do not scan the repository wholesale.\n\n` +
       `## Definition of done\n\n` +
-      `- Every effective Acceptance Criterion is implemented.\n- No protected file or unapproved scope is changed.\n- Required build/tests and QA Mission have been executed with real evidence.\n- Required frontend/architecture/database visual evidence is recorded from a valid runtime/rendered artifact.\n- No unresolved blocker or material decision is hidden in the implementation.\n- Builder stops at Technical Review; independent review remains independent.\n\n` +
+      `- Every effective Acceptance Criterion is implemented.\n- No protected file or unapproved scope is changed.\n- Required build/tests and QA Mission have been executed with real evidence.\n- Required frontend/architecture/database visual evidence is recorded from a valid runtime/rendered artifact.\n- No unresolved blocker or material decision is hidden in the implementation.\n- Builder stops at the next routed gate; when Technical Review is disabled by a governed control profile, it must not invent an extra reviewer phase.\n\n` +
       `## Stop and escalate\n\n` +
       `STOP instead of guessing when: an AC conflicts with another governed artifact; the approved proposal cannot be implemented inside Scope Guard; a protected file must change; a contract would become breaking/unknown; a material architecture/security/migration decision appears; or required evidence cannot be produced. Record the blocked AC and the minimum decision required.\n\n` +
       `## Existing handoff notes\n\n${bounded(sections.handoff, 120) || '_None._'}\n`
@@ -261,7 +263,7 @@ export function runtimeRecommendation(root: string, id: string, options: { sessi
         ? writeRuntimeHandoff(root, id, 'target-audience')
         : null;
   const handoffText = handoff ? readFileSync(handoff.path, 'utf8') : '';
-  const boundaryPhase = task.meta.phase === 'builder' || task.meta.phase === 'technical-reviewer' || (task.meta.phase === 'final-customer' && role === 'target-audience');
+  const boundaryPhase = (task.meta.phase === 'final-customer' && role === 'target-audience') || requiresPhaseBoundary(task,task.meta.phase);
   const existingBoundary = boundaryPhase ? loadPhaseBoundary(root, id, task.meta.phase) : null;
   const boundary = handoff && boundaryPhase
     ? phaseBoundaryStatus(root, id, { sessionId: options.sessionId ?? null, originSessionId: task.meta.phase === 'final-customer' ? String(task.meta.target_audience_origin_session_id || '') || null : null, handoffDigest: handoff.sourceDigest, handoffContentDigest: handoff.contentDigest, handoffWords: handoff.words })
@@ -286,12 +288,13 @@ export function runtimeRecommendation(root: string, id: string, options: { sessi
           : role === 'implementer'
             ? `Planning is sealed for ${task.meta.id}. End this turn before coding. Next turn you may continue in this chat or open a fresh Codex chat; SpecRail does not choose or store a model; the Codex selector remains authoritative. ${boundary?.recommendation === 'fresh-chat-recommended' ? 'A fresh chat is recommended because it removes the planning conversation from implementation context and lets a less-capable implementer start from the compiled capsule.' : 'This is a small low-risk task, so continuing in the same chat is reasonable; a fresh chat remains available for stronger isolation.'}`
             : `Implementation is sealed for ${task.meta.id}. End this turn before independent review. Next turn you may continue in this chat or open a fresh Codex chat. ${boundary?.recommendation === 'fresh-chat-recommended' ? 'A fresh chat is recommended to remove builder assumptions from reviewer context.' : 'For this small low-risk change, same-chat review is acceptable after entering the review boundary.'}`,
-        resumePrompt: `Continue ${task.meta.id}`
+        resumePrompt: `Continue ${task.meta.id}`,
+        freshChatUrl: codexFreshChatUrl(root,task.meta.id)
       }
     : null;
   return {
     role,
-    strategy: 'phase-boundary-handoff',
+    strategy: boundaryPhase ? 'phase-boundary-handoff' : role==='implementer' ? 'direct-capsule-handoff' : 'phase-boundary-handoff',
     contextProfile,
     freshSessionRecommended,
     stopBeforePhaseWork,
@@ -329,7 +332,9 @@ export function runtimeRecommendation(root: string, id: string, options: { sessi
         ? `STOP before doing Target Audience evaluation in this turn. Show the transition notice once and end the turn. Open a fresh session; same-session entry is forbidden. Enter the phase boundary there, then treat ${handoff.relativePath} as the compiled phase contract. Previous conversational reasoning is non-authoritative. Do not read the full canonical task, source code, diff, architecture internals, private implementation/review handoffs, or QA conclusions; evaluate only user-visible behavior and the audience packet.`
         : boundary?.status==='chosen'
           ? `The native phase-boundary choice is already persisted as ${boundary.choice}. Do not ask it again. Before reading generic repository process files or doing ${role === 'implementer' ? 'implementation' : 'independent review'} work, enter the phase boundary in this Codex session, then treat ${handoff.relativePath} as the compiled phase contract. Previous conversational reasoning is non-authoritative. Do not replay the previous chat and do not reread generic Kanban/memory/process files unless the capsule names them, a concrete conflict requires source verification, or a specific missing implementation detail requires them.`
-          : `STOP before doing ${role === 'implementer' ? 'implementation' : 'independent review'} work in this turn. Show the transition notice once, persist the exact native boundary choice, and end the turn. On the next user turn or in the selected fresh chat, enter the phase boundary first. Then treat ${handoff.relativePath} as the compiled phase contract. Previous conversational reasoning is non-authoritative. Do not replay the previous chat and do not reread generic Kanban/memory/process files unless the capsule names them, a concrete conflict requires source verification, or a specific missing implementation detail requires them.`
-      : null
+          : `STOP before doing ${role === 'implementer' ? 'implementation' : 'independent review'} work in this turn. Show the transition notice once, persist the exact native boundary choice, and end the turn. If the user chooses a fresh chat, open transitionNotice.freshChatUrl so Codex creates a new local chat in this workspace with the deterministic resume prompt prefilled; the user still sends it. On the next user turn or in the selected fresh chat, enter the phase boundary first. Then treat ${handoff.relativePath} as the compiled phase contract. Previous conversational reasoning is non-authoritative. Do not replay the previous chat and do not reread generic Kanban/memory/process files unless the capsule names them, a concrete conflict requires source verification, or a specific missing implementation detail requires them.`
+      : handoff && role==='implementer' && !boundaryPhase
+        ? `This ${String(task.meta.route.control_profile||'low-cost')} task does not require a blocking model/context boundary. Treat ${handoff.relativePath} as the compiled implementation contract and continue directly in the current approved turn; do not invent a boundary selector or an extra Continue turn.`
+        : null
   };
 }

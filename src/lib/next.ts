@@ -16,6 +16,7 @@ import { autonomyPolicy } from './autonomy-policy.js';
 import { concurrencyRecommendation, concurrencyTaskAuthorityStatus } from './concurrency.js';
 import { activeRevision, revisionPreservesArtifact } from './revisions.js';
 import { hasUserWaiver } from './user-overrides.js';
+import { fastModeActive, requiresProductIntelligenceControls } from './control-profile.js';
 
 const SKILL:Partial<Record<TaskPhase,string>>={'product-specifier':'ai-flow-product-specifier','ux-ui-designer':'ai-flow-ux-ui-designer','technical-architecture':'ai-flow-technical-reviewer','builder':'ai-flow-builder','technical-reviewer':'ai-flow-technical-reviewer','qa-engineer':'ai-flow-qa-engineer'};
 function skillForPhase(root:string,phase:TaskPhase):string|null{if(phase==='final-customer')return targetAudienceRequired(root)?'ai-flow-target-audience':'ai-flow-final-customer';return SKILL[phase]||null;}
@@ -31,22 +32,25 @@ export function nextAction(root:string,id:string,options:NextOptions={}){
  const lease=leaseStatus(root,task.meta.id,options.sessionId ?? undefined);
  const amendments=pendingAmendments(root,task.meta.id);
  const policy=autonomyPolicy(root);
+ const fastActive=fastModeActive(task);
+ const productIntelligenceActive=requiresProductIntelligenceControls(task);
  let actor=skillForPhase(root,task.meta.phase)||'user';
  let action='continue';
  let interaction:InteractionResult|null=null;
  if(task.meta.status==='done'){actor='system';action='task-complete';}
  if(task.meta.status==='rejected'){actor='system';action='task-rejected';}
  const productContext=productIntelligenceContextStatus(root);
- const productOwner=productOwnerReviewStatus(root,task.meta.id);
- if(task.meta.phase==='product-specifier'){
-  if(productOwnerRequired(root)&&!productContext.ready){actor='ai-flow-product-owner';action='bootstrap-product-intelligence-context';}
-  else if(productOwnerRequired(root)){
-   const guidedAcknowledgement=policy.level==='guided'&&Boolean(productOwner.review)&&productOwner.integrityValid&&!productOwner.stale&&!productOwner.review?.humanDecision;
-   if(productOwner.stale){actor='ai-flow-product-owner';action='refresh-product-owner-review';}
-   else if(productOwner.needsHumanJudgment){actor='user';action='resolve-product-owner-recommendation';interaction=interactionForTask(root,id,'product-owner-decision',{sessionId:options.sessionId});}
+ const productOwner=productIntelligenceActive?productOwnerReviewStatus(root,task.meta.id):null;
+ if(task.meta.phase==='product-specifier'&&!fastActive){
+  if(productIntelligenceActive&&productOwnerRequired(root)&&!productContext.ready){actor='ai-flow-product-owner';action='bootstrap-product-intelligence-context';}
+  else if(productIntelligenceActive&&productOwnerRequired(root)){
+   const owner=productOwner??productOwnerReviewStatus(root,task.meta.id);
+   const guidedAcknowledgement=policy.level==='guided'&&Boolean(owner.review)&&owner.integrityValid&&!owner.stale&&!owner.review?.humanDecision;
+   if(owner.stale){actor='ai-flow-product-owner';action='refresh-product-owner-review';}
+   else if(owner.needsHumanJudgment){actor='user';action='resolve-product-owner-recommendation';interaction=interactionForTask(root,id,'product-owner-decision',{sessionId:options.sessionId});}
    else if(guidedAcknowledgement){actor='user';action='review-product-owner-opinion';interaction=interactionForTask(root,id,'product-owner-decision',{sessionId:options.sessionId});}
    else if(projectContext.status!=='ready'){actor='ai-flow-product-specifier';action='bootstrap-project-and-refine';}
-   else if(!productOwner.valid){actor='ai-flow-product-owner';action='product-owner-review';}
+   else if(!owner.valid){actor='ai-flow-product-owner';action='product-owner-review';}
   }
   else if(projectContext.status!=='ready'){actor='ai-flow-product-specifier';action='bootstrap-project-and-refine';}
  }
@@ -60,7 +64,7 @@ export function nextAction(root:string,id:string,options:NextOptions={}){
  }
  if((task.meta.open_questions>0||task.meta.waiting_for==='user')&&action==='continue'){actor='user';action='wait-for-user';interaction=interactionForTask(root,id,'current',{sessionId:options.sessionId});}
  if(task.meta.phase==='spec-approval'){actor='user';action='approve-or-refine-specification';interaction=interactionForTask(root,id,'spec-approval',{sessionId:options.sessionId});}
- const finalProductOwner=task.meta.phase==='final-approval'&&finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?finalProductOwnerReviewStatus(root,task.meta.id):null;
+ const finalProductOwner=task.meta.phase==='final-approval'&&productIntelligenceActive&&finalProductOwnerRequired(root)&&!hasUserWaiver(root,task.meta.id,'final-product-owner')?finalProductOwnerReviewStatus(root,task.meta.id):null;
  if(task.meta.phase==='final-approval'){
   if(finalProductOwner){
    const guidedAcknowledgement=policy.level==='guided'&&Boolean(finalProductOwner.review)&&finalProductOwner.integrityValid&&!finalProductOwner.stale&&!finalProductOwner.review?.humanDecision;
@@ -134,5 +138,5 @@ export function nextAction(root:string,id:string,options:NextOptions={}){
  const userInputRequired=interaction?.tool==='request_user_input';
  const visualization=workflowVisualization(root,loadProjectConfig(root),task,{dependencies:deps,evidence,context:contextInfo,action,actor},options.sessionId ?? undefined);
  const recommendedSkill=['prepare-concurrency-wave','prepare-concurrency-lane','use-concurrency-session'].includes(action)?'ai-flow-multi-agent':['resolve-product-owner-recommendation','review-product-owner-opinion','resolve-final-product-owner-recommendation','review-final-product-owner-opinion'].includes(action)?'ai-flow-product-owner':actor.startsWith('ai-flow-')?actor:skillForPhase(root,task.meta.phase);
- return{task:task.meta.id,status:task.meta.status,projectContext:projectContext.status,phase:task.meta.phase,autonomy:{...policy,...autonomyDecision},productIntelligence:{context:productContext,productOwner,finalProductOwner,audience},concurrency,concurrencyAuthority,readiness,actor,recommendedSkill,action,userInputRequired,dependencies:deps,interaction,evalCandidates,activeEvals:activeEvals.map(item=>({id:item.id,category:item.category,statement:item.statement,path:item.path})),lease,context:contextInfo,evidence,runtime,visualization};
+ return{task:task.meta.id,status:task.meta.status,projectContext:projectContext.status,phase:task.meta.phase,workflowMode:task.meta.workflow_mode||'standard',fastActive,controlProfile:task.meta.route.control_profile||null,controlReasons:Array.isArray(task.meta.route.control_reasons)?task.meta.route.control_reasons:[],autonomy:{...policy,...autonomyDecision},productIntelligence:{context:productContext,productOwner,finalProductOwner,audience},concurrency,concurrencyAuthority,readiness,actor,recommendedSkill,action,userInputRequired,dependencies:deps,interaction,evalCandidates,activeEvals:activeEvals.map(item=>({id:item.id,category:item.category,statement:item.statement,path:item.path})),lease,context:contextInfo,evidence,runtime,visualization};
 }

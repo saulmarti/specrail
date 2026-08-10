@@ -24,25 +24,31 @@ test('missing project index is initialized and indexed deterministically', () =>
     assert.deepEqual(calls.filter(x => x[1] === '--help').map(x => x[0]), ['init','sync','index','status']);
     assert.equal(codeGraphStatus(root).status, 'ready');
 });
-test('existing project index is incrementally synced before agents use it', () => {
+test('existing healthy project index is health-checked without redundant sync', () => {
     const root = repo();
     mkdirSync(path.join(root, '.codegraph'), { recursive: true });
     const fake = createFakeCodeGraph();
     const result = prepareCodeGraph(root, { command: fake.command, minIntervalMs: 0 });
     assert.equal(result.ok, true);
-    assert.equal(result.action, 'synced');
-    assert.ok(existsSync(path.join(root, '.codegraph', 'synced')));
-    assert.deepEqual(fake.calls().filter(x => x[1] !== '--help').map(x => x[0]), ['--version', 'sync', 'status']);
+    assert.equal(result.action, 'health-checked');
+    assert.equal(existsSync(path.join(root, '.codegraph', 'synced')), false);
+    assert.deepEqual(fake.calls().filter(x => x[1] !== '--help').map(x => x[0]), ['--version', 'status']);
 });
-test('failed sync falls back to a deterministic full index', () => {
+
+test('ready CodeGraph state within health TTL performs zero subprocesses',()=>{
+    const root=repo(),fake=createFakeCodeGraph();mkdirSync(path.join(root,'.codegraph'),{recursive:true});
+    const first=prepareCodeGraph(root,{command:fake.command,minIntervalMs:0});assert.equal(first.ok,true);const count=fake.calls().length;
+    const cached=prepareCodeGraph(root,{command:fake.command,minIntervalMs:300000});assert.equal(cached.action,'cached');assert.equal(fake.calls().length,count);
+});
+test('failed incremental recovery never triggers an automatic full index', () => {
     const root = repo();
     mkdirSync(path.join(root, '.codegraph'), { recursive: true });
-    const fake = createFakeCodeGraph({ failSync: true });
+    const fake = createFakeCodeGraph({ failSync: true, pendingSync: true });
     const result = prepareCodeGraph(root, { command: fake.command, minIntervalMs: 0 });
-    assert.equal(result.ok, true);
-    assert.equal(result.action, 'reindexed');
-    assert.ok(existsSync(path.join(root, '.codegraph', 'reindexed')));
-    assert.deepEqual(fake.calls().filter(x => x[1] !== '--help').map(x => x[0]), ['--version', 'sync', 'index', 'status']);
+    assert.equal(result.ok, false);
+    assert.equal(result.action, 'codegraph-full-reindex-required');
+    assert.equal(existsSync(path.join(root, '.codegraph', 'reindexed')), false);
+    assert.deepEqual(fake.calls().filter(x => x[1] !== '--help').map(x => x[0]), ['--version', 'status', 'sync']);
 });
 test('missing CodeGraph command blocks the natural task before Product Owner refinement', () => {
     const root = mkdtempSync(path.join(tmpdir(), 'ai-flow-no-codegraph-'));
