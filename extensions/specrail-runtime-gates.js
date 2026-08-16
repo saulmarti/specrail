@@ -1,18 +1,12 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { Type } from 'typebox';
 
-const STATE_TYPE = 'specrail-runtime-state-v3';
-const STATE_VERSION = 3;
-const PONYTAIL_UPSTREAM = 'DietrichGebert/ponytail';
-const PONYTAIL_COMMIT = '2ed6c52c9d7e5e56942508591085fd45dea277d3';
-const PACKAGE_ROOT = fileURLToPath(new URL('..', import.meta.url));
-const PONYTAIL_ROOT = path.join(PACKAGE_ROOT, 'vendor', 'ponytail');
-const PONYTAIL_MANIFEST = path.join(PONYTAIL_ROOT, 'UPSTREAM.json');
-const PONYTAIL_SKILL = path.join(PONYTAIL_ROOT, 'skills', 'ponytail', 'SKILL.md');
-const PONYTAIL_REVIEW_SKILL = path.join(PONYTAIL_ROOT, 'skills', 'ponytail-review', 'SKILL.md');
+const STATE_TYPE = 'specrail-runtime-state-v4';
+const STATE_VERSION = 4;
+const PONYTAIL_PROVIDER = '@dietrichgebert/ponytail';
+const PONYTAIL_MODE_TYPE = 'ponytail-mode';
 const ALLOWED_DECISION_SOURCES = new Set(['active_user', 'approved_decision', 'repository_contract', 'established_pattern', 'tool_fact']);
 const MUTATION_TOOL_NAMES = new Set(['write', 'edit', 'write_file', 'edit_file', 'create_file', 'delete_file', 'apply_patch', 'patch']);
 const TRUSTED_TOOL_EVIDENCE = new Map([
@@ -42,7 +36,7 @@ const READ_ONLY_COMMANDS = [
 ];
 const PRECEDENCE_NOTICE = [
   'SpecRail precedence: explicit user requirements; security/privacy/data-loss/accessibility; approved SpecRail decisions and scope; acceptance/evidence requirements; repository conventions; then Ponytail minimalism.',
-  'Ponytail never authorizes guessing a material requirement. If a material decision lacks deterministic provenance, stop and ask the user with structured choices plus free text.'
+  'Ponytail never authorizes guessing a material requirement. If a material decision lacks deterministic provenance, stop and ask with structured choices plus free text.',
 ].join(' ');
 
 function emptyState(sessionId = null) {
@@ -52,11 +46,12 @@ function emptyState(sessionId = null) {
     route: null,
     routeSource: null,
     workflowMode: null,
-    ponytailLoaded: false,
+    ponytailAttested: false,
+    ponytailMode: null,
     materialDecisionsCleared: false,
     mutationAuthorized: false,
     mutated: false,
-    ponytailReviewLoaded: false,
+    ponytailReviewStarted: false,
     ponytailReviewPassed: false,
     ponytailReviewSummary: '',
     ponytailReviewFingerprint: null,
@@ -68,6 +63,15 @@ function emptyState(sessionId = null) {
     enforcementFollowUps: 0,
     updatedAt: new Date().toISOString(),
   };
+}
+
+function entriesFor(ctx) {
+  const branch = typeof ctx?.sessionManager?.getBranch === 'function'
+    ? ctx.sessionManager.getBranch()
+    : typeof ctx?.sessionManager?.getEntries === 'function'
+      ? ctx.sessionManager.getEntries()
+      : [];
+  return Array.isArray(branch) ? branch : [];
 }
 
 function hostSessionId(ctx) {
@@ -89,17 +93,27 @@ function cloneState(value, expectedSessionId) {
 
 function restoreState(ctx, expectedSessionId) {
   if (!expectedSessionId) return emptyState(null);
-  const branch = typeof ctx?.sessionManager?.getBranch === 'function'
-    ? ctx.sessionManager.getBranch()
-    : typeof ctx?.sessionManager?.getEntries === 'function'
-      ? ctx.sessionManager.getEntries()
-      : [];
   let restored = null;
-  for (const entry of Array.isArray(branch) ? branch : []) {
+  for (const entry of entriesFor(ctx)) {
     const data = stateEntryData(entry);
     if (data) restored = cloneState(data, expectedSessionId) || restored;
   }
   return restored || emptyState(expectedSessionId);
+}
+
+function ponytailModeFromEntries(entries) {
+  for (let i = (Array.isArray(entries) ? entries.length : 0) - 1; i >= 0; i -= 1) {
+    const entry = entries[i];
+    if (entry?.type !== 'custom' || entry?.customType !== PONYTAIL_MODE_TYPE) continue;
+    const mode = String(entry?.data?.mode || '').trim().toLowerCase();
+    return ['off', 'lite', 'full', 'ultra'].includes(mode) ? mode : null;
+  }
+  return null;
+}
+
+function qualifyingPonytailMode(ctx) {
+  const mode = ponytailModeFromEntries(entriesFor(ctx));
+  return mode === 'full' || mode === 'ultra' ? mode : null;
 }
 
 function explicitRoute(prompt) {
@@ -143,23 +157,6 @@ function decisionBlockers(decisions, evidence = {}) {
     else if (!trusted || trusted.source !== source || trusted.ref !== ref) blockers.push(`${id}: untrusted or mismatched evidence`);
   }
   return blockers;
-}
-
-function gitBlobSha(bytes) {
-  return createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
-}
-
-function verifyPinnedPonytail(file, relativePath) {
-  const manifest = JSON.parse(readFileSync(PONYTAIL_MANIFEST, 'utf8'));
-  if (manifest.repository !== PONYTAIL_UPSTREAM || manifest.commit !== PONYTAIL_COMMIT) {
-    throw new Error('PONYTAIL_INTEGRITY_FAILED: upstream repository or commit does not match the pinned runtime contract.');
-  }
-  const expected = String(manifest.files?.[relativePath] || '').trim();
-  if (!/^[0-9a-f]{40}$/u.test(expected)) throw new Error(`PONYTAIL_INTEGRITY_FAILED: no valid blob hash for ${relativePath}.`);
-  const bytes = readFileSync(file);
-  const actual = gitBlobSha(bytes);
-  if (actual !== expected) throw new Error(`PONYTAIL_INTEGRITY_FAILED: ${relativePath} does not match pinned upstream blob ${expected}.`);
-  return bytes.toString('utf8');
 }
 
 function verificationCommandAllowed(command, args) {
@@ -232,11 +229,7 @@ function routeFromToolResult(event) {
   const details = event?.result?.details;
   const route = details?.route;
   if (!['specrail', 'direct', 'direct_verify'].includes(route)) return null;
-  return {
-    route,
-    source: details.source || (details.explicit ? 'explicit-prefix' : 'native-choice'),
-    workflowMode: details.workflowMode || null,
-  };
+  return { route, source: details.source || (details.explicit ? 'explicit-prefix' : 'native-choice'), workflowMode: details.workflowMode || null };
 }
 
 function resultText(event) {
@@ -309,8 +302,7 @@ export function installSpecRailRuntimeGates(pi) {
       const id = String(answer?.id || '').trim();
       const value = String(answer?.value ?? answer?.label ?? '').trim();
       if (!id || !value) continue;
-      const material = `user:${id}:${value}`;
-      const ref = evidenceRef(keyFor(ctx), id, 'active_user', material);
+      const ref = evidenceRef(keyFor(ctx), id, 'active_user', `user:${id}:${value}`);
       trustedDecisionEvidence[id] = { source: 'active_user', ref, value, observedAt: new Date().toISOString() };
     }
     persist(ctx, { ...state, trustedDecisionEvidence });
@@ -326,7 +318,7 @@ export function installSpecRailRuntimeGates(pi) {
     if (resolved) selectRoute(ctx, resolved.route, resolved.source, resolved.workflowMode);
     const state = getState(ctx);
     if (!state.route) return undefined;
-    const suffix = `\n\nSpecRail runtime gates are active for route=${state.route}${state.workflowMode ? `/${state.workflowMode}` : ''}. ${PRECEDENCE_NOTICE} Before production-code mutation: load specrail_ponytail(action=load), perform an explicit material-uncertainty assessment, obtain runtime-backed evidence for every resolved material decision, and pass specrail_mutation_gate. After the final mutation, load specrail_ponytail(action=review), perform the review, then record PASS with specrail_ponytail_review_result.${state.route === 'direct_verify' ? ' Direct + Verify additionally requires specrail_verify after the final mutation.' : ''}`;
+    const suffix = `\n\nSpecRail runtime gates are active for route=${state.route}${state.workflowMode ? `/${state.workflowMode}` : ''}. ${PRECEDENCE_NOTICE} Before production-code mutation: attest official Ponytail with specrail_ponytail(action=load), perform an explicit material-uncertainty assessment, obtain runtime-backed evidence for every resolved material decision, and pass specrail_mutation_gate. Ponytail must be full or ultra and remains rechecked at mutation time; if no native ponytail-mode entry exists, ask the user to run /ponytail full. After the final mutation, call specrail_ponytail(action=review), run the official /skill:ponytail-review capability, then record PASS with specrail_ponytail_review_result.${state.route === 'direct_verify' ? ' Direct + Verify additionally requires specrail_verify after the final mutation.' : ''}`;
     return { systemPrompt: `${event.systemPrompt || ''}${suffix}` };
   });
 
@@ -335,7 +327,8 @@ export function installSpecRailRuntimeGates(pi) {
     const state = getState(ctx);
     if (!state.route) return { block: true, reason: 'PROCESS_ROUTE_REQUIRED: choose SpecRail, Directo, or Directo + verificar before mutation.' };
     if (!state.mutationAuthorized || !state.materialDecisionsCleared) return { block: true, reason: 'MUTATION_GATE_REQUIRED: complete the audited No-Assumption gate immediately before mutation.' };
-    if (!state.ponytailLoaded) return { block: true, reason: 'PONYTAIL_REQUIRED: pinned official Ponytail rules are not loaded for this work item.' };
+    const mode = qualifyingPonytailMode(ctx);
+    if (!state.ponytailAttested || !mode) return { block: true, reason: 'PONYTAIL_REQUIRED: official Pi Ponytail must be attested in full or ultra mode. Run /ponytail full, then re-open the mutation gate.' };
     pendingMutations.set(`${keyFor(ctx)}:${event.toolCallId}`, true);
     return undefined;
   });
@@ -361,7 +354,7 @@ export function installSpecRailRuntimeGates(pi) {
       mutated: true,
       mutationAuthorized: false,
       materialDecisionsCleared: false,
-      ponytailReviewLoaded: false,
+      ponytailReviewStarted: false,
       ponytailReviewPassed: false,
       ponytailReviewSummary: '',
       ponytailReviewFingerprint: null,
@@ -374,7 +367,7 @@ export function installSpecRailRuntimeGates(pi) {
   pi.on('agent_end', async (_event, ctx) => {
     const state = getState(ctx);
     const blockers = [];
-    if (state.mutated && !state.ponytailReviewPassed) blockers.push('complete Ponytail review and record PASS');
+    if (state.mutated && !state.ponytailReviewPassed) blockers.push('run official /skill:ponytail-review and record PASS');
     if (state.mutated && state.route === 'direct_verify' && !state.verificationPassed) blockers.push('run a successful non-mutating specrail_verify');
     if (!blockers.length) {
       if (state.route === 'direct' || state.route === 'direct_verify') states.set(keyFor(ctx), emptyState(null));
@@ -392,8 +385,8 @@ export function installSpecRailRuntimeGates(pi) {
 
   pi.registerTool({
     name: 'specrail_ponytail',
-    label: 'SpecRail Ponytail',
-    description: 'Load integrity-verified official Ponytail full or post-mutation review rules pinned by SpecRail.',
+    label: 'SpecRail Ponytail Attestation',
+    description: 'Attest the official Pi Ponytail session mode before mutation, or start the required official post-mutation review. SpecRail never bundles or imitates Ponytail.',
     promptSnippet: 'Use action=load before mutation and action=review after the final mutation.',
     executionMode: 'sequential',
     parameters: Type.Object({ action: Type.String({ minLength: 1, maxLength: 16 }) }),
@@ -401,18 +394,29 @@ export function installSpecRailRuntimeGates(pi) {
       const action = String(params.action || '').trim().toLowerCase();
       if (action !== 'load' && action !== 'review') throw new Error('specrail_ponytail action must be load or review');
       const state = getState(ctx);
-      if (!state.route) throw new Error('PROCESS_ROUTE_REQUIRED: choose a process route before loading mutation policy.');
+      if (!state.route) throw new Error('PROCESS_ROUTE_REQUIRED: choose a process route before Ponytail attestation.');
+      const mode = qualifyingPonytailMode(ctx);
+      if (!mode) throw new Error(`PONYTAIL_REQUIRED: ${PONYTAIL_PROVIDER} must be active in full or ultra mode. Run /ponytail full and retry; SpecRail will not install or imitate it.`);
       if (action === 'review' && !state.mutated) throw new Error('PONYTAIL_REVIEW_NOT_READY: no successful production-code mutation has been observed.');
-      const relative = action === 'load' ? 'skills/ponytail/SKILL.md' : 'skills/ponytail-review/SKILL.md';
-      const file = action === 'load' ? PONYTAIL_SKILL : PONYTAIL_REVIEW_SKILL;
-      const text = verifyPinnedPonytail(file, relative);
-      const reviewFingerprint = action === 'review' ? await repositoryFingerprint(pi, ctx, signal) : null;
-      const next = action === 'load'
-        ? persist(ctx, { ...state, ponytailLoaded: true })
-        : persist(ctx, { ...state, ponytailReviewLoaded: true, ponytailReviewPassed: false, ponytailReviewSummary: '', ponytailReviewFingerprint: reviewFingerprint, enforcementFollowUps: 0 });
+      if (action === 'load') {
+        const next = persist(ctx, { ...state, ponytailAttested: true, ponytailMode: mode });
+        return {
+          content: [{ type: 'text', text: `${PRECEDENCE_NOTICE}\n\nOfficial Pi Ponytail host state attested: ${mode}.` }],
+          details: { action, provider: PONYTAIL_PROVIDER, source: 'pi-session:ponytail-mode', mode, state: next },
+        };
+      }
+      const reviewFingerprint = await repositoryFingerprint(pi, ctx, signal);
+      const next = persist(ctx, {
+        ...state,
+        ponytailReviewStarted: true,
+        ponytailReviewPassed: false,
+        ponytailReviewSummary: '',
+        ponytailReviewFingerprint: reviewFingerprint,
+        enforcementFollowUps: 0,
+      });
       return {
-        content: [{ type: 'text', text: `${PRECEDENCE_NOTICE}\n\n${text}` }],
-        details: { action, upstream: PONYTAIL_UPSTREAM, commit: PONYTAIL_COMMIT, integrity: 'verified', mode: action === 'load' ? 'full' : 'review', reviewFingerprint, state: next },
+        content: [{ type: 'text', text: 'Run the official /skill:ponytail-review now. It must review the current diff only for unnecessary complexity. Then record its actual outcome with specrail_ponytail_review_result.' }],
+        details: { action, provider: PONYTAIL_PROVIDER, source: 'official-host-skill', mode: 'review', reviewFingerprint, state: next },
       };
     },
   });
@@ -420,7 +424,7 @@ export function installSpecRailRuntimeGates(pi) {
   pi.registerTool({
     name: 'specrail_decision_evidence',
     label: 'SpecRail Decision Evidence',
-    description: 'Resolve a material-decision provenance reference only from runtime-observed user input, exact repository contract text, or trusted deterministic tool output.',
+    description: 'Resolve material-decision provenance only from runtime-observed user input, exact repository contract text, or trusted deterministic tool output.',
     promptSnippet: 'Use before specrail_mutation_gate for each resolved material decision. Arbitrary source/ref assertions are never trusted.',
     executionMode: 'sequential',
     parameters: Type.Object({
@@ -466,8 +470,8 @@ export function installSpecRailRuntimeGates(pi) {
   pi.registerTool({
     name: 'specrail_ponytail_review_result',
     label: 'SpecRail Ponytail Review Result',
-    description: 'Record the result of an actually performed Ponytail review; loading review instructions alone never satisfies completion.',
-    promptSnippet: 'After action=review, record PASS only when the review found no unresolved minimalism/root-cause issue.',
+    description: 'Record the actual outcome of the official Ponytail review; starting the review alone never satisfies completion.',
+    promptSnippet: 'Record PASS only after the official /skill:ponytail-review ran and found no unresolved simplification finding.',
     executionMode: 'sequential',
     parameters: Type.Object({
       status: Type.String({ minLength: 4, maxLength: 8 }),
@@ -476,11 +480,12 @@ export function installSpecRailRuntimeGates(pi) {
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const state = getState(ctx);
-      if (!state.mutated || !state.ponytailReviewLoaded || !state.ponytailReviewFingerprint) throw new Error('PONYTAIL_REVIEW_REQUIRED: load and perform the review before recording its result.');
+      if (!state.mutated || !state.ponytailReviewStarted || !state.ponytailReviewFingerprint) throw new Error('PONYTAIL_REVIEW_REQUIRED: start and perform the official review before recording its result.');
+      if (!qualifyingPonytailMode(ctx)) throw new Error('PONYTAIL_REQUIRED: Ponytail is no longer in full or ultra mode.');
       const status = String(params.status || '').trim().toLowerCase();
       if (status !== 'pass') throw new Error(`PONYTAIL_REVIEW_FAILED: ${String(params.summary || '').trim()}`);
       const currentFingerprint = await repositoryFingerprint(pi, ctx, signal);
-      if (currentFingerprint !== state.ponytailReviewFingerprint) throw new Error('PONYTAIL_REVIEW_STALE: repository content changed after the review snapshot was loaded.');
+      if (currentFingerprint !== state.ponytailReviewFingerprint) throw new Error('PONYTAIL_REVIEW_STALE: repository content changed after the review snapshot was started.');
       const next = persist(ctx, { ...state, ponytailReviewPassed: true, ponytailReviewSummary: String(params.summary).trim(), completionBlocked: false, enforcementFollowUps: 0 });
       return { content: [{ type: 'text', text: JSON.stringify({ passed: true, checks: params.checks.length, repositoryFingerprint: currentFingerprint }) }], details: { passed: true, repositoryFingerprint: currentFingerprint, state: next } };
     },
@@ -489,7 +494,7 @@ export function installSpecRailRuntimeGates(pi) {
   pi.registerTool({
     name: 'specrail_mutation_gate',
     label: 'SpecRail Mutation Gate',
-    description: 'Fail closed before production-code mutation unless route, Ponytail policy, and an explicit auditable material-uncertainty assessment are valid.',
+    description: 'Fail closed before production-code mutation unless route, official Ponytail host mode, and an explicit audited material-uncertainty assessment are valid.',
     promptSnippet: 'Call immediately before each production-code mutation after reviewing all material uncertainty.',
     executionMode: 'sequential',
     parameters: Type.Object({
@@ -506,22 +511,23 @@ export function installSpecRailRuntimeGates(pi) {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const state = getState(ctx);
       if (!state.route) throw new Error('PROCESS_ROUTE_REQUIRED: choose a process route before mutation.');
-      if (!state.ponytailLoaded) throw new Error('PONYTAIL_REQUIRED: load pinned official Ponytail before production-code mutation.');
+      const mode = qualifyingPonytailMode(ctx);
+      if (!state.ponytailAttested || !mode) throw new Error('PONYTAIL_REQUIRED: attest official Pi Ponytail in full or ultra mode before mutation.');
       if (params.reviewed !== true) throw new Error('NO_ASSUMPTION_REVIEW_REQUIRED: material uncertainty review must be explicit.');
       const decisions = Array.isArray(params.decisions) ? params.decisions : [];
       const reason = String(params.noMaterialDecisionsReason || '').trim();
       if (decisions.length === 0 && reason.length < 8) throw new Error('NO_ASSUMPTION_AUDIT_REQUIRED: empty decisions require a concrete reason why no material decision exists.');
       const blockers = decisionBlockers(decisions, state.trustedDecisionEvidence);
       if (blockers.length) throw new Error(`UNRESOLVED_MATERIAL_DECISION: ${blockers.join('; ')}`);
-      const next = persist(ctx, { ...state, materialDecisionsCleared: true, mutationAuthorized: true, completionBlocked: false });
-      return { content: [{ type: 'text', text: JSON.stringify({ allowed: true, route: next.route, assessed: decisions.length, ponytail: 'pinned-full' }) }], details: { allowed: true, state: next } };
+      const next = persist(ctx, { ...state, ponytailMode: mode, materialDecisionsCleared: true, mutationAuthorized: true, completionBlocked: false });
+      return { content: [{ type: 'text', text: JSON.stringify({ allowed: true, route: next.route, assessed: decisions.length, ponytail: mode }) }], details: { allowed: true, state: next } };
     },
   });
 
   pi.registerTool({
     name: 'specrail_verify',
     label: 'SpecRail Direct Verify',
-    description: 'Execute one strictly read-only validation process for Direct + Verify and prove that repository content remained unchanged.',
+    description: 'Execute one strictly read-only validation process for Direct + Verify and prove repository content remained unchanged.',
     promptSnippet: 'Required after final mutation on Direct + Verify. Only allowlisted read-only verifier invocations are accepted.',
     executionMode: 'sequential',
     parameters: Type.Object({
@@ -550,4 +556,4 @@ export function installSpecRailRuntimeGates(pi) {
 }
 
 export default installSpecRailRuntimeGates;
-export { PONYTAIL_COMMIT, PONYTAIL_UPSTREAM, STATE_TYPE, bashMayMutate, decisionBlockers, excludedFingerprintPath, explicitRoute, gitBlobSha, isMutationCall, repositoryFingerprint, routeFromToolResult, verificationCommandAllowed, verifyPinnedPonytail };
+export { PONYTAIL_MODE_TYPE, PONYTAIL_PROVIDER, STATE_TYPE, bashMayMutate, decisionBlockers, excludedFingerprintPath, explicitRoute, isMutationCall, ponytailModeFromEntries, repositoryFingerprint, routeFromToolResult, verificationCommandAllowed };
