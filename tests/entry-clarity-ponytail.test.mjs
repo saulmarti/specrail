@@ -5,7 +5,7 @@ import path from 'node:path';
 import { explicitProcessRoute, isExplicitTaskContinuation, processRouteFromAnswer, processRouteInteraction } from '../dist/src/lib/process-route.js';
 import { resolveDecision, assertNoUnresolvedMaterialDecisions } from '../dist/src/lib/decision-resolution.js';
 import { structuredQuestion, structuredQuestionInteraction } from '../dist/src/lib/structured-questions.js';
-import { minimalismRequirement, ponytailRequiredForRole, PONYTAIL_DEFAULT_MODE } from '../dist/src/lib/minimalism.js';
+import { minimalismRequirement, ponytailRequiredForRole, assertPonytailForMutation, PONYTAIL_DEFAULT_MODE } from '../dist/src/lib/minimalism.js';
 import { conciseProgress, renderDecisionCapsuleMarkdown } from '../dist/src/lib/decision-capsule.js';
 
 const root=process.cwd();
@@ -44,11 +44,17 @@ test('no-assumption resolver uses authority provenance and fails closed on mater
   assert.throws(()=>assertNoUnresolvedMaterialDecisions([{id:'auth',material:true,evidence:[]}]),/UNRESOLVED_MATERIAL_DECISION/);
 });
 
-test('Ponytail full is required for code-writing roles and cannot be imitated by an unknown provider',()=>{
-  assert.equal(PONYTAIL_DEFAULT_MODE,'full');assert.equal(ponytailRequiredForRole('builder'),true);assert.equal(ponytailRequiredForRole('qa-engineer'),false);
-  assert.equal(minimalismRequirement('builder',{available:true,provider:'@dietrichgebert/ponytail',version:'4.8.4',mode:'full',attestation:'official host plugin'}).satisfied,true);
+test('Ponytail full is required for code-writing roles and fails closed when absent, off, lite, or imitated',()=>{
+  assert.equal(PONYTAIL_DEFAULT_MODE,'full');
+  assert.equal(ponytailRequiredForRole('builder'),true);
+  assert.equal(ponytailRequiredForRole('qa-engineer'),false);
+  const official={available:true,provider:'@dietrichgebert/ponytail',version:'4.8.4',mode:'full',attestation:'official host plugin'};
+  assert.equal(minimalismRequirement('builder',official).satisfied,true);
   assert.equal(minimalismRequirement('builder',{available:true,provider:'home-grown-minimalism',version:'99.0.0',mode:'full'}).satisfied,false);
-  assert.equal(minimalismRequirement('builder',{available:false},{disabled:true}).satisfied,true);
+  assert.equal(minimalismRequirement('builder',{available:false}).satisfied,false);
+  assert.equal(minimalismRequirement('builder',{available:true,provider:'@dietrichgebert/ponytail',version:'4.8.4',mode:'off'}).satisfied,false);
+  assert.equal(minimalismRequirement('builder',{available:true,provider:'@dietrichgebert/ponytail',version:'4.8.4',mode:'lite'}).satisfied,false);
+  assert.throws(()=>assertPonytailForMutation('builder',{available:false}),/PONYTAIL_REQUIRED/);
 });
 
 test('normal status and approval presentation are capsule-first rather than history-first',()=>{
