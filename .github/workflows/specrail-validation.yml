@@ -27,5 +27,9 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci --legacy-peer-deps --no-audit --no-fund
+      - name: Pi adapter smoke test
+        run: node scripts/test-pi-adapter.mjs
+      - name: Pi runtime gate regression test
+        run: node scripts/test-pi-runtime-gates.mjs
       - name: Release validation
         run: npm run release:check
