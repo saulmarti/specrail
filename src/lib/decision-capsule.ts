@@ -6,9 +6,9 @@ export interface DecisionCapsule {
   outcome: string;
   scopeSummary: string;
   proofSummary: string[];
-  riskSummary?: string;
-  blocker?: string;
-  primaryEvidenceId?: string;
+  riskSummary?: string | undefined;
+  blocker?: string | undefined;
+  primaryEvidenceId?: string | undefined;
   detailSections: string[];
 }
 
