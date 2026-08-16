@@ -27,6 +27,8 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci --legacy-peer-deps --no-audit --no-fund
+      - name: Install Pi smoke-test peer
+        run: npm install --no-save --ignore-scripts --legacy-peer-deps --no-audit --no-fund typebox@1.3.7
       - name: Pi adapter smoke test
         run: node scripts/test-pi-adapter.mjs
       - name: Pi runtime gate regression test
