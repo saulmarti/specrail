@@ -19,6 +19,7 @@ const quickFiles=[
   'entry-clarity-ponytail.test.mjs',
   'pi-compatibility.test.mjs',
   'pi-adapter-runtime.test.mjs',
+  'pi-runtime-gates.test.mjs',
   'questions-compatibility.test.mjs',
   'revisions.test.mjs',
   'skills.test.mjs',
