@@ -13,11 +13,16 @@ function readData(body:string): TaskQuestion[] {
 }
 function render(questions:TaskQuestion[]): string {
   const data=`${START}\n${JSON.stringify(questions,null,2)}\n${END}`;
-  const visible=questions.length?questions.map(q=>`### ${q.id} — ${q.status}\n\n- **Question:** ${q.text}\n- **Choices:** ${(q.options||[]).join(' | ')}\n- **Recommendation:** ${q.recommendation||'None'}\n- **Answer:** ${q.answer||''}`).join('\n\n'):'_No open questions._';
+  const visible=questions.length?questions.map(q=>`### ${q.id} — ${q.status}\n\n- **Question:** ${q.text}\n- **Choices:** ${(q.options||[]).join(' | ')||'Open answer'}\n- **Recommendation:** ${q.recommendation||'None'}\n- **Answer:** ${q.answer||''}`).join('\n\n'):'_No open questions._';
   return `${data}\n\n${visible}`;
 }
 function validateChoices(input:AddQuestionInput):string[]{
+  const supplied=Array.isArray(input.options)&&input.options.length>0;
   const values=(input.options??[]).map(value=>String(value).trim()).filter(Boolean);
+  if(!supplied){
+    if(input.recommendation&&String(input.recommendation).trim())throw new Error('Open-answer questions cannot define a choice recommendation');
+    return [];
+  }
   if(values.length<2||values.length>4)throw new Error('Clarification questions require between 2 and 4 choices; free text is provided separately by the host');
   if(new Set(values).size!==values.length)throw new Error('Clarification question choices must be unique');
   const recommendation=input.recommendation?String(input.recommendation).trim():null;
