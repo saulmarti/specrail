@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Type } from 'typebox';
 
-const STATE_TYPE = 'specrail-runtime-state-v2';
-const STATE_VERSION = 2;
+const STATE_TYPE = 'specrail-runtime-state-v3';
+const STATE_VERSION = 3;
 const PONYTAIL_UPSTREAM = 'DietrichGebert/ponytail';
 const PONYTAIL_COMMIT = '2ed6c52c9d7e5e56942508591085fd45dea277d3';
 const PACKAGE_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -15,6 +15,11 @@ const PONYTAIL_SKILL = path.join(PONYTAIL_ROOT, 'skills', 'ponytail', 'SKILL.md'
 const PONYTAIL_REVIEW_SKILL = path.join(PONYTAIL_ROOT, 'skills', 'ponytail-review', 'SKILL.md');
 const ALLOWED_DECISION_SOURCES = new Set(['active_user', 'approved_decision', 'repository_contract', 'established_pattern', 'tool_fact']);
 const MUTATION_TOOL_NAMES = new Set(['write', 'edit', 'write_file', 'edit_file', 'create_file', 'delete_file', 'apply_patch', 'patch']);
+const TRUSTED_TOOL_EVIDENCE = new Map([
+  ['approved_decision', new Set(['specrail_cli'])],
+  ['established_pattern', new Set(['specrail_codegraph'])],
+  ['tool_fact', new Set(['specrail_cli', 'specrail_codegraph'])],
+]);
 const FAST = /^\s*specrail\s+fast\s*:/iu;
 const DIRECT = /^\s*(?:sin|no)\s+specrail\s*:/iu;
 const DIRECT_VERIFY = /^\s*(?:direct(?:o)?\s*\+\s*verif(?:y|icar)|direct\s*\+\s*verify)\s*:/iu;
@@ -48,13 +53,14 @@ function emptyState(sessionId = null) {
     routeSource: null,
     workflowMode: null,
     ponytailLoaded: false,
-    ponytailDisabled: false,
     materialDecisionsCleared: false,
     mutationAuthorized: false,
     mutated: false,
     ponytailReviewLoaded: false,
     ponytailReviewPassed: false,
     ponytailReviewSummary: '',
+    ponytailReviewFingerprint: null,
+    trustedDecisionEvidence: {},
     verificationRequired: false,
     verificationPassed: false,
     verificationRuns: [],
@@ -64,8 +70,11 @@ function emptyState(sessionId = null) {
   };
 }
 
-function sessionId(ctx) {
-  return String(ctx?.sessionManager?.getSessionId?.() || '').trim() || null;
+function hostSessionId(ctx) {
+  const id = String(ctx?.sessionManager?.getSessionId?.() || '').trim();
+  if (id) return `id:${id}`;
+  const file = String(ctx?.sessionManager?.getSessionFile?.() || '').trim();
+  return file ? `file:${file}` : null;
 }
 
 function stateEntryData(entry) {
@@ -78,8 +87,8 @@ function cloneState(value, expectedSessionId) {
   return { ...emptyState(expectedSessionId), ...value, sessionId: expectedSessionId || value.sessionId || null };
 }
 
-function restoreState(ctx) {
-  const id = sessionId(ctx);
+function restoreState(ctx, expectedSessionId) {
+  if (!expectedSessionId) return emptyState(null);
   const branch = typeof ctx?.sessionManager?.getBranch === 'function'
     ? ctx.sessionManager.getBranch()
     : typeof ctx?.sessionManager?.getEntries === 'function'
@@ -88,9 +97,9 @@ function restoreState(ctx) {
   let restored = null;
   for (const entry of Array.isArray(branch) ? branch : []) {
     const data = stateEntryData(entry);
-    if (data) restored = cloneState(data, id) || restored;
+    if (data) restored = cloneState(data, expectedSessionId) || restored;
   }
-  return restored || emptyState(id);
+  return restored || emptyState(expectedSessionId);
 }
 
 function explicitRoute(prompt) {
@@ -119,7 +128,7 @@ function isMutationCall(event) {
   return name === 'bash' && bashMayMutate(event?.input?.command ?? event?.args?.command);
 }
 
-function decisionBlockers(decisions) {
+function decisionBlockers(decisions, evidence = {}) {
   const blockers = [];
   for (const decision of Array.isArray(decisions) ? decisions : []) {
     if (decision?.material !== true) continue;
@@ -127,9 +136,11 @@ function decisionBlockers(decisions) {
     const status = String(decision?.status || '').trim().toLowerCase();
     const source = String(decision?.source || '').trim();
     const ref = String(decision?.ref || '').trim();
+    const trusted = evidence[id];
     if (status !== 'resolved') blockers.push(`${id}: unresolved`);
     else if (!ALLOWED_DECISION_SOURCES.has(source)) blockers.push(`${id}: invalid decision source`);
     else if (!ref) blockers.push(`${id}: missing evidence ref`);
+    else if (!trusted || trusted.source !== source || trusted.ref !== ref) blockers.push(`${id}: untrusted or mismatched evidence`);
   }
   return blockers;
 }
@@ -153,9 +164,35 @@ function verifyPinnedPonytail(file, relativePath) {
 
 function verificationCommandAllowed(command, args) {
   const executable = String(command || '').trim();
-  if (!executable || /[\\/]/u.test(executable) && !path.isAbsolute(executable)) return false;
-  const joined = [executable, ...(Array.isArray(args) ? args : [])].join(' ');
-  return !hasShellComposition(joined);
+  const argv = Array.isArray(args) ? args.map((value) => String(value)) : [];
+  if (!executable || hasShellComposition([executable, ...argv].join(' '))) return false;
+  if (/[\\/]/u.test(executable)) return false;
+  if (executable === 'node') {
+    if (argv.length === 1 && ['--version', '-v'].includes(argv[0])) return true;
+    return argv.length === 2 && argv[0] === '--check' && argv[1] && !argv[1].startsWith('-');
+  }
+  if (executable !== 'git' || argv.length < 1) return false;
+  const safeSubcommands = new Set(['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files']);
+  if (!safeSubcommands.has(argv[0])) return false;
+  return !argv.slice(1).some((arg) => /^(?:--output(?:=|$)|-o(?:$|[^a-z])|--exec-path(?:=|$)|--config-env(?:=|$))/u.test(arg));
+}
+
+function excludedFingerprintPath(relativePath) {
+  const normalized = String(relativePath || '').replaceAll('\\', '/').replace(/^\.\//u, '');
+  return normalized === '.specrail' || normalized.startsWith('.specrail/');
+}
+
+function safeRepositoryFile(ctx, relativePath) {
+  const requested = String(relativePath || '').trim();
+  if (!requested || path.isAbsolute(requested)) throw new Error('DECISION_EVIDENCE_UNSAFE_PATH');
+  const root = realpathSync(ctx.cwd);
+  const absolute = path.resolve(root, requested);
+  const relative = path.relative(root, absolute);
+  if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error('DECISION_EVIDENCE_UNSAFE_PATH');
+  const real = realpathSync(absolute);
+  const realRelative = path.relative(root, real);
+  if (!realRelative || realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) throw new Error('DECISION_EVIDENCE_UNSAFE_PATH');
+  return real;
 }
 
 async function execChecked(pi, command, args, ctx, signal, timeout = 30000) {
@@ -169,18 +206,21 @@ async function execChecked(pi, command, args, ctx, signal, timeout = 30000) {
 
 async function repositoryFingerprint(pi, ctx, signal) {
   await execChecked(pi, 'git', ['rev-parse', '--is-inside-work-tree'], ctx, signal);
-  const diff = await execChecked(pi, 'git', ['diff', '--binary', '--no-ext-diff', 'HEAD'], ctx, signal);
-  const untracked = await execChecked(pi, 'git', ['ls-files', '--others', '--exclude-standard', '-z'], ctx, signal);
+  const files = await execChecked(pi, 'git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], ctx, signal);
   const hash = createHash('sha256');
-  hash.update(String(diff.stdout || ''));
-  const names = String(untracked.stdout || '').split('\0').filter(Boolean).sort();
+  const names = [...new Set(String(files.stdout || '').split('\0').filter(Boolean))].sort();
   for (const name of names) {
     const absolute = path.resolve(ctx.cwd, name);
     const relative = path.relative(ctx.cwd, absolute);
     if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error('VERIFY_SNAPSHOT_UNSAFE_PATH');
+    if (excludedFingerprintPath(relative)) continue;
     hash.update(`\0${relative}\0`);
+    if (!existsSync(absolute)) {
+      hash.update('missing');
+      continue;
+    }
     const stat = lstatSync(absolute);
-    if (stat.isSymbolicLink()) hash.update(`symlink:${readFileSync(absolute, 'utf8')}`);
+    if (stat.isSymbolicLink()) hash.update(`symlink:${readlinkSync(absolute)}`);
     else if (stat.isFile()) hash.update(readFileSync(absolute));
     else hash.update(`mode:${stat.mode}:size:${stat.size}`);
   }
@@ -199,40 +239,86 @@ function routeFromToolResult(event) {
   };
 }
 
+function resultText(event) {
+  const details = event?.result?.details;
+  if (typeof details?.stdout === 'string') return details.stdout;
+  const chunks = Array.isArray(event?.result?.content) ? event.result.content : [];
+  return chunks.filter((chunk) => chunk?.type === 'text').map((chunk) => String(chunk.text || '')).join('\n');
+}
+
+function evidenceRef(sessionKey, id, source, material) {
+  return `evidence:${createHash('sha256').update(`${sessionKey}\0${id}\0${source}\0${material}`).digest('hex').slice(0, 24)}`;
+}
+
 export function installSpecRailRuntimeGates(pi) {
   const states = new Map();
   const pendingMutations = new Map();
+  const trustedToolResults = new Map();
+  const anonymousKeys = new WeakMap();
+  let anonymousSequence = 0;
 
-  function keyFor(ctx) { return sessionId(ctx) || '__memory__'; }
+  function keyFor(ctx) {
+    const host = hostSessionId(ctx);
+    if (host) return host;
+    const identity = ctx?.sessionManager && typeof ctx.sessionManager === 'object' ? ctx.sessionManager : ctx;
+    if (identity && typeof identity === 'object') {
+      if (!anonymousKeys.has(identity)) anonymousKeys.set(identity, `anon:${++anonymousSequence}`);
+      return anonymousKeys.get(identity);
+    }
+    return 'anon:fallback';
+  }
 
   function getState(ctx) {
-    const id = keyFor(ctx);
-    if (!states.has(id)) states.set(id, restoreState(ctx));
-    return states.get(id);
+    const key = keyFor(ctx);
+    if (!states.has(key)) states.set(key, restoreState(ctx, key.startsWith('anon:') ? null : key));
+    return states.get(key);
   }
 
   function persist(ctx, state, explicitKey = keyFor(ctx)) {
-    const next = { ...state, sessionId: explicitKey === '__memory__' ? null : explicitKey, updatedAt: new Date().toISOString() };
+    const persistedSession = explicitKey.startsWith('anon:') ? null : explicitKey;
+    const next = { ...state, sessionId: persistedSession, updatedAt: new Date().toISOString() };
     states.set(explicitKey, next);
-    if (explicitKey === keyFor(ctx) && typeof pi.appendEntry === 'function') pi.appendEntry(STATE_TYPE, next);
+    if (next.route === 'specrail' && explicitKey === keyFor(ctx) && typeof pi.appendEntry === 'function') pi.appendEntry(STATE_TYPE, next);
     return next;
   }
 
   function selectRoute(ctx, route, source, workflowMode = null) {
-    const current = getState(ctx);
     return persist(ctx, {
-      ...emptyState(sessionId(ctx)),
+      ...emptyState(keyFor(ctx).startsWith('anon:') ? null : keyFor(ctx)),
       route,
       routeSource: source,
       workflowMode,
       verificationRequired: route === 'direct_verify',
-      ponytailLoaded: current.ponytailLoaded,
-      ponytailDisabled: current.ponytailDisabled,
     });
   }
 
+  function rememberToolResult(event, ctx) {
+    if (event?.isError || !event?.toolCallId) return;
+    const toolName = String(event.toolName || '');
+    if (!['specrail_cli', 'specrail_codegraph'].includes(toolName)) return;
+    trustedToolResults.set(`${keyFor(ctx)}:${event.toolCallId}`, { toolName, text: resultText(event) });
+  }
+
+  function rememberUserAnswers(event, ctx) {
+    if (event?.toolName !== 'request_user_input' || event?.isError) return;
+    const answers = event?.result?.details?.answers;
+    if (!Array.isArray(answers) || answers.length === 0) return;
+    const state = getState(ctx);
+    const trustedDecisionEvidence = { ...state.trustedDecisionEvidence };
+    for (const answer of answers) {
+      const id = String(answer?.id || '').trim();
+      const value = String(answer?.value ?? answer?.label ?? '').trim();
+      if (!id || !value) continue;
+      const material = `user:${id}:${value}`;
+      const ref = evidenceRef(keyFor(ctx), id, 'active_user', material);
+      trustedDecisionEvidence[id] = { source: 'active_user', ref, value, observedAt: new Date().toISOString() };
+    }
+    persist(ctx, { ...state, trustedDecisionEvidence });
+  }
+
   pi.on('session_start', async (_event, ctx) => {
-    states.set(keyFor(ctx), restoreState(ctx));
+    const key = keyFor(ctx);
+    states.set(key, restoreState(ctx, key.startsWith('anon:') ? null : key));
   });
 
   pi.on('before_agent_start', async (event, ctx) => {
@@ -240,7 +326,7 @@ export function installSpecRailRuntimeGates(pi) {
     if (resolved) selectRoute(ctx, resolved.route, resolved.source, resolved.workflowMode);
     const state = getState(ctx);
     if (!state.route) return undefined;
-    const suffix = `\n\nSpecRail runtime gates are active for route=${state.route}${state.workflowMode ? `/${state.workflowMode}` : ''}. ${PRECEDENCE_NOTICE} Before production-code mutation: load specrail_ponytail(action=load) unless explicitly disabled, perform an explicit material-uncertainty assessment, and pass specrail_mutation_gate. After the final mutation, load specrail_ponytail(action=review), perform the review, then record PASS with specrail_ponytail_review_result.${state.route === 'direct_verify' ? ' Direct + Verify additionally requires specrail_verify after the final mutation.' : ''}`;
+    const suffix = `\n\nSpecRail runtime gates are active for route=${state.route}${state.workflowMode ? `/${state.workflowMode}` : ''}. ${PRECEDENCE_NOTICE} Before production-code mutation: load specrail_ponytail(action=load), perform an explicit material-uncertainty assessment, obtain runtime-backed evidence for every resolved material decision, and pass specrail_mutation_gate. After the final mutation, load specrail_ponytail(action=review), perform the review, then record PASS with specrail_ponytail_review_result.${state.route === 'direct_verify' ? ' Direct + Verify additionally requires specrail_verify after the final mutation.' : ''}`;
     return { systemPrompt: `${event.systemPrompt || ''}${suffix}` };
   });
 
@@ -249,8 +335,8 @@ export function installSpecRailRuntimeGates(pi) {
     const state = getState(ctx);
     if (!state.route) return { block: true, reason: 'PROCESS_ROUTE_REQUIRED: choose SpecRail, Directo, or Directo + verificar before mutation.' };
     if (!state.mutationAuthorized || !state.materialDecisionsCleared) return { block: true, reason: 'MUTATION_GATE_REQUIRED: complete the audited No-Assumption gate immediately before mutation.' };
-    if (!state.ponytailLoaded && !state.ponytailDisabled) return { block: true, reason: 'PONYTAIL_REQUIRED: pinned official Ponytail rules are not loaded for this work item.' };
-    pendingMutations.set(event.toolCallId, keyFor(ctx));
+    if (!state.ponytailLoaded) return { block: true, reason: 'PONYTAIL_REQUIRED: pinned official Ponytail rules are not loaded for this work item.' };
+    pendingMutations.set(`${keyFor(ctx)}:${event.toolCallId}`, true);
     return undefined;
   });
 
@@ -260,11 +346,16 @@ export function installSpecRailRuntimeGates(pi) {
       selectRoute(ctx, selected.route, selected.source, selected.workflowMode);
       return;
     }
-    const id = pendingMutations.get(event?.toolCallId);
-    if (!id) return;
-    pendingMutations.delete(event.toolCallId);
-    if (event.isError) return;
-    const state = states.get(id) || getState(ctx);
+    rememberToolResult(event, ctx);
+    rememberUserAnswers(event, ctx);
+    const mutationKey = `${keyFor(ctx)}:${event?.toolCallId}`;
+    if (!pendingMutations.has(mutationKey)) return;
+    pendingMutations.delete(mutationKey);
+    const state = getState(ctx);
+    if (event.isError) {
+      persist(ctx, { ...state, mutationAuthorized: false, materialDecisionsCleared: false });
+      return;
+    }
     persist(ctx, {
       ...state,
       mutated: true,
@@ -273,19 +364,20 @@ export function installSpecRailRuntimeGates(pi) {
       ponytailReviewLoaded: false,
       ponytailReviewPassed: false,
       ponytailReviewSummary: '',
+      ponytailReviewFingerprint: null,
       verificationPassed: state.route === 'direct_verify' ? false : state.verificationPassed,
       completionBlocked: false,
       enforcementFollowUps: 0,
-    }, id);
+    });
   });
 
   pi.on('agent_end', async (_event, ctx) => {
     const state = getState(ctx);
     const blockers = [];
-    if (state.mutated && !state.ponytailDisabled && !state.ponytailReviewPassed) blockers.push('complete Ponytail review and record PASS');
+    if (state.mutated && !state.ponytailReviewPassed) blockers.push('complete Ponytail review and record PASS');
     if (state.mutated && state.route === 'direct_verify' && !state.verificationPassed) blockers.push('run a successful non-mutating specrail_verify');
     if (!blockers.length) {
-      if (state.route === 'direct' || state.route === 'direct_verify') persist(ctx, emptyState(sessionId(ctx)));
+      if (state.route === 'direct' || state.route === 'direct_verify') states.set(keyFor(ctx), emptyState(null));
       return;
     }
     const message = `Completion blocked: ${blockers.join('; ')}. Do not report this work item as successfully complete.`;
@@ -305,7 +397,7 @@ export function installSpecRailRuntimeGates(pi) {
     promptSnippet: 'Use action=load before mutation and action=review after the final mutation.',
     executionMode: 'sequential',
     parameters: Type.Object({ action: Type.String({ minLength: 1, maxLength: 16 }) }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const action = String(params.action || '').trim().toLowerCase();
       if (action !== 'load' && action !== 'review') throw new Error('specrail_ponytail action must be load or review');
       const state = getState(ctx);
@@ -314,13 +406,60 @@ export function installSpecRailRuntimeGates(pi) {
       const relative = action === 'load' ? 'skills/ponytail/SKILL.md' : 'skills/ponytail-review/SKILL.md';
       const file = action === 'load' ? PONYTAIL_SKILL : PONYTAIL_REVIEW_SKILL;
       const text = verifyPinnedPonytail(file, relative);
+      const reviewFingerprint = action === 'review' ? await repositoryFingerprint(pi, ctx, signal) : null;
       const next = action === 'load'
-        ? persist(ctx, { ...state, ponytailLoaded: true, ponytailDisabled: false })
-        : persist(ctx, { ...state, ponytailReviewLoaded: true, ponytailReviewPassed: false, ponytailReviewSummary: '', enforcementFollowUps: 0 });
+        ? persist(ctx, { ...state, ponytailLoaded: true })
+        : persist(ctx, { ...state, ponytailReviewLoaded: true, ponytailReviewPassed: false, ponytailReviewSummary: '', ponytailReviewFingerprint: reviewFingerprint, enforcementFollowUps: 0 });
       return {
         content: [{ type: 'text', text: `${PRECEDENCE_NOTICE}\n\n${text}` }],
-        details: { action, upstream: PONYTAIL_UPSTREAM, commit: PONYTAIL_COMMIT, integrity: 'verified', mode: action === 'load' ? 'full' : 'review', state: next },
+        details: { action, upstream: PONYTAIL_UPSTREAM, commit: PONYTAIL_COMMIT, integrity: 'verified', mode: action === 'load' ? 'full' : 'review', reviewFingerprint, state: next },
       };
+    },
+  });
+
+  pi.registerTool({
+    name: 'specrail_decision_evidence',
+    label: 'SpecRail Decision Evidence',
+    description: 'Resolve a material-decision provenance reference only from runtime-observed user input, exact repository contract text, or trusted deterministic tool output.',
+    promptSnippet: 'Use before specrail_mutation_gate for each resolved material decision. Arbitrary source/ref assertions are never trusted.',
+    executionMode: 'sequential',
+    parameters: Type.Object({
+      id: Type.String({ minLength: 1, maxLength: 160 }),
+      source: Type.String({ minLength: 1, maxLength: 64 }),
+      ref: Type.Optional(Type.String({ maxLength: 1000 })),
+      quote: Type.Optional(Type.String({ maxLength: 4000 })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const id = String(params.id || '').trim();
+      const source = String(params.source || '').trim();
+      if (!ALLOWED_DECISION_SOURCES.has(source)) throw new Error('DECISION_EVIDENCE_SOURCE_INVALID');
+      const state = getState(ctx);
+      if (source === 'active_user') {
+        const existing = state.trustedDecisionEvidence[id];
+        if (!existing || existing.source !== 'active_user') throw new Error(`DECISION_EVIDENCE_NOT_FOUND: no runtime-observed user answer exists for ${id}.`);
+        return { content: [{ type: 'text', text: JSON.stringify(existing) }], details: { id, ...existing } };
+      }
+      const quote = String(params.quote || '').trim();
+      const ref = String(params.ref || '').trim();
+      if (quote.length < 2 || !ref) throw new Error('DECISION_EVIDENCE_REQUIRED: exact ref and quote are required.');
+      let material;
+      if (source === 'repository_contract') {
+        const file = safeRepositoryFile(ctx, ref);
+        const text = readFileSync(file, 'utf8');
+        if (!text.includes(quote)) throw new Error('DECISION_EVIDENCE_MISMATCH: quote is not present in the referenced repository contract.');
+        material = `${file}:${createHash('sha256').update(quote).digest('hex')}`;
+      } else {
+        const observed = trustedToolResults.get(`${keyFor(ctx)}:${ref}`);
+        const allowedTools = TRUSTED_TOOL_EVIDENCE.get(source);
+        if (!observed || !allowedTools?.has(observed.toolName)) throw new Error('DECISION_EVIDENCE_UNTRUSTED_TOOL');
+        if (!observed.text.includes(quote)) throw new Error('DECISION_EVIDENCE_MISMATCH: quote is not present in the trusted tool result.');
+        material = `${observed.toolName}:${ref}:${createHash('sha256').update(quote).digest('hex')}`;
+      }
+      const trustedRef = evidenceRef(keyFor(ctx), id, source, material);
+      const evidence = { source, ref: trustedRef, quoteHash: createHash('sha256').update(quote).digest('hex'), observedAt: new Date().toISOString() };
+      const trustedDecisionEvidence = { ...state.trustedDecisionEvidence, [id]: evidence };
+      const next = persist(ctx, { ...state, trustedDecisionEvidence });
+      return { content: [{ type: 'text', text: JSON.stringify({ id, ...evidence }) }], details: { id, ...evidence, state: next } };
     },
   });
 
@@ -335,30 +474,15 @@ export function installSpecRailRuntimeGates(pi) {
       summary: Type.String({ minLength: 8, maxLength: 1000 }),
       checks: Type.Array(Type.String({ minLength: 2, maxLength: 300 }), { minItems: 1, maxItems: 12 }),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const state = getState(ctx);
-      if (!state.mutated || !state.ponytailReviewLoaded) throw new Error('PONYTAIL_REVIEW_REQUIRED: load and perform the review before recording its result.');
+      if (!state.mutated || !state.ponytailReviewLoaded || !state.ponytailReviewFingerprint) throw new Error('PONYTAIL_REVIEW_REQUIRED: load and perform the review before recording its result.');
       const status = String(params.status || '').trim().toLowerCase();
       if (status !== 'pass') throw new Error(`PONYTAIL_REVIEW_FAILED: ${String(params.summary || '').trim()}`);
+      const currentFingerprint = await repositoryFingerprint(pi, ctx, signal);
+      if (currentFingerprint !== state.ponytailReviewFingerprint) throw new Error('PONYTAIL_REVIEW_STALE: repository content changed after the review snapshot was loaded.');
       const next = persist(ctx, { ...state, ponytailReviewPassed: true, ponytailReviewSummary: String(params.summary).trim(), completionBlocked: false, enforcementFollowUps: 0 });
-      return { content: [{ type: 'text', text: JSON.stringify({ passed: true, checks: params.checks.length }) }], details: { passed: true, state: next } };
-    },
-  });
-
-  pi.registerTool({
-    name: 'specrail_ponytail_override',
-    label: 'SpecRail Ponytail Override',
-    description: 'Ask the user explicitly whether Ponytail may be disabled for the current work item.',
-    promptSnippet: 'Use only for an explicit user-directed exception; never infer it.',
-    executionMode: 'sequential',
-    parameters: Type.Object({ reason: Type.String({ minLength: 1, maxLength: 500 }) }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      if (!ctx.hasUI) throw new Error('PONYTAIL_OVERRIDE_REQUIRES_USER: interactive Pi UI is unavailable.');
-      const selected = await ctx.ui.select(`Disable Ponytail for this work item? ${String(params.reason || '').trim()}`, ['Keep Ponytail', 'Disable Ponytail']);
-      if (selected !== 'Disable Ponytail') return { content: [{ type: 'text', text: JSON.stringify({ disabled: false }) }], details: { disabled: false } };
-      const state = getState(ctx);
-      const next = persist(ctx, { ...state, ponytailDisabled: true, ponytailLoaded: false, ponytailReviewLoaded: false, ponytailReviewPassed: false });
-      return { content: [{ type: 'text', text: JSON.stringify({ disabled: true }) }], details: { disabled: true, state: next } };
+      return { content: [{ type: 'text', text: JSON.stringify({ passed: true, checks: params.checks.length, repositoryFingerprint: currentFingerprint }) }], details: { passed: true, repositoryFingerprint: currentFingerprint, state: next } };
     },
   });
 
@@ -382,23 +506,23 @@ export function installSpecRailRuntimeGates(pi) {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const state = getState(ctx);
       if (!state.route) throw new Error('PROCESS_ROUTE_REQUIRED: choose a process route before mutation.');
-      if (!state.ponytailLoaded && !state.ponytailDisabled) throw new Error('PONYTAIL_REQUIRED: load pinned Ponytail or obtain explicit user override.');
+      if (!state.ponytailLoaded) throw new Error('PONYTAIL_REQUIRED: load pinned official Ponytail before production-code mutation.');
       if (params.reviewed !== true) throw new Error('NO_ASSUMPTION_REVIEW_REQUIRED: material uncertainty review must be explicit.');
       const decisions = Array.isArray(params.decisions) ? params.decisions : [];
       const reason = String(params.noMaterialDecisionsReason || '').trim();
       if (decisions.length === 0 && reason.length < 8) throw new Error('NO_ASSUMPTION_AUDIT_REQUIRED: empty decisions require a concrete reason why no material decision exists.');
-      const blockers = decisionBlockers(decisions);
+      const blockers = decisionBlockers(decisions, state.trustedDecisionEvidence);
       if (blockers.length) throw new Error(`UNRESOLVED_MATERIAL_DECISION: ${blockers.join('; ')}`);
       const next = persist(ctx, { ...state, materialDecisionsCleared: true, mutationAuthorized: true, completionBlocked: false });
-      return { content: [{ type: 'text', text: JSON.stringify({ allowed: true, route: next.route, assessed: decisions.length, ponytail: next.ponytailDisabled ? 'explicitly-disabled' : 'pinned-full' }) }], details: { allowed: true, state: next } };
+      return { content: [{ type: 'text', text: JSON.stringify({ allowed: true, route: next.route, assessed: decisions.length, ponytail: 'pinned-full' }) }], details: { allowed: true, state: next } };
     },
   });
 
   pi.registerTool({
     name: 'specrail_verify',
     label: 'SpecRail Direct Verify',
-    description: 'Execute one validation process for Direct + Verify and prove that the verification itself did not alter repository state.',
-    promptSnippet: 'Required after final mutation on Direct + Verify. The repository fingerprint must be unchanged by validation.',
+    description: 'Execute one strictly read-only validation process for Direct + Verify and prove that repository content remained unchanged.',
+    promptSnippet: 'Required after final mutation on Direct + Verify. Only allowlisted read-only verifier invocations are accepted.',
     executionMode: 'sequential',
     parameters: Type.Object({
       command: Type.String({ minLength: 1, maxLength: 300 }),
@@ -410,7 +534,7 @@ export function installSpecRailRuntimeGates(pi) {
       if (state.route !== 'direct_verify') throw new Error('DIRECT_VERIFY_ROUTE_REQUIRED: specrail_verify only satisfies Direct + Verify.');
       if (!state.mutated) throw new Error('DIRECT_VERIFY_NOT_READY: no successful production-code mutation has been observed.');
       const args = Array.isArray(params.args) ? params.args : [];
-      if (!verificationCommandAllowed(params.command, args)) throw new Error('VERIFY_COMMAND_UNSAFE: validation must be a direct executable invocation, not shell composition.');
+      if (!verificationCommandAllowed(params.command, args)) throw new Error('VERIFY_COMMAND_UNSAFE: use an allowlisted read-only verifier invocation.');
       const before = await repositoryFingerprint(pi, ctx, signal);
       const result = await pi.exec(params.command, args, { cwd: ctx.cwd, signal, timeout: params.timeoutMs ?? 120000 });
       const after = await repositoryFingerprint(pi, ctx, signal);
@@ -426,4 +550,4 @@ export function installSpecRailRuntimeGates(pi) {
 }
 
 export default installSpecRailRuntimeGates;
-export { PONYTAIL_COMMIT, PONYTAIL_UPSTREAM, STATE_TYPE, bashMayMutate, decisionBlockers, explicitRoute, gitBlobSha, isMutationCall, routeFromToolResult, verificationCommandAllowed, verifyPinnedPonytail };
+export { PONYTAIL_COMMIT, PONYTAIL_UPSTREAM, STATE_TYPE, bashMayMutate, decisionBlockers, excludedFingerprintPath, explicitRoute, gitBlobSha, isMutationCall, repositoryFingerprint, routeFromToolResult, verificationCommandAllowed, verifyPinnedPonytail };
