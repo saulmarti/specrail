@@ -4,12 +4,16 @@ import { readFileSync } from 'node:fs';
 import { findTask, getSection, loadTask } from './task.js';
 import { listEvidence, matchesAnyExpectedVisualContext } from './evidence.js';
 import { writeReviewBundle } from './review.js';
-import { writeReviewCockpit } from './cockpit.js';
+import { writeCompactReviewCockpit } from './compact-cockpit.js';
 import { loadProjectConfig } from './project.js';
 import { finalVisualization, specificationVisualization } from './visualization.js';
 import { getVisualizationRun } from './capabilities.js';
 import { presentationAcknowledgementState, presentationDigest as computePresentationDigest } from './presentation-state.js';
 import { prepareSpecificationReviewState } from './spec-review-prep.js';
+import { acceptanceCoverage } from './acceptance.js';
+import { scopeGuardStatus } from './scope-guard.js';
+import { taskReadiness } from './readiness.js';
+import { createDecisionCapsule, renderDecisionCapsuleMarkdown } from './decision-capsule.js';
 import type { Attachment, EvidenceRecord, Presentation, PresentationHostAction, TaskDocument, TaskRoute } from './types.js';
 
 const SPEC_SECTIONS: Array<[string,string]> = [
@@ -23,6 +27,7 @@ const SPEC_EVIDENCE = new Set(['frontend-before','frontend-mobile-before','ui-de
 function cleanSection(value: unknown): string {
  return String(value ?? '').replace(/<!-- AI-FLOW:QUESTIONS-DATA[\s\S]*?AI-FLOW:QUESTIONS-DATA -->/g,'').replace(/^_No open questions\._$/gim,'').trim();
 }
+function oneLine(value:unknown,max=220):string{const text=cleanSection(value).replace(/\s+/g,' ').trim();return text.length>max?`${text.slice(0,max-1)}…`:text;}
 function routeSummary(route: TaskRoute): string {
  const entries=Object.entries(route).filter(([,value])=>value!==false&&value!==null&&value!==undefined&&value!=='none');
  return entries.length?entries.map(([key,value])=>`${key.replace(/_/g,' ')}: ${String(value)}`).join(' · '):'flujo mínimo';
@@ -55,18 +60,26 @@ function previewUrlFor(items: Attachment[], specification: boolean): string | nu
  for(const kind of preferred){const item=[...items].reverse().find(candidate=>candidate.kind===kind&&candidate.runtimeUrl);if(item?.runtimeUrl)return item.runtimeUrl;}
  return null;
 }
+function decisionMarkdown(root:string,task:TaskDocument,specification:boolean):string{
+ const acceptance=acceptanceCoverage(root,task.meta.id),scope=scopeGuardStatus(root,task.meta.id),readiness=taskReadiness(root,task.meta.id);
+ const outcome=oneLine(getSection(task.body,'Product Value'))||oneLine(getSection(task.body,'Need'))||task.meta.title;
+ const scopeText=task.meta.file_scope?.length?`${task.meta.file_scope.length} scoped file/glob ${task.meta.file_scope.length===1?'entry':'entries'}`:(oneLine(getSection(task.body,'Scope'))||routeSummary(task.meta.route));
+ const proof=specification
+   ? [`AC ${acceptance.criteria.length} defined`,`Readiness ${readiness.score.passed}/${readiness.score.applicable}`,scope.applicable?(scope.valid?'Scope clean':'Scope needs review'):'Scope pending']
+   : [`AC ${acceptance.criteria.filter(item=>item.proven).length}/${acceptance.criteria.length}`,`Readiness ${readiness.score.passed}/${readiness.score.applicable}`,scope.applicable?(scope.valid?'Scope clean':'Scope violation'):'Scope N/A'];
+ const capsule=createDecisionCapsule({stage:specification?'spec':'final',title:task.meta.title,outcome,scopeSummary:scopeText,proofSummary:proof,riskSummary:String(task.meta.risk||'unspecified'),blocker:readiness.blockers[0]?.detail,detailSections:['Specification','Acceptance criteria','Scope','Evidence','Checks','Trace','Experiments']});
+ return renderDecisionCapsuleMarkdown(capsule);
+}
 function build(root: string,id: string,kind: 'specification-review'|'final-result-review',sessionId?: string|null): Presentation {
  const specification=kind==='specification-review';
  if(specification)prepareSpecificationReviewState(root,id);
  const task=loadTask(findTask(root,id));
  const bundle=writeReviewBundle(root,id,specification?'spec':'final');
- const cockpit=writeReviewCockpit(root,id,specification?'spec':'final');
- const cockpitDocument: Attachment={id:'REVIEW-COCKPIT',kind:'review-cockpit',label:`${task.meta.id} — interactive Review Cockpit.html`,source:'specrail-review-cockpit',tool:'SpecRail',route:null,viewport:null,path:cockpit.path,mediaType:'text/html',display:'inline',sha256:cockpit.sourceDigest,openUrl:cockpit.openUrl};
- const bundleDocument: Attachment={id:'REVIEW-BUNDLE',kind:'review-bundle',label:`${task.meta.id} — ${specification?'specification':'final'} review.md`,source:'specrail-review-bundle',tool:'SpecRail',route:null,viewport:null,path:bundle.path,mediaType:'text/markdown',display:'inline',sha256:fileSha256(bundle.path)};
+ const cockpit=writeCompactReviewCockpit(root,id,specification?'spec':'final');
+ const cockpitDocument: Attachment={id:'REVIEW-COCKPIT',kind:'review-cockpit',label:`${task.meta.id} — compact Review Cockpit.html`,source:'specrail-review-cockpit',tool:'SpecRail',route:null,viewport:null,path:cockpit.path,mediaType:'text/html',display:'inline',sha256:cockpit.sourceDigest,openUrl:cockpit.openUrl};
+ const bundleDocument: Attachment={id:'REVIEW-BUNDLE',kind:'review-bundle',label:`${task.meta.id} — ${specification?'specification':'final'} Review Details.md`,source:'specrail-review-bundle',tool:'SpecRail',route:null,viewport:null,path:bundle.path,mediaType:'text/markdown',display:'attachment',sha256:fileSha256(bundle.path)};
  const attachments=[cockpitDocument,bundleDocument,...evidenceForStage(root,id,specification?'specification':'final')];
- const heading=specification?'Especificación lista para validar':'Resultado listo para validar';
- const bundleMarkdown=readFileSync(bundle.path,'utf8').trim();
- const markdown=[`> **${heading}.** El Review Bundle completo que sigue es autoritativo y debe mostrarse íntegramente antes de pedir aprobación. Toda evidencia con \`requiredVisible=true\` debe presentarse directamente en una superficie visible del host; una ruta local, un nombre de archivo o un HTML generado nunca satisfacen por sí solos “mostrar evidencia”. Los paths son únicamente metadata de auditoría. SpecRail genera además un Review Cockpit, pero su generación no prueba que el host lo haya abierto o mostrado.`,bundleMarkdown].filter(Boolean).join('\n\n');
+ const markdown=decisionMarkdown(root,task,specification);
  const config=loadProjectConfig(root);
  const visualization=specification?specificationVisualization(root,config,task,attachments,sessionId):finalVisualization(root,config,task,attachments,sessionId);
  const gate=specification?'spec-approval' as const:'final-approval' as const;
