@@ -2,11 +2,9 @@
 
 **Status:** First-class compatibility contract.
 
-SpecRail keeps deterministic workflow state, hashes, gates, evidence, Scope Guard, revisions, autonomy policy, and task leases independent from the coding-agent host. The Pi adapter maps only host-dependent edges onto Pi primitives; it does not fork workflow semantics.
+SpecRail keeps workflow state, hashes, gates, evidence, Scope Guard, revisions, autonomy, and task leases host-neutral. Pi maps only host-dependent interaction/transport edges.
 
 ## Install
-
-Choose one route.
 
 ### Pi-native package
 
@@ -14,24 +12,7 @@ Choose one route.
 pi install npm:@saulmarti/specrail@beta
 ```
 
-The npm package declares:
-
-```json
-{
-  "pi": {
-    "extensions": ["./extensions/specrail.js"],
-    "skills": ["./skills"]
-  }
-}
-```
-
-Pi loads the extension and skills directly from the package. `typebox` is declared as a Pi-core peer dependency, so the package follows Pi's distributed-package dependency contract. No global `specrail` executable is required for agent operation.
-
-Use project-local Pi settings when desired:
-
-```bash
-pi install -l npm:@saulmarti/specrail@beta
-```
+The package exposes `./extensions/specrail.js` and `./skills`; no global SpecRail CLI is required inside Pi. Project-local install remains available with `pi install -l`.
 
 ### Managed Codex + Pi installation
 
@@ -40,99 +21,121 @@ npm install -g @saulmarti/specrail@beta
 specrail install
 ```
 
-The managed installer:
+The managed installer registers `~/.ai-flow` as a local Pi Package, preserves unrelated Pi settings, installs the managed activation block, and keeps the shared SpecRail skills/launchers current.
 
-- installs the canonical SpecRail package under `~/.ai-flow`;
-- registers the absolute `~/.ai-flow` directory in `~/.pi/agent/settings.json` as a **local Pi Package**;
-- preserves unrelated Pi settings/packages and the existing `~/.pi/agent/AGENTS.md`;
-- adds only a compact managed activation block to `~/.pi/agent/AGENTS.md`;
-- removes the obsolete loose `~/.pi/agent/extensions/specrail.js` copy if one exists;
-- installs shared Agent Skills under `~/.agents/skills/` and the terminal launchers under `~/.local/bin/`.
+## Process route: always explicit for new delivery work
 
-This deliberately uses Pi's package loader for both installation routes. Do not also install the npm Pi package into the same Pi scope, because duplicate resources are unnecessary.
+A new repository delivery request does **not** enter SpecRail silently. Before creating a task, CodeGraph preflight, gate, evidence, or learning state, Pi uses `specrail_entry_gate` and asks:
+
+- **SpecRail** — governed/traced workflow;
+- **Directo** — execute without SpecRail workflow state;
+- **Directo + verificar** — direct execution plus the smallest meaningful final verification;
+- **Other…** — free-text answer.
+
+No option is auto-selected. The route decision is separate from `micro/light/standard/rigorous` and from Guided/Autonomous/Headless.
+
+Explicit controls suppress only the redundant entry question:
+
+- `Sin SpecRail:` / `No SpecRail:` → Direct;
+- `Directo + verificar:` / `Direct + Verify:` → Direct+Verify;
+- `SpecRail Fast:` → governed SpecRail Fast;
+- `Continue/Resume/Retoma TASK-####` → continue the existing SpecRail task without asking again.
+
+In non-interactive Pi modes, an unresolved route fails closed with `PROCESS_ROUTE_REQUIRED`; the adapter never chooses for the user.
+
+## No-Assumption contract
+
+Material decisions may be resolved only from:
+
+1. explicit active user input;
+2. an approved SpecRail decision;
+3. an authoritative repository contract;
+4. one unique established repository pattern;
+5. current deterministic tool evidence.
+
+Model confidence is never authority. If two plausible material interpretations remain, mutation stops and Pi asks. Facts that the repository resolves uniquely should not generate a question.
+
+Every clarification uses 2–4 concrete choices, at most one recommendation, and `Other`/free text. Up to four independent questions may be batched. Dependent questions are asked sequentially.
+
+When the host exposes an attested richer `ask_user_question` capability (for example a compatible `@juicesharp/rpiv-ask-user-question` installation), SpecRail may prefer it. Otherwise the built-in Pi adapter uses `ctx.ui.select()` / `ctx.ui.input()` with the same semantics. The fallback is first-class; SpecRail does not silently install a third-party question package.
+
+## Ponytail contract
+
+Every production-code mutation route—SpecRail, Direct, or Direct+Verify—requires the **official Ponytail** skill/plugin in `full` mode unless the user explicitly disables Ponytail for the current work item.
+
+SpecRail does not copy or impersonate Ponytail and never installs third-party code silently. If the host cannot attest the required capability, mutation stops and asks the user to enable/install official Ponytail or explicitly continue without it.
+
+Before a mutation phase is completed, the official `ponytail-review` semantics review the current diff for unnecessary code/abstractions. Minimalism never overrides explicit user requirements, security/privacy, accessibility, data-loss protection, approved scope, acceptance criteria, or evidence requirements.
 
 ## Host contract
 
 | SpecRail need | Pi mapping |
 | --- | --- |
-| Deterministic CLI | `specrail_cli` executes bundled `scripts/specrail-fast.sh` directly through its Bash shebang |
-| Deterministic specialist | `specrail_skill` loads the exact packaged `recommendedSkill`; no `.agents/skills` path assumption |
-| Structural code context | `specrail_codegraph` → `codegraph explore <query>`; no Pi MCP bridge required |
+| New-work process route | `specrail_entry_gate` → native selector + free text |
+| Deterministic CLI | `specrail_cli` executes bundled `scripts/specrail-fast.sh` directly |
+| Deterministic specialist | `specrail_skill` loads the exact packaged `recommendedSkill` |
+| Structural code context | `specrail_codegraph` → `codegraph explore <query>` |
 | Stable session token | `specrail_host_context` → `ctx.sessionManager.getSessionId()` |
-| Exact human gate | `request_user_input` → `ctx.ui.select()` / `ctx.ui.input()` |
-| Fresh-session phase boundary | `/specrail-handoff TASK-####` → `ctx.newSession({ withSession })` + replacement-session `sendUserMessage()` |
-| Model/reasoning ownership | Pi remains authoritative; SpecRail never sets model/thinking |
-| Skill discovery | Pi Package `skills/` manifest plus deterministic `specrail_skill` bridge |
-| Natural activation | compact `before_agent_start` system-prompt addition for repository delivery work |
-| Visual review | canonical inline evidence + Review Cockpit/openUrl fallback; Codex `$visualize` is never assumed |
-| Parallel subagents | `unattested` by default; safe serial fallback until independent workers are truthfully attested |
-
-The adapter does not reimplement SpecRail decisions. `next`, interactions, readiness, approval integrity, autonomy, revisions, Scope Guard, and evidence remain owned by the TypeScript core.
+| Human gate | richer attested question capability when available, otherwise `request_user_input` → `ctx.ui.select()` / `ctx.ui.input()` |
+| Fresh-session phase boundary | `/specrail-handoff TASK-####` → `ctx.newSession({ withSession })` |
+| Model/reasoning | Pi-owned; SpecRail never selects it |
+| Visual review | canonical inline evidence + compact Review Cockpit/openUrl fallback |
+| Parallel subagents | `unattested` by default; deterministic serial fallback |
 
 ## Runtime safety
 
-Pi executes tool batches in parallel by default. SpecRail therefore marks `specrail_cli` and `request_user_input` with `executionMode: "sequential"`; state-mutating workflow transitions and blocking human UI cannot race another tool in the same batch. `specrail_codegraph`, `specrail_skill`, and `specrail_host_context` remain read-only and may stay parallel.
+Pi can execute tool batches in parallel. `specrail_cli`, `specrail_entry_gate`, and `request_user_input` are sequential so workflow state and blocking human UI cannot race. Read-only helpers may remain parallel.
 
-Pi marks a tool result as failed only when `execute()` throws. The adapter throws on every killed/non-zero SpecRail or CodeGraph process. A failed `specrail next` therefore remains a real runtime blocker instead of a successful-looking result containing an exit code.
+Killed/non-zero SpecRail or CodeGraph processes throw. A failed `next` is therefore a real blocker. The dispatcher is invoked through its Bash shebang, not `/bin/sh`, preserving macOS/Linux behavior.
 
-The dispatcher is executed directly, not through `/bin/sh`. Its `#!/usr/bin/env bash` shebang is authoritative on both supported macOS and Linux hosts, avoiding the `dash`/Bash incompatibility common on Linux.
-
-## Natural activation and specialist routing
-
-For repository delivery requests, the Pi extension adds the minimum SpecRail host guidance before the agent starts. Read-only explanations/research remain outside SpecRail. Existing explicit controls keep the same meaning:
-
-- `Sin SpecRail:` / `No SpecRail:` — total bypass for this request;
-- `SpecRail Fast:` — governed low-overhead path, with deterministic escalation when risk/scope becomes material;
-- `Continue TASK-####` — deterministic task continuation.
-
-`ai-flow` remains the full workflow contract. After `next` chooses a role, native Pi installs call `specrail_skill` with the exact `recommendedSkill`. This prevents a native Pi Package installation from depending on Codex/global `.agents/skills/...` filesystem conventions.
+Direct and Direct+Verify still receive the No-Assumption and Ponytail host policy, but they create no SpecRail task, CodeGraph preflight, gate, evidence state, or learning state.
 
 ## Human decisions
 
-When core routing returns `interaction.tool === "request_user_input"`, Pi presents the exact supplied questions/options through the adapter. The adapter returns the selected labels and never chooses on the user's behalf.
+Core-governed interactions remain exact. For `interaction.tool === "request_user_input"`, the adapter preserves IDs, labels, descriptions, and free-text behavior; it never turns a recommendation into consent.
 
-In Pi modes without interactive UI, the adapter fails closed for a human-owned decision. Autonomous/Headless behavior remains determined by SpecRail policy; missing UI is never converted into implicit approval.
+No interactive UI means no fabricated answer. Autonomous/Headless policy may mechanically advance only decisions already owned by that policy; unresolved human judgment remains blocked.
 
 ## Phase boundaries
 
-SpecRail persists the boundary choice first and requires the next host turn/session to enter it. Pi-specific behavior is limited to transport:
+SpecRail persists the boundary choice and ends the turn. The next turn/session enters the boundary before phase work:
 
-- `current` continues in the same Pi session after the required turn stop;
-- `pause` leaves model/thinking changes to Pi's own controls;
-- `fresh` uses `/specrail-handoff TASK-####` or an equivalent `/new` + `Continue TASK-####`.
+- `current` → same Pi session after the required turn stop;
+- `pause` → user may change Pi model/thinking;
+- `fresh` → `/specrail-handoff TASK-####` or `/new` + `Continue TASK-####`.
 
-`/specrail-handoff` uses Pi's replacement-session `withSession` callback and calls `sendUserMessage()` only on the fresh context. It never reuses stale pre-switch `pi`/session objects. The new session must still enter the sealed SpecRail boundary before implementation/review work.
+The new session still enters the sealed SpecRail boundary before implementation/review.
 
-## Taste / UI work
+## Compact approval review
 
-Taste validation is host-neutral for supported hosts: a valid brief may target `agent: "codex"` or `agent: "pi"`, and Pi skill roots are accepted. Codex-only Visualize language remains explicitly conditional instead of becoming a Pi requirement.
+Approval surfaces are decision-first:
 
-## Visuals and browser capability
+1. compact Decision Capsule;
+2. mandatory primary visual/behavior evidence;
+3. native decision prompt.
 
-The Codex `$visualize` skill and `codex://` deep links are host-specific and are never prerequisites for Pi compatibility. Pi follows the canonical Review Bundle and evidence contract. A compatible third-party Pi visualization/browser extension may satisfy the same contract only when its actual capability is discovered and its result is recorded truthfully. Missing required presentation capability fails closed rather than fabricating evidence.
+Specification, acceptance/NFR detail, files, evidence inventory, checks, trace, repair history, experiments, and amendments remain available under Review Details/tabs instead of being repeated by default. Review Cockpit remains read-only. A generated HTML file is not proof that Pi displayed it; canonical inline evidence and actual host-open outcomes remain authoritative.
+
+## Taste / visuals / browser
+
+Taste accepts Pi as a supported host. Codex `$visualize` and `codex://` links are never prerequisites for Pi. A compatible Pi visualization/browser provider counts only when its actual capability/result is truthfully attested; otherwise canonical evidence and the Cockpit fallback apply.
 
 ## Concurrency
 
-Pi's parallel **tool execution** is not proof of independent parallel **subagents**. SpecRail therefore reports subagents as `unattested` by default. If the active Pi setup really provides independent workers, the normal SpecRail host-capability command may record a truthful session-specific attestation; otherwise the scheduler uses deterministic serial fallback. Serial fallback is a supported compatibility path, not a failure.
+Parallel Pi **tool calls** do not prove independent parallel **subagents**. Subagents remain `unattested` unless explicitly and truthfully recorded. The scheduler therefore has a supported serial fallback.
 
 ## Verification contract
 
-The repository carries runtime tests that load the actual packaged adapter and verify:
+Repository tests cover:
 
-- direct Bash-shebang CLI execution on Linux;
-- non-zero/killed process → thrown Pi tool failure;
-- sequential mutation/human-gate semantics;
-- exact native UI answer mapping and headless fail-closed behavior;
-- real session-ID bridging;
-- fresh replacement-session handoff;
-- natural activation, Fast/bypass/continuation rules;
-- deterministic packaged `ai-flow` orchestrator + specialist loading without `.agents`;
+- packaged Bash dispatcher and error propagation;
+- entry route choices, explicit prefixes, free text, and headless fail-closed behavior;
+- exact native clarification mapping;
+- session-ID bridging and fresh handoff;
+- deterministic packaged specialist loading;
 - CodeGraph failure semantics;
-- Pi Taste brief/skill-root acceptance;
-- managed local-package registration while preserving unrelated Pi settings.
+- Ponytail/no-assumption host contracts;
+- compact approval presentation;
+- managed Pi-package installation.
 
-`npm run release:check` includes these tests plus the full SpecRail suite and package dry-run.
-
-## Compatibility boundary
-
-First-class Pi compatibility means SpecRail can complete its governed workflow through Pi while preserving every core safety invariant. It does **not** mean every optional Codex plugin has a one-for-one Pi equivalent. Optional host features may use a truthful fallback (for example serial subagent execution or canonical evidence instead of Codex Visualize) without reducing workflow compatibility.
+`npm run release:check` remains the release-level validation gate.
