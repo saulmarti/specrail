@@ -28,21 +28,19 @@ export function structuredQuestion(input: StructuredQuestionInput): NativeQuesti
   }
   const recommended = input.options.filter(option => option.recommended === true);
   if (recommended.length > 1) throw new Error('Structured questions allow at most one recommended choice');
+  if (input.multiSelect === true) throw new Error('Current SpecRail native questions are single-select; split multi-select decisions into explicit questions');
   const labels = input.options.map(option => text(option.label, 'Option label'));
   if (new Set(labels).size !== labels.length) throw new Error('Structured question choice labels must be unique');
   const options: QuestionOption[] = input.options.map(option => ({
     label: text(option.label, 'Option label'),
-    description: text(option.description, 'Option description'),
-    ...(option.recommended === true ? { recommended: true } : {}),
-    ...(option.preview ? { preview: String(option.preview) } : {})
+    description: recommendedDescription(option.description, option.recommended === true)
   }));
   return {
     id: text(input.id, 'Question id'),
     header: text(input.header, 'Question header').slice(0, 30),
     question: text(input.question, 'Question'),
     options,
-    isOther: input.isOther !== false,
-    ...(input.multiSelect === true ? { multiSelect: true } : {})
+    isOther: input.isOther !== false
   };
 }
 
