@@ -11,6 +11,7 @@
     "dist",
     "skills",
     "extensions",
+    "vendor",
     "scripts",
     "evals",
     "plugin.json",
@@ -117,7 +118,8 @@
   "homepage": "https://github.com/saulmarti/specrail#readme",
   "pi": {
     "extensions": [
-      "./extensions/specrail.js"
+      "./extensions/specrail.js",
+      "./extensions/specrail-runtime-gates.js"
     ],
     "skills": [
       "./skills"
