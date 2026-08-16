@@ -16,6 +16,7 @@ const quickFiles=[
   'architecture-integrity.test.mjs',
   'control-profile.test.mjs',
   'core.test.mjs',
+  'entry-clarity-ponytail.test.mjs',
   'pi-compatibility.test.mjs',
   'pi-adapter-runtime.test.mjs',
   'revisions.test.mjs',
@@ -25,13 +26,11 @@ const quickFiles=[
 ];
 const e2eFile='installed-e2e.test.mjs';
 const nonE2E=allFiles.filter(name=>name!==e2eFile);
-const selected=tier==='quick'?quickFiles:tier==='unit'?nonE2E:tier==='e2e'?[e2eFile]:allFiles;
+const selected=tier==='quick'?quickFiles:tier==='unit'?nonE2E:tier==='e2e'?[e2EFile]:allFiles;
 const timeoutMs=Number(process.env.SPEC_RAIL_TEST_FILE_TIMEOUT_MS||120_000);
 const concurrency=Math.max(1,Number(process.env.SPEC_RAIL_TEST_CONCURRENCY||4));
 const baseEnv={
   ...process.env,
-  // Keep the resident runtime alive during ordinary suites. The 1s shutdown
-  // behavior is asserted explicitly by runtime-resident.test.mjs itself.
   SPEC_RAIL_RUNTIME_IDLE_MS:process.env.SPEC_RAIL_RUNTIME_IDLE_MS||'60000',
   SPEC_RAIL_RUNTIME_REQUEST_TIMEOUT_SECONDS:process.env.SPEC_RAIL_RUNTIME_REQUEST_TIMEOUT_SECONDS||'25',
   SPEC_RAIL_E2E_COMMAND_TIMEOUT_MS:process.env.SPEC_RAIL_E2E_COMMAND_TIMEOUT_MS||'30000',
