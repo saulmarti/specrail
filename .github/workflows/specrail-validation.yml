@@ -40,5 +40,18 @@ jobs:
         run: node scripts/test-pi-adapter.mjs
       - name: Pi runtime gate regression test
         run: node scripts/test-pi-runtime-gates.mjs
-      - name: Release validation
-        run: npm run release:check
+      - name: Build
+        run: npm run build
+      - name: Version sync
+        run: npm run version:check
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Installed E2E tests
+        run: npm run test:e2e
+      - name: Syntax checks
+        run: |
+          node --check scripts/install.mjs
+          node --check scripts/uninstall.mjs
+          node --check extensions/specrail.js
+      - name: Package dry run
+        run: npm pack --dry-run
