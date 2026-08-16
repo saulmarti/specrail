@@ -26,7 +26,7 @@ const quickFiles=[
 ];
 const e2eFile='installed-e2e.test.mjs';
 const nonE2E=allFiles.filter(name=>name!==e2eFile);
-const selected=tier==='quick'?quickFiles:tier==='unit'?nonE2E:tier==='e2e'?[e2EFile]:allFiles;
+const selected=tier==='quick'?quickFiles:tier==='unit'?nonE2E:tier==='e2e'?[e2eFile]:allFiles;
 const timeoutMs=Number(process.env.SPEC_RAIL_TEST_FILE_TIMEOUT_MS||120_000);
 const concurrency=Math.max(1,Number(process.env.SPEC_RAIL_TEST_CONCURRENCY||4));
 const baseEnv={
