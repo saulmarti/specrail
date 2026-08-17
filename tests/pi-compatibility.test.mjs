@@ -10,7 +10,7 @@ const pkg=JSON.parse(readFileSync(path.join(root,'package.json'),'utf8'));
 const read=(file)=>readFileSync(path.join(root,file),'utf8');
 
 test('Pi is a declared package host and documentation keeps the adapter boundary explicit',()=>{
-  assert.deepEqual(pkg.pi?.extensions,['./extensions/specrail.js']);
+  assert.deepEqual(pkg.pi?.extensions,['./extensions/specrail.js','./extensions/specrail-runtime-gates.js']);
   assert.deepEqual(pkg.pi?.skills,['./skills']);
   assert.ok(pkg.files.includes('extensions'));
   assert.ok(pkg.keywords.includes('pi-package'));
