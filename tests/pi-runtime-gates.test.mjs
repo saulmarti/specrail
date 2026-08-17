@@ -116,16 +116,30 @@ test('Pi runtime fails closed on unknown custom tools while allowing explicit re
   assert.match(blocked.reason, /UNATTESTED_TOOL_CAPABILITY/);
 });
 
-test('Direct routes keep governance state in memory while SpecRail routes may persist it', async () => {
+test('Direct routes persist only Pi routing metadata and restore without stale mutation authority', async () => {
   const direct = await loadRuntime();
   const directEntries = [fullEntry()];
-  await direct.events.get('before_agent_start')({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, context({ entries: directEntries }));
-  assert.equal(direct.appended.length, 0);
+  const directCtx = context({ sessionId: 'direct', entries: directEntries });
+  await direct.events.get('before_agent_start')({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, directCtx);
+  const directState = direct.appended.find((entry) => entry.customType === direct.mod.STATE_TYPE);
+  assert.equal(directState?.data?.route, 'direct');
+  assert.equal(directState?.data?.mutationAuthorized, false);
+
+  const restored = await loadRuntime();
+  const restoredEntries = [fullEntry(), ...direct.appended];
+  const restoredCtx = context({ sessionId: 'direct', entries: restoredEntries });
+  await restored.events.get('session_start')({}, restoredCtx);
+  const restoredPrompt = await restored.events.get('before_agent_start')({ prompt: 'continua', systemPrompt: 'base' }, restoredCtx);
+  assert.match(restoredPrompt.systemPrompt, /route=direct/);
+  const blockedMutation = await restored.events.get('tool_call')({ toolName: 'edit', toolCallId: 'restored-edit', input: {} }, restoredCtx);
+  assert.match(blockedMutation.reason, /MUTATION_GATE_REQUIRED/);
 
   const directVerify = await loadRuntime();
   const directVerifyEntries = [fullEntry()];
   await directVerify.events.get('before_agent_start')({ prompt: 'Directo + verificar: fix it', systemPrompt: 'base' }, context({ sessionId: 'direct-verify', entries: directVerifyEntries }));
-  assert.equal(directVerify.appended.length, 0);
+  const directVerifyState = directVerify.appended.find((entry) => entry.customType === directVerify.mod.STATE_TYPE);
+  assert.equal(directVerifyState?.data?.route, 'direct_verify');
+  assert.equal(directVerifyState?.data?.verificationRequired, true);
 
   const governed = await loadRuntime();
   const governedEntries = [fullEntry()];
