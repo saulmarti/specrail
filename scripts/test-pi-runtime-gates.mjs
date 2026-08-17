@@ -7,6 +7,7 @@ import installSpecRailRuntimeGates, {
   excludedFingerprintPath,
   explicitRoute,
   ponytailModeFromEntries,
+  repositoryFingerprint,
   routeFromToolResult,
   verificationCommandAllowed,
 } from '../extensions/specrail-runtime-gates.js';
@@ -60,7 +61,7 @@ const pi = {
   appendEntry(customType, data) { entries.push({ type: 'custom', customType, data }); },
   sendMessage(message, options) { followUps.push({ message, options }); },
   async exec(command, args) {
-    if (command === 'git' && args[0] === 'rev-parse') return { code: 0, stdout: 'true\n', stderr: '', killed: false };
+    if (command === 'git' && args[0] === 'rev-parse') return { code: 0, stdout: `${process.cwd()}\n`, stderr: '', killed: false };
     if (command === 'git' && args[0] === 'ls-files') return { code: 0, stdout: fingerprintFiles, stderr: '', killed: false };
     return { code: 0, stdout: 'ok\n', stderr: '', killed: false };
   },
@@ -82,9 +83,10 @@ const toolCall = handlers.get('tool_call')[0];
 const toolEnd = handlers.get('tool_execution_end')[0];
 const agentEnd = handlers.get('agent_end')[0];
 const runtimeEntries = () => entries.filter((entry) => entry.customType === STATE_TYPE);
+const latestRuntimeState = () => runtimeEntries().at(-1)?.data;
 
 await before({ prompt: 'Directo + verificar: fix bug', systemPrompt: 'base' }, ctx);
-assert.equal(runtimeEntries().length, 0, 'Direct + Verify must not create SpecRail session metadata');
+assert.equal(latestRuntimeState()?.route, 'direct_verify', 'Direct + Verify route continuity is stored only as Pi session metadata');
 const attested = await tools.get('specrail_ponytail').execute('p1', { action: 'load' }, undefined, undefined, ctx);
 assert.equal(attested.details.mode, 'full');
 assert.equal(attested.details.source, 'pi-session:ponytail-mode');
@@ -147,20 +149,30 @@ await tools.get('specrail_ponytail').execute('p3', { action: 'review' }, undefin
 await tools.get('specrail_ponytail_review_result').execute('pr', { status: 'pass', summary: 'Lean already. Ship.', checks: ['simplification review'] }, undefined, undefined, ctx);
 await tools.get('specrail_verify').execute('v1', { command: 'node', args: ['--version'] }, undefined, undefined, ctx);
 await agentEnd({}, ctx);
-assert.equal(runtimeEntries().length, 0, 'Direct + Verify must remain free of SpecRail session metadata after agent_end');
+assert.equal(latestRuntimeState()?.route, 'direct_verify');
 const continuedPrompt = await before({ prompt: 'continua', systemPrompt: 'base' }, ctx);
 assert.match(continuedPrompt.systemPrompt, /route=direct_verify/, 'Direct + Verify route must survive agent_end in the active runtime');
 
 const restoredHandlers = new Map();
+const restoredTools = new Map();
 const restoredPi = {
   ...pi,
   on(name, fn) { if (!restoredHandlers.has(name)) restoredHandlers.set(name, []); restoredHandlers.get(name).push(fn); },
-  registerTool() {},
+  registerTool(tool) { restoredTools.set(tool.name, tool); },
 };
 installSpecRailRuntimeGates(restoredPi);
 await restoredHandlers.get('session_start')[0]({}, ctx);
 const restoredPrompt = await restoredHandlers.get('before_agent_start')[0]({ prompt: 'continua', systemPrompt: 'base' }, ctx);
-assert.equal(restoredPrompt, undefined, 'Direct + Verify must not restore SpecRail state after a fresh runtime starts');
+assert.match(restoredPrompt.systemPrompt, /route=direct_verify/, 'Direct + Verify route must restore from Pi session metadata');
+const restoredMutation = await restoredHandlers.get('tool_call')[0]({ toolCallId: 'restored-write', toolName: 'write', input: { path: 'x' } }, ctx);
+assert.match(restoredMutation.reason, /MUTATION_GATE_REQUIRED/, 'restoring a route must never restore one-use mutation authority');
+
+const nestedCtx = { ...ctx, cwd: path.join(process.cwd(), 'src') };
+fingerprintFiles = 'package.json\0';
+const rootFingerprint = await repositoryFingerprint(pi, ctx);
+const nestedFingerprint = await repositoryFingerprint(pi, nestedCtx);
+assert.equal(nestedFingerprint, rootFingerprint, 'repository fingerprint must be rooted at Git top-level, not the caller subdirectory');
+fingerprintFiles = '';
 
 const noPonytailEntries = [];
 const noPonytailHandlers = new Map();
@@ -170,7 +182,7 @@ const noPonytailPi = {
   registerTool(tool) { noPonytailTools.set(tool.name, tool); },
   appendEntry(customType, data) { noPonytailEntries.push({ type: 'custom', customType, data }); },
   async exec(command, args) {
-    if (command === 'git' && args[0] === 'rev-parse') return { code: 0, stdout: 'true\n', stderr: '', killed: false };
+    if (command === 'git' && args[0] === 'rev-parse') return { code: 0, stdout: `${process.cwd()}\n`, stderr: '', killed: false };
     if (command === 'git' && args[0] === 'ls-files') return { code: 0, stdout: '', stderr: '', killed: false };
     return { code: 0, stdout: 'ok\n', stderr: '', killed: false };
   },
@@ -182,7 +194,7 @@ const noPonytailCtx = {
   sessionManager: { getSessionId() { return 'no-ponytail'; }, getBranch() { return noPonytailEntries; } },
 };
 await noPonytailHandlers.get('before_agent_start')[0]({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, noPonytailCtx);
-assert.equal(noPonytailEntries.filter((entry) => entry.customType === STATE_TYPE).length, 0, 'Direct route must not create SpecRail session metadata');
+assert.equal(noPonytailEntries.filter((entry) => entry.customType === STATE_TYPE).at(-1)?.data?.route, 'direct', 'Direct route may persist Pi session routing metadata without creating SpecRail workflow state');
 await assert.rejects(
   noPonytailTools.get('specrail_ponytail').execute('missing', { action: 'load' }, undefined, undefined, noPonytailCtx),
   /PONYTAIL_REQUIRED/,
@@ -196,7 +208,7 @@ const ultraPi = {
   ...noPonytailPi,
   on(name, fn) { if (!ultraHandlers.has(name)) ultraHandlers.set(name, []); ultraHandlers.get(name).push(fn); },
   registerTool(tool) { ultraTools.set(tool.name, tool); },
-  appendEntry() { throw new Error('Direct route must not persist runtime state'); },
+  appendEntry(customType, data) { ultraEntries.push({ type: 'custom', customType, data }); },
 };
 installSpecRailRuntimeGates(ultraPi);
 const ultraCtx = {
