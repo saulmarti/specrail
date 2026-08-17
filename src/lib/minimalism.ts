@@ -74,7 +74,7 @@ export function minimalismRequirement(
   const mode = capability.mode ?? PONYTAIL_DEFAULT_MODE;
   const providerOk = capability.available === true && (provider === PONYTAIL_PROVIDER || provider === 'ponytail');
   const versionOk = providerOk && versionAtLeast(version);
-  const modeOk = mode === 'full' || mode === 'ultra';
+  const modeOk = mode === 'full';
   const satisfied = providerOk && versionOk && modeOk;
 
   return {
