@@ -161,15 +161,28 @@ const restoredPrompt = await restoredHandlers.get('before_agent_start')[0]({ pro
 assert.match(restoredPrompt.systemPrompt, /route=direct_verify/, 'Direct + Verify route must restore from Pi session metadata');
 
 const noPonytailEntries = [];
+const noPonytailHandlers = new Map();
+const noPonytailTools = new Map();
+const noPonytailPi = {
+  on(name, fn) { if (!noPonytailHandlers.has(name)) noPonytailHandlers.set(name, []); noPonytailHandlers.get(name).push(fn); },
+  registerTool(tool) { noPonytailTools.set(tool.name, tool); },
+  appendEntry(customType, data) { noPonytailEntries.push({ type: 'custom', customType, data }); },
+  async exec(command, args) {
+    if (command === 'git' && args[0] === 'rev-parse') return { code: 0, stdout: 'true\n', stderr: '', killed: false };
+    if (command === 'git' && args[0] === 'ls-files') return { code: 0, stdout: '', stderr: '', killed: false };
+    return { code: 0, stdout: 'ok\n', stderr: '', killed: false };
+  },
+};
+installSpecRailRuntimeGates(noPonytailPi);
 const noPonytailCtx = {
   cwd: process.cwd(),
   hasUI: false,
   sessionManager: { getSessionId() { return 'no-ponytail'; }, getBranch() { return noPonytailEntries; } },
 };
-await before({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, noPonytailCtx);
+await noPonytailHandlers.get('before_agent_start')[0]({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, noPonytailCtx);
 assert.equal(noPonytailEntries.filter((entry) => entry.customType === STATE_TYPE).at(-1)?.data?.route, 'direct', 'Direct route must persist as Pi session metadata');
 await assert.rejects(
-  tools.get('specrail_ponytail').execute('missing', { action: 'load' }, undefined, undefined, noPonytailCtx),
+  noPonytailTools.get('specrail_ponytail').execute('missing', { action: 'load' }, undefined, undefined, noPonytailCtx),
   /PONYTAIL_REQUIRED/,
   'missing host Ponytail signal must fail closed',
 );
