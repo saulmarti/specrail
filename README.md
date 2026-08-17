@@ -158,6 +158,10 @@ Approve / Request changes / Keep open
 
 The complete authoritative Review Bundle remains attached as **Review Details** instead of being dumped into normal chat. The compact Review Cockpit is read-only; generated HTML is not proof the host opened or displayed it. Actual approval always uses the host-native, session-bound SpecRail selector.
 
+### Review Cockpit — beta
+
+Use the canonical command `specrail review cockpit TASK-0042`. The backwards-compatible alias `specrail cockpit TASK-0001` remains supported.
+
 Required canonical images must be shown in the conversation. On Codex, a signed plan may additionally invoke the exact `$visualize` skill for a richer review surface. `$visualize` never substitutes for required evidence or human approval, and prepared HTML/reference state is not proof of host presentation. See [`docs/REVIEW-COCKPIT.md`](docs/REVIEW-COCKPIT.md).
 
 ## CodeGraph lifecycle
