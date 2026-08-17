@@ -22,6 +22,7 @@ assert.equal(explicitRoute('fix it'), null);
 
 assert.equal(ponytailModeFromEntries([{ type: 'custom', customType: 'ponytail-mode', data: { mode: 'full' } }]), 'full');
 assert.equal(ponytailModeFromEntries([{ type: 'custom', customType: 'ponytail-mode', data: { mode: 'lite' } }]), 'lite');
+assert.equal(ponytailModeFromEntries([{ type: 'custom', customType: 'ponytail-mode', data: { mode: 'ultra' } }]), 'ultra');
 assert.equal(ponytailModeFromEntries([]), null);
 assert.equal(bashMayMutate('git status --short'), false);
 assert.equal(bashMayMutate('rg TODO src'), false);
@@ -83,7 +84,7 @@ const agentEnd = handlers.get('agent_end')[0];
 const runtimeEntries = () => entries.filter((entry) => entry.customType === STATE_TYPE);
 
 await before({ prompt: 'Directo + verificar: fix bug', systemPrompt: 'base' }, ctx);
-assert.equal(runtimeEntries().at(-1)?.data?.route, 'direct_verify', 'Direct + Verify route must persist as Pi session metadata');
+assert.equal(runtimeEntries().length, 0, 'Direct + Verify must not create SpecRail session metadata');
 const attested = await tools.get('specrail_ponytail').execute('p1', { action: 'load' }, undefined, undefined, ctx);
 assert.equal(attested.details.mode, 'full');
 assert.equal(attested.details.source, 'pi-session:ponytail-mode');
@@ -146,8 +147,9 @@ await tools.get('specrail_ponytail').execute('p3', { action: 'review' }, undefin
 await tools.get('specrail_ponytail_review_result').execute('pr', { status: 'pass', summary: 'Lean already. Ship.', checks: ['simplification review'] }, undefined, undefined, ctx);
 await tools.get('specrail_verify').execute('v1', { command: 'node', args: ['--version'] }, undefined, undefined, ctx);
 await agentEnd({}, ctx);
-assert.equal(runtimeEntries().at(-1)?.data?.route, 'direct_verify', 'Direct + Verify route must survive agent_end for continuation');
-assert.equal(runtimeEntries().at(-1)?.data?.verificationPassed, true);
+assert.equal(runtimeEntries().length, 0, 'Direct + Verify must remain free of SpecRail session metadata after agent_end');
+const continuedPrompt = await before({ prompt: 'continua', systemPrompt: 'base' }, ctx);
+assert.match(continuedPrompt.systemPrompt, /route=direct_verify/, 'Direct + Verify route must survive agent_end in the active runtime');
 
 const restoredHandlers = new Map();
 const restoredPi = {
@@ -158,7 +160,7 @@ const restoredPi = {
 installSpecRailRuntimeGates(restoredPi);
 await restoredHandlers.get('session_start')[0]({}, ctx);
 const restoredPrompt = await restoredHandlers.get('before_agent_start')[0]({ prompt: 'continua', systemPrompt: 'base' }, ctx);
-assert.match(restoredPrompt.systemPrompt, /route=direct_verify/, 'Direct + Verify route must restore from Pi session metadata');
+assert.equal(restoredPrompt, undefined, 'Direct + Verify must not restore SpecRail state after a fresh runtime starts');
 
 const noPonytailEntries = [];
 const noPonytailHandlers = new Map();
@@ -180,11 +182,32 @@ const noPonytailCtx = {
   sessionManager: { getSessionId() { return 'no-ponytail'; }, getBranch() { return noPonytailEntries; } },
 };
 await noPonytailHandlers.get('before_agent_start')[0]({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, noPonytailCtx);
-assert.equal(noPonytailEntries.filter((entry) => entry.customType === STATE_TYPE).at(-1)?.data?.route, 'direct', 'Direct route must persist as Pi session metadata');
+assert.equal(noPonytailEntries.filter((entry) => entry.customType === STATE_TYPE).length, 0, 'Direct route must not create SpecRail session metadata');
 await assert.rejects(
   noPonytailTools.get('specrail_ponytail').execute('missing', { action: 'load' }, undefined, undefined, noPonytailCtx),
   /PONYTAIL_REQUIRED/,
   'missing host Ponytail signal must fail closed',
+);
+
+const ultraEntries = [{ type: 'custom', customType: 'ponytail-mode', data: { mode: 'ultra' } }];
+const ultraHandlers = new Map();
+const ultraTools = new Map();
+const ultraPi = {
+  ...noPonytailPi,
+  on(name, fn) { if (!ultraHandlers.has(name)) ultraHandlers.set(name, []); ultraHandlers.get(name).push(fn); },
+  registerTool(tool) { ultraTools.set(tool.name, tool); },
+  appendEntry() { throw new Error('Direct route must not persist runtime state'); },
+};
+installSpecRailRuntimeGates(ultraPi);
+const ultraCtx = {
+  ...noPonytailCtx,
+  sessionManager: { getSessionId() { return 'ultra'; }, getBranch() { return ultraEntries; } },
+};
+await ultraHandlers.get('before_agent_start')[0]({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, ultraCtx);
+await assert.rejects(
+  ultraTools.get('specrail_ponytail').execute('ultra', { action: 'load' }, undefined, undefined, ultraCtx),
+  /PONYTAIL_REQUIRED/,
+  'Ponytail ultra must not satisfy the literal full-mode requirement',
 );
 
 console.log('PASS: Pi runtime gates');
