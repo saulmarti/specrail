@@ -271,7 +271,7 @@ export function installSpecRailRuntimeGates(pi) {
     const persistedSession = explicitKey.startsWith('anon:') ? null : explicitKey;
     const next = { ...state, sessionId: persistedSession, updatedAt: new Date().toISOString() };
     states.set(explicitKey, next);
-    if (next.route === 'specrail' && explicitKey === keyFor(ctx) && typeof pi.appendEntry === 'function') pi.appendEntry(STATE_TYPE, next);
+    if (['specrail', 'direct', 'direct_verify'].includes(next.route) && explicitKey === keyFor(ctx) && typeof pi.appendEntry === 'function') pi.appendEntry(STATE_TYPE, next);
     return next;
   }
 
@@ -370,7 +370,7 @@ export function installSpecRailRuntimeGates(pi) {
     if (state.mutated && !state.ponytailReviewPassed) blockers.push('run official /skill:ponytail-review and record PASS');
     if (state.mutated && state.route === 'direct_verify' && !state.verificationPassed) blockers.push('run a successful non-mutating specrail_verify');
     if (!blockers.length) {
-      if (state.route === 'direct' || state.route === 'direct_verify') states.set(keyFor(ctx), emptyState(null));
+      persist(ctx, { ...state, completionBlocked: false, enforcementFollowUps: 0 });
       return;
     }
     const message = `Completion blocked: ${blockers.join('; ')}. Do not report this work item as successfully complete.`;
