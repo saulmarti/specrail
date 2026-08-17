@@ -103,7 +103,22 @@ function stateEntryData(entry) {
 function cloneState(value, expectedSessionId) {
   if (!value || value.schemaVersion !== STATE_VERSION) return null;
   if (value.sessionId && expectedSessionId && value.sessionId !== expectedSessionId) return null;
-  return { ...emptyState(expectedSessionId), ...value, sessionId: expectedSessionId || value.sessionId || null };
+  const restored = { ...emptyState(expectedSessionId), ...value, sessionId: expectedSessionId || value.sessionId || null };
+  return {
+    ...restored,
+    ponytailAttested: false,
+    ponytailMode: null,
+    materialDecisionsCleared: false,
+    mutationAuthorized: false,
+    ponytailReviewStarted: false,
+    ponytailReviewPassed: false,
+    ponytailReviewSummary: '',
+    ponytailReviewFingerprint: null,
+    trustedDecisionEvidence: {},
+    verificationPassed: restored.route === 'direct_verify' && restored.mutated ? false : restored.verificationPassed,
+    completionBlocked: false,
+    enforcementFollowUps: 0,
+  };
 }
 
 function restoreState(ctx, expectedSessionId) {
@@ -223,13 +238,16 @@ async function execChecked(pi, command, args, ctx, signal, timeout = 30000) {
 }
 
 async function repositoryFingerprint(pi, ctx, signal) {
-  await execChecked(pi, 'git', ['rev-parse', '--is-inside-work-tree'], ctx, signal);
-  const files = await execChecked(pi, 'git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], ctx, signal);
+  const rootResult = await execChecked(pi, 'git', ['rev-parse', '--show-toplevel'], ctx, signal);
+  const rootText = String(rootResult.stdout || '').trim();
+  if (!rootText) throw new Error('VERIFY_SNAPSHOT_ROOT_UNAVAILABLE');
+  const root = realpathSync(rootText);
+  const files = await execChecked(pi, 'git', ['ls-files', '--cached', '--others', '--exclude-standard', '--full-name', '-z'], ctx, signal);
   const hash = createHash('sha256');
   const names = [...new Set(String(files.stdout || '').split('\0').filter(Boolean))].sort();
   for (const name of names) {
-    const absolute = path.resolve(ctx.cwd, name);
-    const relative = path.relative(ctx.cwd, absolute);
+    const absolute = path.resolve(root, name);
+    const relative = path.relative(root, absolute);
     if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error('VERIFY_SNAPSHOT_UNSAFE_PATH');
     if (excludedFingerprintPath(relative)) continue;
     hash.update(`\0${relative}\0`);
@@ -292,7 +310,7 @@ export function installSpecRailRuntimeGates(pi) {
     const persistedSession = explicitKey.startsWith('anon:') ? null : explicitKey;
     const next = { ...state, sessionId: persistedSession, updatedAt: new Date().toISOString() };
     states.set(explicitKey, next);
-    if (next.route === 'specrail' && explicitKey === keyFor(ctx) && typeof pi.appendEntry === 'function') pi.appendEntry(STATE_TYPE, next);
+    if (next.route && explicitKey === keyFor(ctx) && typeof pi.appendEntry === 'function') pi.appendEntry(STATE_TYPE, next);
     return next;
   }
 
@@ -567,7 +585,7 @@ export function installSpecRailRuntimeGates(pi) {
       const before = await repositoryFingerprint(pi, ctx, signal);
       const result = await pi.exec(params.command, args, { cwd: ctx.cwd, signal, timeout: params.timeoutMs ?? 120000 });
       const after = await repositoryFingerprint(pi, ctx, signal);
-      if (before !== after) throw new Error('VERIFY_MUTATED_REPOSITORY: validation changed tracked or untracked repository content; verification is not accepted.');
+      if (before !== after) throw new Error('VERIFY_MUTATED_REPOSITORY: validation changed tracked or non-ignored untracked Git-visible repository content; verification is not accepted.');
       const stdout = String(result.stdout || '');
       const stderr = String(result.stderr || '');
       if (result.killed || result.code !== 0) throw new Error(stderr.trim() || stdout.trim() || `Verification exited with code ${String(result.code)}`);
