@@ -64,7 +64,12 @@ runtime_process_alive(){
   cmdline=$(ps -p "$pid" -o command= 2>/dev/null || true)
   case "$cmdline" in *"$SERVER"*"$SOCKET"*) return 0;; *) return 1;; esac
 }
-runtime_endpoint_available(){ health || { [ -S "$SOCKET" ] && runtime_process_alive; }; }
+# runtime-server writes META only from server.listen(...), after the Unix socket is
+# actually accepting connections. Health can time out while a synchronous command
+# is busy, so a published metadata record + live matching process is the safe busy
+# fallback. A socket file alone is not readiness: it may appear before listen's
+# callback and caused concurrent launchers to POST too early.
+runtime_endpoint_available(){ health || { [ -S "$SOCKET" ] && [ -f "$META" ] && runtime_process_alive; }; }
 lock_stale(){
   local owner created now
   owner=$(cat "$START_LOCK/pid" 2>/dev/null || true); created=$(cat "$START_LOCK/created_at" 2>/dev/null || true); now=$(date +%s)
@@ -95,7 +100,10 @@ ensure_runtime(){
   if runtime_endpoint_available; then return 0; fi
   if acquire_start_lock; then
     trap release_own_lock EXIT INT TERM
-    rm -f "$SOCKET"
+    # META is the readiness publication marker. Once this launcher owns startup,
+    # clear stale socket/metadata together so peers cannot mistake an old record
+    # for the new process before server.listen() publishes the replacement.
+    rm -f "$SOCKET" "$META"
     SPEC_RAIL_RUNTIME_IDLE_MS=${SPEC_RAIL_RUNTIME_IDLE_MS:-900000} nohup node "$SERVER" --root "$ROOT" --socket "$SOCKET" --meta "$META" </dev/null >/dev/null 2>&1 &
     local tries=0
     until health; do tries=$((tries+1)); if [ "$tries" -gt 100 ]; then release_own_lock; trap - EXIT INT TERM; return 1; fi; sleep 0.02; done
@@ -134,7 +142,7 @@ if [ "$CURL_STATUS" -eq 28 ]; then
   exit 124
 fi
 if [ "$CURL_STATUS" -ne 0 ]; then
-  cat "$TMP" >&2
+  [ -f "$TMP" ] && cat "$TMP" >&2
   printf 'specrail: resident runtime transport failed (curl exit %s); command was not retried automatically: %s\n' "$CURL_STATUS" "$*" >&2
   exit "$CURL_STATUS"
 fi
