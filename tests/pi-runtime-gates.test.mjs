@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { cpSync, mkdirSync, mkdtempSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { cpSync } from 'node:fs';
 
 const repoRoot = process.cwd();
 
@@ -39,9 +39,23 @@ async function loadRuntime() {
   return { tools, events, appended, mod };
 }
 
-function context({ sessionId = 'pi-gate-session', entries = [], hasUI = true } = {}) {
+function realExecPi() {
   return {
-    cwd: repoRoot,
+    async exec(command, args, options = {}) {
+      const result = spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8' });
+      return {
+        code: result.status ?? 1,
+        killed: Boolean(result.signal),
+        stdout: String(result.stdout || ''),
+        stderr: String(result.stderr || result.error?.message || ''),
+      };
+    },
+  };
+}
+
+function context({ sessionId = 'pi-gate-session', entries = [], hasUI = true, cwd = repoRoot } = {}) {
+  return {
+    cwd,
     hasUI,
     mode: hasUI ? 'tui' : 'print',
     sessionManager: {
@@ -146,4 +160,62 @@ test('Direct routes persist only Pi routing metadata and restore without stale m
   const governedCtx = context({ sessionId: 'governed', entries: governedEntries });
   await governed.events.get('before_agent_start')({ prompt: 'SpecRail Fast: fix it', systemPrompt: 'base' }, governedCtx);
   assert.ok(governed.appended.some((entry) => entry.customType === governed.mod.STATE_TYPE));
+});
+
+test('Direct Verify fingerprint works in a fresh Git repository without HEAD', async () => {
+  const { mod } = await loadRuntime();
+  const fresh = mkdtempSync(path.join(tmpdir(), 'specrail-fresh-git-'));
+  execFileSync('git', ['init', '-q'], { cwd: fresh });
+  writeFileSync(path.join(fresh, 'new-file.txt'), 'first contents\n');
+
+  const first = await mod.repositoryFingerprint(realExecPi(), context({ cwd: fresh }), undefined);
+  assert.match(first, /^[a-f0-9]{64}$/);
+
+  writeFileSync(path.join(fresh, 'new-file.txt'), 'second contents\n');
+  const second = await mod.repositoryFingerprint(realExecPi(), context({ cwd: fresh }), undefined);
+  assert.notEqual(second, first, 'Git-visible untracked content must affect the snapshot even before the first commit');
+});
+
+test('Direct Verify fingerprints a symlink identity without following an external target', async () => {
+  const { mod } = await loadRuntime();
+  const fresh = mkdtempSync(path.join(tmpdir(), 'specrail-symlink-git-'));
+  const external = mkdtempSync(path.join(tmpdir(), 'specrail-symlink-target-'));
+  execFileSync('git', ['init', '-q'], { cwd: fresh });
+  const targetA = path.join(external, 'outside-a.txt');
+  const targetB = path.join(external, 'outside-b.txt');
+  writeFileSync(targetA, 'outside one\n');
+  writeFileSync(targetB, 'outside two\n');
+  const link = path.join(fresh, 'external-link');
+  symlinkSync(targetA, link);
+
+  const first = await mod.repositoryFingerprint(realExecPi(), context({ cwd: fresh }), undefined);
+  writeFileSync(targetA, 'changed outside bytes must not be followed\n');
+  const afterTargetMutation = await mod.repositoryFingerprint(realExecPi(), context({ cwd: fresh }), undefined);
+  assert.equal(afterTargetMutation, first, 'external target bytes must not enter the repository fingerprint');
+
+  unlinkSync(link);
+  symlinkSync(targetB, link);
+  const afterLinkMutation = await mod.repositoryFingerprint(realExecPi(), context({ cwd: fresh }), undefined);
+  assert.notEqual(afterLinkMutation, first, 'changing the symlink target identity must change the repository fingerprint');
+});
+
+test('Direct Verify rejects shell and interpreter wrappers instead of trusting an indirect read-only claim', async () => {
+  const { mod } = await loadRuntime();
+  const unsafe = [
+    ['bash', ['-c', 'git status']],
+    ['sh', ['-c', 'git status']],
+    ['zsh', ['-c', 'git status']],
+    ['node', ['-e', 'console.log(1)']],
+    ['python', ['-c', 'print(1)']],
+    ['python3', ['-c', 'print(1)']],
+    ['powershell', ['-Command', 'Get-ChildItem']],
+    ['pwsh', ['-Command', 'Get-ChildItem']],
+    ['cmd', ['/c', 'dir']],
+    ['sed', ['-i', 's/a/b/', 'file.txt']],
+  ];
+  for (const [command, args] of unsafe) {
+    assert.equal(mod.verificationCommandAllowed(command, args), false, `${command} wrapper must fail closed`);
+  }
+  assert.equal(mod.verificationCommandAllowed('git', ['status', '--short']), true);
+  assert.equal(mod.verificationCommandAllowed('node', ['--check', 'src/example.js']), true);
 });
