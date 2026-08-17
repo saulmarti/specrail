@@ -26,16 +26,7 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Install
-        run: npm ci --legacy-peer-deps --no-audit --no-fund
-      - name: Install Pi smoke-test peer
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p node_modules/typebox
-          tgz="$(npm pack typebox@1.3.7 --silent)"
-          tar -xzf "$tgz" --strip-components=1 -C node_modules/typebox
-          rm -f "$tgz"
-          node -e "import('typebox').then(() => console.log('typebox peer ready'))"
+        run: npm ci --no-audit --no-fund
       - name: Pi adapter smoke test
         run: node scripts/test-pi-adapter.mjs
       - name: Pi runtime gate regression test
