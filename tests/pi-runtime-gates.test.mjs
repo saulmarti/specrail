@@ -105,6 +105,17 @@ test('Pi runtime fails closed when Ponytail is missing, lite, ultra, or turned o
   assert.equal(tools.has('specrail_ponytail_override'), false, 'there is no internal Ponytail bypass tool');
 });
 
+test('Pi runtime fails closed on unknown custom tools while allowing explicit read-only tools', async () => {
+  const { events } = await loadRuntime();
+  const ctx = context({ entries: [fullEntry()] });
+  const toolCall = events.get('tool_call');
+
+  assert.equal(await toolCall({ toolName: 'read', toolCallId: 'read-1', input: { path: 'README.md' } }, ctx), undefined);
+  assert.equal(await toolCall({ toolName: 'grep', toolCallId: 'grep-1', input: { pattern: 'SpecRail' } }, ctx), undefined);
+  const blocked = await toolCall({ toolName: 'mystery_custom_tool', toolCallId: 'unknown-1', input: {} }, ctx);
+  assert.match(blocked.reason, /UNATTESTED_TOOL_CAPABILITY/);
+});
+
 test('Direct routes keep governance state in memory while SpecRail routes may persist it', async () => {
   const direct = await loadRuntime();
   const directEntries = [fullEntry()];
