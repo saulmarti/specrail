@@ -25,7 +25,7 @@ test('public metadata matches the maintainer and release channel',()=>{
 });
 
 test('public roadmap and agent rules are canonical and packaged',()=>{
-  for(const file of ['ROADMAP.md','AGENTS.md','docs/REVIEW-COCKPIT.md','docs/GITHUB-DELIVERY.md','docs/BRANDING.md','docs/prototypes/review-cockpit.html','docs/EXPERIMENTS.md','docs/ADAPTIVE-POLICY.md']){
+  for(const file of ['ROADMAP.md','AGENTS.md','docs/ENTRY-GOVERNANCE.md','docs/REVIEW-COCKPIT.md','docs/GITHUB-DELIVERY.md','docs/BRANDING.md','docs/prototypes/review-cockpit.html','docs/EXPERIMENTS.md','docs/ADAPTIVE-POLICY.md']){
     assert.ok(existsSync(path.join(root,file)),file);
     assert.ok(pkg.files.includes(file),`${file} must be included in npm package files`);
   }
