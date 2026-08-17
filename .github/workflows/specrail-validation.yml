@@ -42,7 +42,7 @@ jobs:
       - name: Syntax checks
         run: |
           node --check scripts/install.mjs
-          node --check scripts/uninstall.mjs
           node --check extensions/specrail.js
+          node --check extensions/specrail-runtime-gates.js
       - name: Package dry run
         run: npm pack --dry-run
