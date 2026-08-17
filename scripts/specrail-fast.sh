@@ -64,6 +64,7 @@ runtime_process_alive(){
   cmdline=$(ps -p "$pid" -o command= 2>/dev/null || true)
   case "$cmdline" in *"$SERVER"*"$SOCKET"*) return 0;; *) return 1;; esac
 }
+runtime_endpoint_available(){ health || { [ -S "$SOCKET" ] && runtime_process_alive; }; }
 lock_stale(){
   local owner created now
   owner=$(cat "$START_LOCK/pid" 2>/dev/null || true); created=$(cat "$START_LOCK/created_at" 2>/dev/null || true); now=$(date +%s)
@@ -77,7 +78,7 @@ acquire_start_lock(){
   while ! mkdir "$START_LOCK" 2>/dev/null; do
     owner=$(cat "$START_LOCK/pid" 2>/dev/null || true)
     if lock_stale; then rm -rf "$START_LOCK" 2>/dev/null || true; continue; fi
-    if health || runtime_process_alive; then return 1; fi
+    if runtime_endpoint_available; then return 1; fi
     tries=$((tries+1))
     if [ "$tries" -ge 50 ]; then
       owner=$(cat "$START_LOCK/pid" 2>/dev/null || true)
@@ -91,7 +92,7 @@ acquire_start_lock(){
   return 0
 }
 ensure_runtime(){
-  if health || runtime_process_alive; then return 0; fi
+  if runtime_endpoint_available; then return 0; fi
   if acquire_start_lock; then
     trap release_own_lock EXIT INT TERM
     rm -f "$SOCKET"
@@ -102,7 +103,7 @@ ensure_runtime(){
     return 0
   fi
   local tries=0
-  until health || runtime_process_alive; do tries=$((tries+1)); [ "$tries" -gt 100 ] && return 1; sleep 0.02; done
+  until runtime_endpoint_available; do tries=$((tries+1)); [ "$tries" -gt 100 ] && return 1; sleep 0.02; done
 }
 
 if [ "$CMD" = "runtime-status" ]; then
