@@ -39,28 +39,35 @@ function prepareFrontendSpec(root) {
     completePhase(root, task.meta.id);
     return task.meta.id;
 }
-test('spec approval includes a complete chat presentation before native input', () => {
+test('spec approval is capsule-first with full Review Details attached before native input', () => {
     const root = repo(), id = prepareFrontendSpec(root);
     const interaction = interactionForTask(root, id, 'spec-approval', { sessionId: 'chat-spec-review' });
     assert.equal(interaction.tool, 'host_actions');
     assert.equal(interaction.presentation.presentationContract.acknowledgement.approvalReady, false);
     assert.equal(interaction.presentation.requiredBeforeInput, true);
     assert.equal(interaction.presentation.kind, 'specification-review');
-    assert.match(interaction.presentation.markdown, /TASK-0001 — Ajustar tamaño del h3/);
-    assert.match(interaction.presentation.markdown, /Specification review bundle/);
-    assert.match(interaction.presentation.markdown, /## Need/);
-    assert.match(interaction.presentation.markdown, /Reducir el tamaño visual/);
-    assert.match(interaction.presentation.markdown, /## Acceptance Criteria/);
-    assert.match(interaction.presentation.markdown, /no hay overflow horizontal/);
-    assert.match(interaction.presentation.markdown, /## Effective specification/);
-    assert.match(interaction.presentation.markdown, /## Acceptance Coverage Matrix/);
-    assert.match(interaction.presentation.markdown, /## Scope Guard \/ Blast Radius/);
-    assert.match(interaction.presentation.markdown, /## Delivery trace/);
+    assert.match(interaction.presentation.markdown, /READY FOR SPEC APPROVAL/);
+    assert.match(interaction.presentation.markdown, /\*\*Outcome:\*\* Mejorar la jerarquía visual/);
+    assert.match(interaction.presentation.markdown, /\*\*Scope:\*\*/);
+    assert.match(interaction.presentation.markdown, /\*\*Proof:\*\*/);
+    assert.match(interaction.presentation.markdown, /Review Details/i);
+    assert.doesNotMatch(interaction.presentation.markdown, /## Acceptance Coverage Matrix/);
     assert.doesNotMatch(interaction.presentation.markdown, /Workflow Log/);
-    const bundleText = readFileSync(interaction.presentation.attachments.find(item => item.kind === 'review-bundle').path, 'utf8').trim();
-    assert.ok(interaction.presentation.markdown.includes(bundleText), 'presentation.markdown must contain the complete authoritative Review Bundle');
+    const bundleAttachment=interaction.presentation.attachments.find(item => item.kind === 'review-bundle');
+    assert.ok(bundleAttachment);
+    assert.equal(bundleAttachment.display,'attachment');
+    const bundleText = readFileSync(bundleAttachment.path, 'utf8').trim();
+    assert.equal(interaction.presentation.markdown.includes(bundleText),false,'compact chat presentation must not dump the authoritative Review Bundle inline');
+    assert.match(bundleText,/Specification review bundle/);
+    assert.match(bundleText,/## Need/);
+    assert.match(bundleText,/Reducir el tamaño visual/);
+    assert.match(bundleText,/## Acceptance Criteria/);
+    assert.match(bundleText,/no hay overflow horizontal/);
+    assert.match(bundleText,/## Effective specification/);
+    assert.match(bundleText,/## Acceptance Coverage Matrix/);
+    assert.match(bundleText,/## Scope Guard \/ Blast Radius/);
+    assert.match(bundleText,/## Delivery trace/);
     assert.doesNotMatch(bundleText, /!\[[^\]]*(?:Homepage actual|Propuesta H3)[^\]]*\]\(/, 'Review Bundle must not emit broken repository-local image Markdown');
-    assert.doesNotMatch(interaction.presentation.markdown, /## Evidencias visibles/, 'presentation layer must not append a second evidence listing');
     assert.match(bundleText, /### Review Surface — active canonical visuals/);
     assert.match(bundleText, /REQUIRED VISIBLE/);
     assert.match(bundleText, /Audit metadata \(not presentation\)/);
@@ -94,7 +101,7 @@ test('spec approval includes a complete chat presentation before native input', 
     const ready=interactionForTask(root,id,'spec-approval',{sessionId:'chat-spec-review'});assert.equal(ready.tool,'request_user_input');assert.match(ready.questions[0].question,/mostrada arriba/i);
 });
 
-test('final approval presentation also embeds the complete final Review Bundle', () => {
+test('final approval is capsule-first and keeps complete final Review Details attached', () => {
     const root = repo(), id = prepareFrontendSpec(root);
     let task = loadTask(findTask(root, id));
     task.body = setSection(task.body, 'QA', '- QA executed the approved public mission and recorded the observed result.');
@@ -107,11 +114,13 @@ test('final approval presentation also embeds the complete final Review Bundle',
     const interaction = interactionForTask(root, id, 'final-approval', { sessionId: 'chat-final-review' });
     const bundle = interaction.presentation.attachments.find(item => item.kind === 'review-bundle');
     const bundleText = readFileSync(bundle.path, 'utf8').trim();
-    assert.ok(interaction.presentation.markdown.includes(bundleText));
-    assert.match(interaction.presentation.markdown, /Final review bundle/);
-    assert.match(interaction.presentation.markdown, /## Delivery diff summary/);
-    assert.match(interaction.presentation.markdown, /## QA/);
-    assert.match(interaction.presentation.markdown, /## Final Customer/);
+    assert.match(interaction.presentation.markdown,/READY FOR FINAL APPROVAL/);
+    assert.match(interaction.presentation.markdown,/Review Details/i);
+    assert.equal(interaction.presentation.markdown.includes(bundleText),false);
+    assert.match(bundleText, /Final review bundle/);
+    assert.match(bundleText, /## Delivery diff summary/);
+    assert.match(bundleText, /## QA/);
+    assert.match(bundleText, /## Final Customer/);
     assert.equal(interaction.presentation.visualization.skillInvocation, '$visualize');
 });
 
@@ -120,17 +129,19 @@ test('next action requires host presentation acknowledgement before the native a
     const first = nextAction(root, id, {sessionId});
     assert.equal(first.action, 'present-review');assert.equal(first.actor,'host');assert.equal(first.userInputRequired,false);assert.equal(first.interaction.tool,'host_actions');
     assert.equal(first.interaction.presentation.requiredBeforeInput, true);
-    assert.match(first.interaction.presentation.markdown, /## Scope/);
+    assert.match(first.interaction.presentation.markdown, /\*\*Scope:\*\*/);
+    assert.match(first.interaction.presentation.markdown, /Review Details/i);
     assert.equal(first.interaction.presentation.attachments.length, 10);
     acknowledgePresentation(root,id,'spec-approval',sessionId);
     const ready=nextAction(root,id,{sessionId});assert.equal(ready.action,'approve-or-refine-specification');assert.equal(ready.userInputRequired,true);assert.equal(ready.interaction.tool,'request_user_input');
 });
-test('orchestrator contract requires the exact SpecRail gate, full Review Bundle, evidence, and Visualize before asking', () => {
+test('orchestrator contract requires the exact SpecRail gate, compact capsule, full Review Details, evidence, and Visualize before asking', () => {
     const skill = readFileSync(path.join(process.cwd(), 'skills/ai-flow/SKILL.md'), 'utf8');
     assert.match(skill, /never construct or paraphrase your own `request_user_input`/i);
     assert.match(skill, /exact `next\.interaction` \/ `interaction` returned by SpecRail/i);
     assert.match(skill, /complete `interaction\.presentation\.markdown`/i);
     assert.match(skill, /complete authoritative Review Bundle/i);
+    assert.match(skill, /available on demand|Review Details/i);
     assert.match(skill, /Every `present-image` action must surface.*inside the conversation/i);
     assert.match(skill, /opening a file picker, printing a path.*does not count/i);
     assert.match(skill, /artifactPrepared.*referencePrepared.*not proof of display/i);
@@ -167,7 +178,7 @@ test('managed activation delegates presentation details to the global skill whil
     assert.match(managed, /Never implement before specification approval/i);
 });
 
-test('phase complete returns the newly reached approval gate with its full presentation and stable-session Visualize plan', () => {
+test('phase complete returns the newly reached approval gate with compact presentation and stable-session Visualize plan', () => {
     const root = repo();
     initProject(root, { name: 'Phase Gate' });
     readyProjectContext(root);
@@ -193,8 +204,10 @@ test('phase complete returns the newly reached approval gate with its full prese
     assert.equal(result.next.action, 'approve-or-refine-specification');
     assert.equal(result.next.interaction.tool, 'request_user_input');
     assert.equal(result.next.interaction.presentation.requiredBeforeInput, true);
-    assert.match(result.next.interaction.presentation.markdown, /Specification review bundle/);
-    assert.match(result.next.interaction.presentation.markdown, /## Acceptance Coverage Matrix/);
+    assert.match(result.next.interaction.presentation.markdown, /READY FOR SPEC APPROVAL/);
+    assert.match(result.next.interaction.presentation.markdown, /\*\*Proof:\*\*/);
+    assert.match(result.next.interaction.presentation.markdown, /Review Details/i);
+    assert.ok(result.next.interaction.presentation.attachments.some(item=>item.kind==='review-bundle'));
     assert.equal(result.next.interaction.presentation.visualization.skillInvocation, '$visualize');
     assert.equal(result.next.interaction.presentation.visualization.recordRequired, true);
 });
