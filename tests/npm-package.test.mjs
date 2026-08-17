@@ -32,9 +32,11 @@ test('npm metadata exposes the SpecRail brand, backward-compatible alias, and on
   assert.ok(pkg.files.includes('docs/PI.md'));
   assert.ok(pkg.files.includes('docs/VALIDATION-0.10.3-PI.md'));
   assert.ok(pkg.keywords.includes('pi-package'));
-  assert.deepEqual(pkg.pi,{extensions:['./extensions/specrail.js'],skills:['./skills']});
-  assert.equal(pkg.peerDependencies.typebox,'*');
+  assert.deepEqual(pkg.pi,{extensions:['./extensions/specrail.js','./extensions/specrail-runtime-gates.js'],skills:['./skills']});
+  assert.equal(pkg.dependencies.typebox,'1.3.7');
+  assert.equal(pkg.peerDependencies,undefined);
   assert.ok(existsSync(path.join(root,'extensions','specrail.js')));
+  assert.ok(existsSync(path.join(root,'extensions','specrail-runtime-gates.js')));
 });
 
 test('the packaged CLI can install SpecRail through its public install command',()=>{
