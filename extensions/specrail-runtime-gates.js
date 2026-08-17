@@ -9,6 +9,21 @@ const PONYTAIL_PROVIDER = '@dietrichgebert/ponytail';
 const PONYTAIL_MODE_TYPE = 'ponytail-mode';
 const ALLOWED_DECISION_SOURCES = new Set(['active_user', 'approved_decision', 'repository_contract', 'established_pattern', 'tool_fact']);
 const MUTATION_TOOL_NAMES = new Set(['write', 'edit', 'write_file', 'edit_file', 'create_file', 'delete_file', 'apply_patch', 'patch']);
+const READ_ONLY_TOOL_NAMES = new Set(['read', 'read_file', 'grep', 'find', 'ls']);
+const GOVERNANCE_TOOL_NAMES = new Set([
+  'specrail_entry_gate',
+  'specrail_cli',
+  'specrail_skill',
+  'specrail_codegraph',
+  'specrail_host_context',
+  'request_user_input',
+  'ask_user_question',
+  'specrail_ponytail',
+  'specrail_decision_evidence',
+  'specrail_ponytail_review_result',
+  'specrail_mutation_gate',
+  'specrail_verify',
+]);
 const TRUSTED_TOOL_EVIDENCE = new Map([
   ['approved_decision', new Set(['specrail_cli'])],
   ['established_pattern', new Set(['specrail_codegraph'])],
@@ -136,10 +151,16 @@ function bashMayMutate(command) {
   return !READ_ONLY_COMMANDS.some((pattern) => pattern.test(text));
 }
 
-function isMutationCall(event) {
+function toolCallClass(event) {
   const name = String(event?.toolName || '');
-  if (MUTATION_TOOL_NAMES.has(name)) return true;
-  return name === 'bash' && bashMayMutate(event?.input?.command ?? event?.args?.command);
+  if (MUTATION_TOOL_NAMES.has(name)) return 'mutation';
+  if (name === 'bash') return bashMayMutate(event?.input?.command ?? event?.args?.command) ? 'mutation' : 'read_only';
+  if (READ_ONLY_TOOL_NAMES.has(name) || GOVERNANCE_TOOL_NAMES.has(name)) return 'read_only';
+  return 'unknown';
+}
+
+function isMutationCall(event) {
+  return toolCallClass(event) === 'mutation';
 }
 
 function decisionBlockers(decisions, evidence = {}) {
@@ -323,7 +344,9 @@ export function installSpecRailRuntimeGates(pi) {
   });
 
   pi.on('tool_call', async (event, ctx) => {
-    if (!isMutationCall(event)) return undefined;
+    const classification = toolCallClass(event);
+    if (classification === 'read_only') return undefined;
+    if (classification === 'unknown') return { block: true, reason: `UNATTESTED_TOOL_CAPABILITY: ${String(event?.toolName || '<unknown>')} is not an explicitly read-only or governed Pi capability; fail closed before execution.` };
     const state = getState(ctx);
     if (!state.route) return { block: true, reason: 'PROCESS_ROUTE_REQUIRED: choose SpecRail, Directo, or Directo + verificar before mutation.' };
     if (!state.mutationAuthorized || !state.materialDecisionsCleared) return { block: true, reason: 'MUTATION_GATE_REQUIRED: complete the audited No-Assumption gate immediately before mutation.' };
@@ -556,4 +579,4 @@ export function installSpecRailRuntimeGates(pi) {
 }
 
 export default installSpecRailRuntimeGates;
-export { PONYTAIL_MODE_TYPE, PONYTAIL_PROVIDER, STATE_TYPE, bashMayMutate, decisionBlockers, excludedFingerprintPath, explicitRoute, isMutationCall, ponytailModeFromEntries, repositoryFingerprint, routeFromToolResult, verificationCommandAllowed };
+export { PONYTAIL_MODE_TYPE, PONYTAIL_PROVIDER, STATE_TYPE, bashMayMutate, decisionBlockers, excludedFingerprintPath, explicitRoute, isMutationCall, ponytailModeFromEntries, repositoryFingerprint, routeFromToolResult, toolCallClass, verificationCommandAllowed };
