@@ -64,6 +64,7 @@ test('Pi runtime requires explicit route, native full Ponytail state, and an aud
   assert.match((await toolCall({ toolName: 'edit', toolCallId: 'edit-0', input: {} }, ctx)).reason, /PROCESS_ROUTE_REQUIRED/);
   const before = await events.get('before_agent_start')({ prompt: 'Directo + verificar: corrige login', systemPrompt: 'base' }, ctx);
   assert.match(before.systemPrompt, /route=direct_verify/);
+  assert.doesNotMatch(before.systemPrompt, /full or ultra/i);
   const loaded = await tools.get('specrail_ponytail').execute('pony-1', { action: 'load' }, undefined, undefined, ctx);
   assert.equal(loaded.details.mode, 'full');
   assert.equal(loaded.details.source, 'pi-session:ponytail-mode');
@@ -80,7 +81,7 @@ test('Pi runtime requires explicit route, native full Ponytail state, and an aud
   assert.equal(await toolCall({ toolName: 'edit', toolCallId: 'edit-1', input: {} }, ctx), undefined);
 });
 
-test('Pi runtime fails closed when Ponytail is missing, lite, or turned off after attestation', async () => {
+test('Pi runtime fails closed when Ponytail is missing, lite, ultra, or turned off after attestation', async () => {
   const { tools, events } = await loadRuntime();
   const missing = context({ entries: [] });
   await events.get('before_agent_start')({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, missing);
@@ -89,6 +90,10 @@ test('Pi runtime fails closed when Ponytail is missing, lite, or turned off afte
   const lite = context({ sessionId: 'lite', entries: [{ type: 'custom', customType: 'ponytail-mode', data: { mode: 'lite' } }] });
   await events.get('before_agent_start')({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, lite);
   await assert.rejects(() => tools.get('specrail_ponytail').execute('lite', { action: 'load' }, undefined, undefined, lite), /PONYTAIL_REQUIRED/);
+
+  const ultra = context({ sessionId: 'ultra', entries: [{ type: 'custom', customType: 'ponytail-mode', data: { mode: 'ultra' } }] });
+  await events.get('before_agent_start')({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, ultra);
+  await assert.rejects(() => tools.get('specrail_ponytail').execute('ultra', { action: 'load' }, undefined, undefined, ultra), /PONYTAIL_REQUIRED/);
 
   const entries = [fullEntry()];
   const ctx = context({ sessionId: 'downgrade', entries });
@@ -105,6 +110,11 @@ test('Direct routes keep governance state in memory while SpecRail routes may pe
   const directEntries = [fullEntry()];
   await direct.events.get('before_agent_start')({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, context({ entries: directEntries }));
   assert.equal(direct.appended.length, 0);
+
+  const directVerify = await loadRuntime();
+  const directVerifyEntries = [fullEntry()];
+  await directVerify.events.get('before_agent_start')({ prompt: 'Directo + verificar: fix it', systemPrompt: 'base' }, context({ sessionId: 'direct-verify', entries: directVerifyEntries }));
+  assert.equal(directVerify.appended.length, 0);
 
   const governed = await loadRuntime();
   const governedEntries = [fullEntry()];
