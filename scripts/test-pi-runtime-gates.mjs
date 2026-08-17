@@ -68,7 +68,7 @@ installSpecRailRuntimeGates(pi);
 for (const required of ['specrail_ponytail', 'specrail_decision_evidence', 'specrail_ponytail_review_result', 'specrail_mutation_gate', 'specrail_verify']) {
   assert(tools.has(required), `missing ${required}`);
 }
-for (const required of ['before_agent_start', 'tool_call', 'tool_execution_end', 'agent_end']) assert(handlers.has(required), `missing ${required}`);
+for (const required of ['session_start', 'before_agent_start', 'tool_call', 'tool_execution_end', 'agent_end']) assert(handlers.has(required), `missing ${required}`);
 
 const ctx = {
   cwd: process.cwd(),
@@ -80,9 +80,10 @@ const before = handlers.get('before_agent_start')[0];
 const toolCall = handlers.get('tool_call')[0];
 const toolEnd = handlers.get('tool_execution_end')[0];
 const agentEnd = handlers.get('agent_end')[0];
+const runtimeEntries = () => entries.filter((entry) => entry.customType === STATE_TYPE);
 
 await before({ prompt: 'Directo + verificar: fix bug', systemPrompt: 'base' }, ctx);
-assert.equal(entries.filter((entry) => entry.customType === STATE_TYPE).length, 0, 'Direct routes must not persist SpecRail runtime state');
+assert.equal(runtimeEntries().at(-1)?.data?.route, 'direct_verify', 'Direct + Verify route must persist as Pi session metadata');
 const attested = await tools.get('specrail_ponytail').execute('p1', { action: 'load' }, undefined, undefined, ctx);
 assert.equal(attested.details.mode, 'full');
 assert.equal(attested.details.source, 'pi-session:ponytail-mode');
@@ -145,7 +146,19 @@ await tools.get('specrail_ponytail').execute('p3', { action: 'review' }, undefin
 await tools.get('specrail_ponytail_review_result').execute('pr', { status: 'pass', summary: 'Lean already. Ship.', checks: ['simplification review'] }, undefined, undefined, ctx);
 await tools.get('specrail_verify').execute('v1', { command: 'node', args: ['--version'] }, undefined, undefined, ctx);
 await agentEnd({}, ctx);
-assert.equal(entries.filter((entry) => entry.customType === STATE_TYPE).length, 0, 'Direct + Verify must finish without persistent SpecRail state');
+assert.equal(runtimeEntries().at(-1)?.data?.route, 'direct_verify', 'Direct + Verify route must survive agent_end for continuation');
+assert.equal(runtimeEntries().at(-1)?.data?.verificationPassed, true);
+
+const restoredHandlers = new Map();
+const restoredPi = {
+  ...pi,
+  on(name, fn) { if (!restoredHandlers.has(name)) restoredHandlers.set(name, []); restoredHandlers.get(name).push(fn); },
+  registerTool() {},
+};
+installSpecRailRuntimeGates(restoredPi);
+await restoredHandlers.get('session_start')[0]({}, ctx);
+const restoredPrompt = await restoredHandlers.get('before_agent_start')[0]({ prompt: 'continua', systemPrompt: 'base' }, ctx);
+assert.match(restoredPrompt.systemPrompt, /route=direct_verify/, 'Direct + Verify route must restore from Pi session metadata');
 
 const noPonytailEntries = [];
 const noPonytailCtx = {
@@ -154,6 +167,7 @@ const noPonytailCtx = {
   sessionManager: { getSessionId() { return 'no-ponytail'; }, getBranch() { return noPonytailEntries; } },
 };
 await before({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, noPonytailCtx);
+assert.equal(noPonytailEntries.filter((entry) => entry.customType === STATE_TYPE).at(-1)?.data?.route, 'direct', 'Direct route must persist as Pi session metadata');
 await assert.rejects(
   tools.get('specrail_ponytail').execute('missing', { action: 'load' }, undefined, undefined, noPonytailCtx),
   /PONYTAIL_REQUIRED/,
