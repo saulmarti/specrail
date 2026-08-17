@@ -39,7 +39,7 @@
 - Added adversarial regression coverage for approval tampering, protected-file renames, governed `.ai/project` drift, external provenance symlinks, and malformed Replay active-agent intervals.
 - Changed the canonical npm package name to **`@saulmarti/specrail`** because the unscoped `specrail` package belongs to another project; the executable remains `specrail` and `ai-flow` remains a compatibility alias.
 - Updated the public roadmap with planned Requirement Source Ledger, adversarial Specification Critic, first-class NFR coverage, change/failure classification, contract compatibility + Impact Radius, Repository Blueprint domain vocabulary, and content-aware managed updates.
-- Removed two cross-platform release-test flakes: repository-root assertions now canonicalize macOS `/var`/`private/var` paths, and Replay anchors the initial `variant-started` trace event exactly to `startedAt`.
+- Removed two cross-platform release-test flakes: repository-root assertions now canonicalize macOS `/var`/`/private/var` paths, and Replay anchors the initial `variant-started` trace event exactly to `startedAt`.
 - Hardened release scripts so `release:check` runs before `npm version`, avoiding unnecessary version/tag bumps when the current tree is not publishable.
 
 ## 0.8.0-beta.1 — 2026-08-07
@@ -53,7 +53,7 @@
 - Pending Amendments now become a deterministic native Codex decision gate with the change, new `AC-*` criteria, blast-radius additions, and protection removals visible before approval/rejection.
 - Added Acceptance, Scope Guard, and Amendment views to Review Cockpit and Review Bundles.
 - Added explicit safe migration guidance for legacy approved tasks that predate sealed blast radii.
-- Hardened first-install validation so `specrail plugin validate` falls back to the packaged Agent Plugin before a managed `~/.ai-flow` copy exists yet.
+- Hardened first-install validation so `specrail plugin validate` falls back to the packaged Agent Plugin when no managed `~/.ai-flow` copy exists yet.
 - Added CLI commands for acceptance coverage, scope status/set, amendments, and Replay trace events.
 - Expanded regression coverage for tampered amendments, conceptual evidence misuse, untracked scope drift, incomplete Replay experiments, token provenance, trace-derived metrics, and semantic cohorts.
 
