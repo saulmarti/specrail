@@ -113,7 +113,7 @@ function ponytailModeFromEntries(entries) {
 
 function qualifyingPonytailMode(ctx) {
   const mode = ponytailModeFromEntries(entriesFor(ctx));
-  return mode === 'full' || mode === 'ultra' ? mode : null;
+  return mode === 'full' ? mode : null;
 }
 
 function explicitRoute(prompt) {
@@ -271,7 +271,7 @@ export function installSpecRailRuntimeGates(pi) {
     const persistedSession = explicitKey.startsWith('anon:') ? null : explicitKey;
     const next = { ...state, sessionId: persistedSession, updatedAt: new Date().toISOString() };
     states.set(explicitKey, next);
-    if (['specrail', 'direct', 'direct_verify'].includes(next.route) && explicitKey === keyFor(ctx) && typeof pi.appendEntry === 'function') pi.appendEntry(STATE_TYPE, next);
+    if (next.route === 'specrail' && explicitKey === keyFor(ctx) && typeof pi.appendEntry === 'function') pi.appendEntry(STATE_TYPE, next);
     return next;
   }
 
@@ -318,7 +318,7 @@ export function installSpecRailRuntimeGates(pi) {
     if (resolved) selectRoute(ctx, resolved.route, resolved.source, resolved.workflowMode);
     const state = getState(ctx);
     if (!state.route) return undefined;
-    const suffix = `\n\nSpecRail runtime gates are active for route=${state.route}${state.workflowMode ? `/${state.workflowMode}` : ''}. ${PRECEDENCE_NOTICE} Before production-code mutation: attest official Ponytail with specrail_ponytail(action=load), perform an explicit material-uncertainty assessment, obtain runtime-backed evidence for every resolved material decision, and pass specrail_mutation_gate. Ponytail must be full or ultra and remains rechecked at mutation time; if no native ponytail-mode entry exists, ask the user to run /ponytail full. After the final mutation, call specrail_ponytail(action=review), run the official /skill:ponytail-review capability, then record PASS with specrail_ponytail_review_result.${state.route === 'direct_verify' ? ' Direct + Verify additionally requires specrail_verify after the final mutation.' : ''}`;
+    const suffix = `\n\nSpecRail runtime gates are active for route=${state.route}${state.workflowMode ? `/${state.workflowMode}` : ''}. ${PRECEDENCE_NOTICE} Before production-code mutation: attest official Ponytail with specrail_ponytail(action=load), perform an explicit material-uncertainty assessment, obtain runtime-backed evidence for every resolved material decision, and pass specrail_mutation_gate. Ponytail must be full and remains rechecked at mutation time; if no native ponytail-mode entry exists, ask the user to run /ponytail full. After the final mutation, call specrail_ponytail(action=review), run the official /skill:ponytail-review capability, then record PASS with specrail_ponytail_review_result.${state.route === 'direct_verify' ? ' Direct + Verify additionally requires specrail_verify after the final mutation.' : ''}`;
     return { systemPrompt: `${event.systemPrompt || ''}${suffix}` };
   });
 
@@ -328,7 +328,7 @@ export function installSpecRailRuntimeGates(pi) {
     if (!state.route) return { block: true, reason: 'PROCESS_ROUTE_REQUIRED: choose SpecRail, Directo, or Directo + verificar before mutation.' };
     if (!state.mutationAuthorized || !state.materialDecisionsCleared) return { block: true, reason: 'MUTATION_GATE_REQUIRED: complete the audited No-Assumption gate immediately before mutation.' };
     const mode = qualifyingPonytailMode(ctx);
-    if (!state.ponytailAttested || !mode) return { block: true, reason: 'PONYTAIL_REQUIRED: official Pi Ponytail must be attested in full or ultra mode. Run /ponytail full, then re-open the mutation gate.' };
+    if (!state.ponytailAttested || !mode) return { block: true, reason: 'PONYTAIL_REQUIRED: official Pi Ponytail must be attested in full mode. Run /ponytail full, then re-open the mutation gate.' };
     pendingMutations.set(`${keyFor(ctx)}:${event.toolCallId}`, true);
     return undefined;
   });
@@ -396,7 +396,7 @@ export function installSpecRailRuntimeGates(pi) {
       const state = getState(ctx);
       if (!state.route) throw new Error('PROCESS_ROUTE_REQUIRED: choose a process route before Ponytail attestation.');
       const mode = qualifyingPonytailMode(ctx);
-      if (!mode) throw new Error(`PONYTAIL_REQUIRED: ${PONYTAIL_PROVIDER} must be active in full or ultra mode. Run /ponytail full and retry; SpecRail will not install or imitate it.`);
+      if (!mode) throw new Error(`PONYTAIL_REQUIRED: ${PONYTAIL_PROVIDER} must be active in full mode. Run /ponytail full and retry; SpecRail will not install or imitate it.`);
       if (action === 'review' && !state.mutated) throw new Error('PONYTAIL_REVIEW_NOT_READY: no successful production-code mutation has been observed.');
       if (action === 'load') {
         const next = persist(ctx, { ...state, ponytailAttested: true, ponytailMode: mode });
@@ -481,7 +481,7 @@ export function installSpecRailRuntimeGates(pi) {
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const state = getState(ctx);
       if (!state.mutated || !state.ponytailReviewStarted || !state.ponytailReviewFingerprint) throw new Error('PONYTAIL_REVIEW_REQUIRED: start and perform the official review before recording its result.');
-      if (!qualifyingPonytailMode(ctx)) throw new Error('PONYTAIL_REQUIRED: Ponytail is no longer in full or ultra mode.');
+      if (!qualifyingPonytailMode(ctx)) throw new Error('PONYTAIL_REQUIRED: Ponytail is no longer in full mode.');
       const status = String(params.status || '').trim().toLowerCase();
       if (status !== 'pass') throw new Error(`PONYTAIL_REVIEW_FAILED: ${String(params.summary || '').trim()}`);
       const currentFingerprint = await repositoryFingerprint(pi, ctx, signal);
@@ -512,7 +512,7 @@ export function installSpecRailRuntimeGates(pi) {
       const state = getState(ctx);
       if (!state.route) throw new Error('PROCESS_ROUTE_REQUIRED: choose a process route before mutation.');
       const mode = qualifyingPonytailMode(ctx);
-      if (!state.ponytailAttested || !mode) throw new Error('PONYTAIL_REQUIRED: attest official Pi Ponytail in full or ultra mode before mutation.');
+      if (!state.ponytailAttested || !mode) throw new Error('PONYTAIL_REQUIRED: attest official Pi Ponytail in full mode before mutation.');
       if (params.reviewed !== true) throw new Error('NO_ASSUMPTION_REVIEW_REQUIRED: material uncertainty review must be explicit.');
       const decisions = Array.isArray(params.decisions) ? params.decisions : [];
       const reason = String(params.noMaterialDecisionsReason || '').trim();
