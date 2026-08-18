@@ -25,24 +25,30 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build
         run: npm run build
-      - name: Unit group A-H
-        if: always()
-        shell: bash
-        run: |
-          files=(tests/[a-h]*.test.mjs)
-          node --test --test-force-exit "${files[@]}"
-      - name: Unit group I-P
+      - name: Unit group I-L
         if: always()
         shell: bash
         run: |
           files=()
-          for f in tests/[i-p]*.test.mjs; do
+          for f in tests/[i-l]*.test.mjs; do
             [[ "$f" == "tests/installed-e2e.test.mjs" ]] || files+=("$f")
           done
           node --test --test-force-exit "${files[@]}"
-      - name: Unit group Q-Z
+      - name: Unit group M-P
         if: always()
         shell: bash
         run: |
-          files=(tests/[q-z]*.test.mjs)
+          files=(tests/[m-p]*.test.mjs)
+          node --test --test-force-exit "${files[@]}"
+      - name: Unit group Q-T
+        if: always()
+        shell: bash
+        run: |
+          files=(tests/[q-t]*.test.mjs)
+          node --test --test-force-exit "${files[@]}"
+      - name: Unit group U-Z
+        if: always()
+        shell: bash
+        run: |
+          files=(tests/[u-z]*.test.mjs)
           node --test --test-force-exit "${files[@]}"
