@@ -41,21 +41,28 @@ SpecRail adds **rails**, not another project-management system. Markdown remains
 - Codex Desktop/another compatible Codex surface, **or Pi**
 - [CodeGraph](https://github.com/colbymchenry/codegraph) available as a CLI; Codex normally uses `codegraph serve --mcp`, while the Pi adapter uses CodeGraph `explore` directly so no extra Pi MCP bridge is required
 - For UI work: compatible [Taste Skills](https://github.com/Leonxlnx/taste-skill)
-- Optional on Codex: the Visualize plugin/skill for native interactive review surfaces; Pi uses canonical inline evidence + Review Cockpit unless a compatible visualization capability is available
-- For production-code mutation: official [`@dietrichgebert/ponytail`](https://github.com/DietrichGebert/ponytail) enabled in literal `full` mode
+- Optional on Codex: the Visualize plugin/skill for supplementary interactive review surfaces; normal approvals use the Decision Capsule in chat, canonical inline evidence, and Review Details
+- For production-code mutation: SpecRail bundles official [`@dietrichgebert/ponytail`](https://github.com/DietrichGebert/ponytail) and requires the host-resolved mode to be literal `full`
 
 ### Install the beta
 
 Choose **one** host installation route.
 
-**Managed Codex + Pi installation (also installs the terminal CLI):**
+**Managed installation (terminal CLI + Codex, with optional Pi integration):**
 
 ```bash
 npm install -g @saulmarti/specrail@beta
 specrail install
 ```
 
-This installs the shared skills, the `specrail`/`ai-flow` launchers, Codex activation, and registers the managed `~/.ai-flow` directory as a **local Pi Package** in `~/.pi/agent/settings.json`. Pi therefore loads the same packaged extension + skills contract as the native npm route instead of relying on a loose extension copy. Existing Pi settings and `~/.pi/agent/AGENTS.md` content are preserved. Reload/restart the host after installation.
+In an interactive terminal, `specrail install` asks whether Pi should also be configured. For deterministic automation or an explicit choice, use:
+
+```bash
+specrail install --no-pi   # install CLI/Codex/Ponytail and do not touch ~/.pi
+specrail install --pi      # also register SpecRail as a managed local Pi Package
+```
+
+The managed installer always installs the shared skills, the `specrail`/`ai-flow` launchers, Codex activation, and the bundled official Ponytail runtime/skills. `--pi` additionally registers the managed `~/.ai-flow` directory in `~/.pi/agent/settings.json` and installs the compact Pi activation block while preserving unrelated Pi settings and existing `~/.pi/agent/AGENTS.md` content. `--no-pi` leaves `~/.pi` untouched. In a non-interactive install, Pi is skipped unless `--pi` is explicit. Reload/restart the active host after installation.
 
 **Pi-native package installation (no global SpecRail CLI required inside Pi):**
 
@@ -63,7 +70,7 @@ This installs the shared skills, the `specrail`/`ai-flow` launchers, Codex activ
 pi install npm:@saulmarti/specrail@beta
 ```
 
-Pi loads both declared package extensions (`extensions/specrail.js` and `extensions/specrail-runtime-gates.js`) plus `skills/`. The adapter exposes `specrail_cli`, which executes the bundled deterministic CLI directly, `specrail_skill` for deterministic specialist loading, trusted Pi session bridging, CodeGraph structural context, native human-input presentation, and the mutation/verification gates. Mutating SpecRail calls and human gates are marked sequential because Pi executes tool batches in parallel by default; non-zero CLI exits throw so Pi records a real tool error rather than a successful-looking result. Use `pi install -l npm:@saulmarti/specrail@beta` for project-local Pi settings. If you also want the `specrail` command in a normal terminal, use the managed npm route above instead of installing both copies into Pi.
+Pi loads the bundled official Ponytail Pi extension, the SpecRail Ponytail state bridge, `extensions/specrail.js`, `extensions/specrail-runtime-gates.js`, the official Ponytail skills, and SpecRail skills from the package. Ponytail is therefore part of SpecRail rather than a separate prerequisite. The adapter exposes `specrail_cli`, which executes the bundled deterministic CLI directly, `specrail_skill` for deterministic specialist loading, trusted Pi session bridging, CodeGraph structural context, native human-input presentation, and the mutation/verification gates. Mutating SpecRail calls and human gates are marked sequential because Pi executes tool batches in parallel by default; non-zero CLI exits throw so Pi records a real tool error rather than a successful-looking result. Use `pi install -l npm:@saulmarti/specrail@beta` for project-local Pi settings. If you also want the `specrail` command in a normal terminal, use the managed npm route above instead of installing both copies into Pi.
 
 The current public channel is `beta`; stable releases will later use the default `latest` tag. The exact source-tree release number is canonical in `package.json`; the README intentionally follows the dist-tag instead of hard-coding a version that can drift.
 
@@ -72,7 +79,9 @@ The npm package is **`@saulmarti/specrail`**. The installed CLI command remains 
 To run the managed installer without a global npm package, use the explicit package form:
 
 ```bash
-npx --package=@saulmarti/specrail@beta specrail install
+npx --package=@saulmarti/specrail@beta specrail install --no-pi
+# or add Pi explicitly:
+npx --package=@saulmarti/specrail@beta specrail install --pi
 ```
 
 Open a repository in Codex or Pi and ask naturally:
@@ -345,7 +354,7 @@ Multi-Agent Concurrency does not equate a graph of independent tasks with real p
 
 At specification and final gates, the default host-visible text is **Decision Capsule first**: outcome, scope delta, proof, risk/blocker, and primary evidence. The complete authoritative Review Bundle remains available as **Review Details** instead of being repeated inline by default. Canonical visual attachments remain `requiredVisible`; a local path or generated HTML file is audit metadata, not proof that the user saw the evidence.
 
-Visual gates remain mechanically two-step: `next` first returns `interaction.tool=host_actions`; every canonical visual gets a blocking `present-image` action for the conversation and the Cockpit gets a non-blocking `open-url` action. Each real outcome is acknowledged against the exact task, gate, session, action ID and `presentationDigest`. Until the current digest is acknowledged, direct approve/change/reject commands are blocked and the native approval selector is not emitted. Changed evidence, another session, or a corrupt/stale acknowledgment returns the gate to presentation. If a required image cannot be presented in-conversation, approval stays blocked rather than degrading to paths. When the installed `visualize` skill is available, SpecRail can prepare and validate an interactive `$visualize` artifact plus native reference, but those states remain `hostPresentation: unverified` until the host exposes a trustworthy presentation signal.
+Visual gates remain mechanically two-step: `next` first returns `interaction.tool=host_actions`; every canonical visual gets a blocking `present-image` action for the conversation. Each real outcome is acknowledged against the exact task, gate, session, action ID and `presentationDigest`. Until the current digest is acknowledged, direct approve/change/reject commands are blocked and the native approval selector is not emitted. Changed evidence, another session, or a corrupt/stale acknowledgment returns the gate to presentation. If a required image cannot be presented in-conversation, approval stays blocked rather than degrading to paths. When the installed `visualize` skill is available, SpecRail can prepare and validate an interactive `$visualize` artifact plus native reference, but those states remain `hostPresentation: unverified` until the host exposes a trustworthy presentation signal. Review Cockpit is not generated, opened, offered, or required by the normal approval path.
 
 ## Autonomy Levels
 
@@ -476,7 +485,7 @@ When the current Codex skill catalog exposes the exact `visualize` skill, SpecRa
 - request / response / error explorers;
 - architecture and migration layer views.
 
-It never assumes a tool name. The session records the exact discovered capability, signed plan, source digest, real invocation reference and quality evaluation. The Review Bundle mirrors the active canonical Comparator set first and moves superseded/out-of-scope frontend visuals into an explicitly historical audit subsection, so old captures cannot look like active proposals. For required Before/Proposal/After evidence, `outcome: rendered` means that SpecRail validated the generated comparator artifact and its native reference; it does **not** mean the host proved that the user saw it. Each canonical evidence ID must still be attached directly to an embedded `data:image/...;base64,...` `<img>` in the Visualize fragment, while wrapper markers or local filesystem image URLs do not count. Frontend `visual-comparator-v2` plans additionally require Side by side, Slider, Overlay, filters, exact route+target+viewport+capture grouping, and review-role/context markers. Until a trustworthy host signal exists, `hostPresentation` stays `unverified` and the direct evidence + Cockpit-open fallback remains mandatory.
+It never assumes a tool name. The session records the exact discovered capability, signed plan, source digest, real invocation reference and quality evaluation. The Review Bundle mirrors the active canonical Comparator set first and moves superseded/out-of-scope frontend visuals into an explicitly historical audit subsection, so old captures cannot look like active proposals. For required Before/Proposal/After evidence, `outcome: rendered` means that SpecRail validated the generated comparator artifact and its native reference; it does **not** mean the host proved that the user saw it. Each canonical evidence ID must still be attached directly to an embedded `data:image/...;base64,...` `<img>` in the Visualize fragment, while wrapper markers or local filesystem image URLs do not count. Frontend `visual-comparator-v2` plans additionally require Side by side, Slider, Overlay, filters, exact route+target+viewport+capture grouping, and review-role/context markers. Until a trustworthy host signal exists, `hostPresentation` stays `unverified`; direct canonical evidence remains the approval authority and Review Details remains available on demand.
 
 ## Large features ship as vertical slices
 
@@ -490,9 +499,9 @@ Slice 3: Another visitor opens the shared route.
 
 Each slice contains its frontend/backend/data needs, acceptance criteria, evidence and dependencies. The dependency DAG is validated before child tasks are materialized.
 
-## Review Cockpit — beta
+## Review Cockpit — manual legacy utility
 
-Review Cockpit is a generated, local, mobile-friendly read-only decision surface derived from the current task, Review Details, evidence, metrics, repair state, context budget, and signed trace.
+Review Cockpit remains available as an **explicit manual** read-only snapshot for users who still want the old local HTML surface. It is not generated, opened, offered, or required by the normal specification/final approval flow.
 
 Generate it manually with the canonical command (the shorter `specrail cockpit` form remains a compatibility alias):
 
@@ -502,9 +511,9 @@ specrail review cockpit TASK-0001 --stage spec
 specrail review cockpit TASK-0001 --stage final
 ```
 
-At specification and final approval gates the host shows the compact **Decision Capsule** first and keeps the complete Review Bundle attached as **Review Details**. The local Cockpit fallback is generated automatically. `$visualize` may prepare an interactive in-conversation review reference, but SpecRail never equates preparation with verified host display. Required canonical visuals still have blocking `present-image` actions and the Cockpit has a non-blocking `open-url` action using its real `openUrl`. SpecRail records `presented`, `opened`, `offered`, `failed`, or `unavailable` against the current session/digest and emits the native approval interaction only after blocking presentation actions succeed.
+Normal approval gates show the compact **Decision Capsule in chat first**, keep the complete Review Bundle available as **Review Details**, present required canonical evidence inline, and then emit the native decision selector. A manually generated Cockpit does not satisfy presentation acknowledgment and does not enable or block approval.
 
-The Cockpit includes:
+The manual Cockpit includes:
 
 - compact decision-critical outcome, scope, proof, risk and blockers above the fold;
 - stage-specific readiness checks and exact blocker explanations;
@@ -531,7 +540,7 @@ The current 0.9.1 integration of Autonomy Levels, Product Intelligence, and Mult
 
 ### Readiness / Why blocked
 
-CLI, `next`, and Review Cockpit now use the same deterministic gate model:
+CLI and `next` use the same deterministic gate model. The optional manually generated Review Cockpit reads the same state but is not part of the approval path:
 
 ```bash
 specrail readiness TASK-0042
@@ -571,7 +580,7 @@ specrail harness recommend TASK-0042
 
 The recommendation is deterministic and advisory. It needs repeated comparable runs, protects the accepted/QA quality band before looking at cost, never recommends `fast` as the historical default for high/critical-risk work, and never changes `execution_profile` automatically. See [`docs/ADAPTIVE-POLICY.md`](docs/ADAPTIVE-POLICY.md).
 
-The public roadmap now treats Readiness, safe Doctor repair, Replayable Tasksets, token-aware experiment comparison, and adaptive Harness recommendations as beta capabilities. Review Cockpit remains beta; GitHub delivery and Signed Delivery Bundle are deferred without a target release. See [`ROADMAP.md`](ROADMAP.md).
+The public roadmap now treats Readiness, safe Doctor repair, Replayable Tasksets, token-aware experiment comparison, and adaptive Harness recommendations as beta capabilities. Review Cockpit remains an optional manual legacy utility; GitHub delivery and Signed Delivery Bundle are deferred without a target release. See [`ROADMAP.md`](ROADMAP.md).
 
 ## Local project artifacts
 
@@ -586,7 +595,7 @@ The public roadmap now treats Readiness, safe Doctor repair, Replayable Tasksets
 │   └── constitution.md
 ├── tasks/
 ├── evidence/
-├── reviews/              # Review Bundles and generated Cockpit HTML
+├── reviews/              # Review Bundles; Cockpit HTML only when manually requested
 ├── decisions/
 ├── evals/
 │   ├── candidates/
@@ -669,7 +678,7 @@ After final approval, a worktree task offers the explicit delivery choices **Fus
 specrail update
 ```
 
-`specrail update` keeps the current release channel automatically: beta installations stay on `beta`, while stable installations use `latest`. It updates the global npm package and then refreshes the managed Codex + Pi skills/adapters, launchers, configuration, and global instructions from the newly installed package.
+`specrail update` keeps the current release channel automatically: beta installations stay on `beta`, while stable installations use `latest`. It updates the global npm package and refreshes the managed `~/.ai-flow` package, launchers, Codex assets, bundled Ponytail, configuration, and global instructions. If Pi was previously registered against `~/.ai-flow`, that registration continues pointing at the refreshed package; the update does not silently opt a new Pi installation in.
 
 Switch channels explicitly when needed:
 
@@ -691,16 +700,17 @@ The installer preserves existing `.ai/` projects and creates one-time `.ai-flow.
 SpecRail intentionally does not delete project task history. To remove the global installation:
 
 ```bash
+# If you opted into managed Pi integration, remove the local Pi Package entry
+# (`~/.ai-flow`) from ~/.pi/agent/settings.json before deleting ~/.ai-flow.
+# `pi remove ~/.ai-flow` may be used while the directory still exists.
 rm -rf ~/.ai-flow
 rm -f ~/.local/bin/specrail ~/.local/bin/ai-flow
 rm -rf ~/.agents/skills/ai-flow*
 rm -rf ~/.codex/skills/ai-flow*
-# Remove the managed local Pi Package entry (`~/.ai-flow`) from ~/.pi/agent/settings.json first.
-# `pi remove ~/.ai-flow` may be used while the directory still exists.
 rm -f ~/.pi/agent/extensions/specrail.js  # legacy pre-0.10.3 cleanup only
 ```
 
-For the managed/global route, also remove the block between `<!-- AI-FLOW:PI-BEGIN -->` and `<!-- AI-FLOW:PI-END -->` in `~/.pi/agent/AGENTS.md`. Then remove the managed block between `<!-- AI-FLOW:BEGIN -->` and `<!-- AI-FLOW:END -->` in `~/.codex/AGENTS.md`. Restore `.ai-flow.bak` files only when you want to revert all installer changes.
+If you opted into the managed Pi route, also remove the block between `<!-- AI-FLOW:PI-BEGIN -->` and `<!-- AI-FLOW:PI-END -->` in `~/.pi/agent/AGENTS.md`. Then remove the managed block between `<!-- AI-FLOW:BEGIN -->` and `<!-- AI-FLOW:END -->` in `~/.codex/AGENTS.md`. Restore `.ai-flow.bak` files only when you want to revert all installer changes.
 
 ## Privacy and security
 
@@ -740,7 +750,7 @@ No route is selected automatically for a new work item. If you choose SpecRail, 
 
 ### Is Ponytail optional for code writes?
 
-Not under the current production-code mutation contract. SpecRail requires the official Ponytail host state in literal `full` mode and rechecks it at mutation time; missing/off/lite/ultra state blocks the write.
+Not under the current production-code mutation contract. SpecRail bundles the official Ponytail package and requires its host state in literal `full` mode at mutation time; an explicit off/lite/ultra state still blocks the write.
 
 ### Is Prime Intellect code included?
 
@@ -748,7 +758,7 @@ No. SpecRail applies the taskset/harness/runtime/trace separation as an architec
 
 ### Is Visualize required?
 
-No. It is a supplementary host capability with Decision Capsule, Review Details, canonical evidence and Review Cockpit fallback.
+No. It is a supplementary host capability. The normal review contract is Decision Capsule in chat + canonical evidence + Review Details; Review Cockpit is manual legacy only.
 
 ### Is this an official OpenAI product?
 
