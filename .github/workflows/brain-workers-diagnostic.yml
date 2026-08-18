@@ -25,30 +25,39 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build
         run: npm run build
-      - name: Unit prefix I
+      - name: Unit prefix im
         if: always()
         shell: bash
         run: |
-          files=()
-          for f in tests/i*.test.mjs; do
-            [[ "$f" == "tests/installed-e2e.test.mjs" ]] || files+=("$f")
-          done
-          node --test --test-force-exit "${files[@]}"
-      - name: Unit prefixes J-L
+          shopt -s nullglob
+          files=(tests/im*.test.mjs)
+          ((${#files[@]}==0)) || node --test --test-force-exit "${files[@]}"
+      - name: Unit prefix in
         if: always()
         shell: bash
         run: |
-          files=(tests/[j-l]*.test.mjs)
-          node --test --test-force-exit "${files[@]}"
-      - name: Unit prefixes U-V
+          shopt -s nullglob
+          files=(tests/in*.test.mjs)
+          for i in "${!files[@]}"; do [[ "${files[$i]}" == "tests/installed-e2e.test.mjs" ]] && unset 'files[i]'; done
+          ((${#files[@]}==0)) || node --test --test-force-exit "${files[@]}"
+      - name: Unit prefix io-iz
         if: always()
         shell: bash
         run: |
-          files=(tests/[u-v]*.test.mjs)
-          node --test --test-force-exit "${files[@]}"
-      - name: Unit prefixes W-Z
+          shopt -s nullglob
+          files=(tests/i[o-z]*.test.mjs)
+          ((${#files[@]}==0)) || node --test --test-force-exit "${files[@]}"
+      - name: Unit prefix u
         if: always()
         shell: bash
         run: |
-          files=(tests/[w-z]*.test.mjs)
-          node --test --test-force-exit "${files[@]}"
+          shopt -s nullglob
+          files=(tests/u*.test.mjs)
+          ((${#files[@]}==0)) || node --test --test-force-exit "${files[@]}"
+      - name: Unit prefix v
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(tests/v*.test.mjs)
+          ((${#files[@]}==0)) || node --test --test-force-exit "${files[@]}"
