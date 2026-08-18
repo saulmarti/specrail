@@ -35,11 +35,13 @@ The Pi runtime does not trust an agent-provided `source`/`ref` by itself. It bin
 
 When clarification is needed, questions use **2–4 choices plus Other/free text**. A recommendation may be displayed but is never selected automatically. Legacy generic open-answer questions remain supported where the caller deliberately uses that older contract.
 
-## 3. Ponytail is mandatory for production code writes
+## 3. Ponytail is mandatory and ships with SpecRail
 
 Every code-writing route requires the official `@dietrichgebert/ponytail` host capability in literal **`full`** mode. Missing, `off`, `lite`, `ultra`, or imitated state does not satisfy the gate.
 
-SpecRail does not vendor a lookalike Ponytail implementation and does not expose an internal bypass. The mode is re-read immediately before mutation, so downgrading Ponytail after attestation blocks the write.
+SpecRail declares the official Ponytail package as a runtime dependency. Managed Codex installation copies its official skills into the managed skill locations. When the Pi integration is selected, the SpecRail Pi Package loads the bundled official Ponytail extension and skills. SpecRail does not vendor a lookalike implementation and does not expose an internal bypass.
+
+A missing Ponytail capability after SpecRail installation is therefore an installation/host-reload defect, not a separate prerequisite the user must install. Repair/reinstall SpecRail or reload the host; never substitute an imitation. The mode is re-read immediately before mutation, so downgrading Ponytail after attestation blocks the write.
 
 After the final mutation, the official `ponytail-review` capability must review the current result. Review completion is bound to a repository fingerprint; any subsequent repository change invalidates the review and requires a fresh one.
 
@@ -55,11 +57,13 @@ The verifier is fail-closed: shell composition and arbitrary executables are not
 
 ## 5. Concise approval presentation
 
-Normal approval output is **Decision Capsule first**. The user should see the decision-critical delta, proof, risk/blocker, and primary evidence without receiving the entire audit history inline.
+Normal approval output is **Decision Capsule first in chat**. The exact native approval question begins with the complete concise Decision Capsule and only then shows the selector, so a host cannot ask for approval before exposing the summary merely because it ignored optional presentation metadata.
 
-The complete Review Bundle remains authoritative and available as **Review Details**. Canonical evidence and blockers remain above the approval decision. Review Cockpit is a read-only local surface; generating HTML never proves the user saw it, and native host approval remains authoritative.
+The complete Review Bundle remains authoritative and available as **Review Details**. Canonical visual evidence and blockers remain above the approval decision when applicable.
 
-For Codex, `$visualize` is used only when the exact skill is actually discoverable. A prepared visualization is not treated as verified host presentation. Pi uses canonical inline evidence plus Review Cockpit unless a compatible host visualization capability is attested.
+**Review Cockpit is not part of the normal approval path.** SpecRail does not generate, open, offer, or require Cockpit for normal approvals. The legacy manual artifact/command may remain available only when explicitly requested.
+
+For Codex, `$visualize` is used only when the exact skill is actually discoverable. A prepared visualization is not treated as verified host presentation. Pi uses the same canonical inline-evidence contract and does not depend on Cockpit.
 
 ## 6. Runtime continuity and authority reset
 
@@ -81,4 +85,4 @@ The release contract requires at minimum:
 - installed E2E suite;
 - JavaScript syntax checks for installer and both Pi extensions;
 - package dry-run;
-- adversarial coverage for route continuity, no-assumption provenance, Ponytail re-check/review freshness, verifier mutation detection, symlinks/path traversal, unknown tools, and Direct no-workflow-state behavior.
+- adversarial coverage for route continuity, no-assumption provenance, bundled Ponytail re-check/review freshness, Pi opt-in/non-mutation behavior, summary-before-selector ordering, verifier mutation detection, symlinks/path traversal, unknown tools, and Direct no-workflow-state behavior.
