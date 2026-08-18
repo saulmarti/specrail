@@ -27,20 +27,42 @@ jobs:
         run: npm run build
       - name: Routing baseline
         run: node --test --test-force-exit tests/intelligence-routing.test.mjs
-      - name: Worker dirty baseline
+      - name: Dirty baseline
+        if: always()
         run: node --test --test-force-exit --test-name-pattern="state-only worker ignores unchanged pre-existing dirty production files" tests/worker-runtime.test.mjs
-      - name: Worker state-only mutation
+      - name: State-only delta attribution
         if: always()
-        run: node --test --test-force-exit --test-name-pattern="state-only worker fails when it actually mutates production code" tests/worker-runtime.test.mjs
-      - name: Worker Builder scope
+        run: node --test --test-force-exit --test-name-pattern="state-only mutation is attributed to app.txt" tests/worker-runtime.test.mjs
+      - name: State-only forbidden classification
         if: always()
-        run: node --test --test-force-exit --test-name-pattern="Builder worker permits sealed allowed files and blocks outside/protected scope" tests/worker-runtime.test.mjs
-      - name: Worker Luna unavailable fallback
+        run: node --test --test-force-exit --test-name-pattern="state-only mutation is classified as forbidden production" tests/worker-runtime.test.mjs
+      - name: State-only result classification
+        if: always()
+        run: node --test --test-force-exit --test-name-pattern="state-only mutation makes Worker result failed" tests/worker-runtime.test.mjs
+      - name: State-only exit code
+        if: always()
+        run: node --test --test-force-exit --test-name-pattern="state-only mutation exits with governance failure code" tests/worker-runtime.test.mjs
+      - name: Builder allowed delta attribution
+        if: always()
+        run: node --test --test-force-exit --test-name-pattern="Builder allowed-file mutation is attributed to app.txt" tests/worker-runtime.test.mjs
+      - name: Builder allowed scope
+        if: always()
+        run: node --test --test-force-exit --test-name-pattern="Builder allowed-file mutation has no scope violation" tests/worker-runtime.test.mjs
+      - name: Builder outside delta attribution
+        if: always()
+        run: node --test --test-force-exit --test-name-pattern="Builder outside-file mutation is attributed to other.txt" tests/worker-runtime.test.mjs
+      - name: Builder outside classification
+        if: always()
+        run: node --test --test-force-exit --test-name-pattern="Builder outside-file mutation is classified as unexpected scope" tests/worker-runtime.test.mjs
+      - name: Builder outside exit code
+        if: always()
+        run: node --test --test-force-exit --test-name-pattern="Builder outside-file mutation fails with governance exit code" tests/worker-runtime.test.mjs
+      - name: Luna unavailable fallback
         if: always()
         run: node --test --test-force-exit --test-name-pattern="worker falls back Luna to Terra only when Luna is unavailable" tests/worker-runtime.test.mjs
-      - name: Worker ordinary failure no promotion
+      - name: Ordinary failure no promotion
         if: always()
         run: node --test --test-force-exit --test-name-pattern="ordinary Luna failure does not retry Terra or Brain" tests/worker-runtime.test.mjs
-      - name: Worker Brain-side validation
+      - name: Brain-side validation
         if: always()
         run: node --test --test-force-exit --test-name-pattern="Brain-side loader validates result binding/model attestation and converts usage safely" tests/worker-runtime.test.mjs
