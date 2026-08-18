@@ -217,7 +217,7 @@ description: Official Taste Skill ${name}.
     assert.match(bundleText, /section#home-spotlight/);
     assert.equal(review.presentation.markdown.includes(bundleText.trim()), false);
     assert.equal(review.presentation.previewUrl, 'http://127.0.0.1:4173/');
-    assert.deepEqual(review.presentation.attachments.map(x => x.kind), ['review-cockpit', 'review-bundle', 'frontend-before', 'frontend-proposal', 'ui-design-brief', 'ui-proposal-review']);
+    assert.deepEqual(review.presentation.attachments.map(x => x.kind), ['review-bundle', 'frontend-before', 'frontend-proposal', 'ui-design-brief', 'ui-proposal-review']);
 });
 //# sourceMappingURL=installed-e2e.test.js.map
 test('installed SpecRail Fast completes a micro UI change with one compact governed pass and no CodeGraph/worktree/reviewer/QA chain', () => {
