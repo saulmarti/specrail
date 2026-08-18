@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -15,7 +15,7 @@ function run(command,args,options={}){
   return result.stdout.trim();
 }
 
-test('npm metadata exposes the SpecRail brand, backward-compatible alias, and one package version',()=>{
+test('npm metadata exposes the SpecRail brand, backward-compatible alias, bundled Ponytail, and one package version',()=>{
   assert.equal(pkg.name,'@saulmarti/specrail');
   assert.equal(pkg.bin.specrail,'scripts/specrail-fast.sh');
   assert.equal(pkg.bin['ai-flow'],'scripts/specrail-fast.sh');
@@ -32,26 +32,61 @@ test('npm metadata exposes the SpecRail brand, backward-compatible alias, and on
   assert.ok(pkg.files.includes('docs/PI.md'));
   assert.ok(pkg.files.includes('docs/VALIDATION-0.10.3-PI.md'));
   assert.ok(pkg.keywords.includes('pi-package'));
-  assert.deepEqual(pkg.pi,{extensions:['./extensions/specrail.js','./extensions/specrail-runtime-gates.js'],skills:['./skills']});
+  assert.deepEqual(pkg.pi,{extensions:['./node_modules/@dietrichgebert/ponytail/pi-extension/index.js','./extensions/specrail-ponytail-bridge.js','./extensions/specrail.js','./extensions/specrail-runtime-gates.js'],skills:['./node_modules/@dietrichgebert/ponytail/skills','./skills']});
+  assert.equal(pkg.dependencies['@dietrichgebert/ponytail'],'4.8.4');
   assert.equal(pkg.dependencies.typebox,'1.3.7');
   assert.equal(pkg.peerDependencies,undefined);
+  assert.ok(existsSync(path.join(root,'node_modules','@dietrichgebert','ponytail','package.json')));
+  assert.ok(existsSync(path.join(root,'node_modules','@dietrichgebert','ponytail','pi-extension','index.js')));
+  assert.ok(existsSync(path.join(root,'extensions','specrail-ponytail-bridge.js')));
   assert.ok(existsSync(path.join(root,'extensions','specrail.js')));
   assert.ok(existsSync(path.join(root,'extensions','specrail-runtime-gates.js')));
 });
 
-test('the packaged CLI can install SpecRail through its public install command',()=>{
+test('the packaged CLI can install SpecRail through its public install command without silently enabling Pi',()=>{
   const home=mkdtempSync(path.join(tmpdir(),'specrail-npx-home-'));
   const output=run(process.execPath,['dist/src/cli.js','install'],{cwd:root,env:{...process.env,AI_FLOW_HOME:home}});
   assert.match(output,/SpecRail installed/i);
+  assert.match(output,/Pi integration skipped/i);
   assert.ok(existsSync(path.join(home,'.local','bin','specrail')));
   assert.ok(existsSync(path.join(home,'.local','bin','ai-flow')));
+  assert.ok(existsSync(path.join(home,'.ai-flow','node_modules','@dietrichgebert','ponytail','package.json')));
   assert.equal(run(path.join(home,'.local','bin','specrail'),['--version']),pkg.version);
 });
 
-test('the installed CLI generates a local Review Cockpit without a server or external database',()=>{
+test('installed specrail forwards explicit --pi and --no-pi choices through the public dispatcher',()=>{
+  const piHome=mkdtempSync(path.join(tmpdir(),'specrail-public-pi-home-'));
+  const piEnv={...process.env,AI_FLOW_HOME:piHome};
+  run(process.execPath,['dist/src/cli.js','install','--no-pi'],{cwd:root,env:piEnv});
+  const piBin=path.join(piHome,'.local','bin','specrail');
+  const piOutput=run(piBin,['install','--pi'],{cwd:root,env:piEnv});
+  assert.match(piOutput,/Pi integration installed/i);
+  const piSettings=JSON.parse(readFileSync(path.join(piHome,'.pi','agent','settings.json'),'utf8'));
+  assert.ok(piSettings.packages.includes(path.join(piHome,'.ai-flow')));
+  assert.match(readFileSync(path.join(piHome,'.pi','agent','AGENTS.md'),'utf8'),/official.*Ponytail/i);
+
+  const noPiHome=mkdtempSync(path.join(tmpdir(),'specrail-public-no-pi-home-'));
+  const noPiEnv={...process.env,AI_FLOW_HOME:noPiHome};
+  const piRoot=path.join(noPiHome,'.pi','agent');
+  mkdirSync(piRoot,{recursive:true});
+  const agentsFile=path.join(piRoot,'AGENTS.md');
+  const settingsFile=path.join(piRoot,'settings.json');
+  const agentsBefore='# Existing Pi rules\n\nDo not mutate.\n';
+  const settingsBefore=`${JSON.stringify({theme:'dark',packages:['npm:other/pi-package'],custom:{keep:true}},null,2)}\n`;
+  writeFileSync(agentsFile,agentsBefore);
+  writeFileSync(settingsFile,settingsBefore);
+  run(process.execPath,['dist/src/cli.js','install','--no-pi'],{cwd:root,env:noPiEnv});
+  const noPiBin=path.join(noPiHome,'.local','bin','specrail');
+  const noPiOutput=run(noPiBin,['install','--no-pi'],{cwd:root,env:noPiEnv});
+  assert.match(noPiOutput,/Pi integration skipped/i);
+  assert.equal(readFileSync(agentsFile,'utf8'),agentsBefore);
+  assert.equal(readFileSync(settingsFile,'utf8'),settingsBefore);
+});
+
+test('the installed CLI keeps the legacy local Review Cockpit available only as an explicit manual command',()=>{
   const home=mkdtempSync(path.join(tmpdir(),'specrail-cockpit-home-'));
   const repo=mkdtempSync(path.join(tmpdir(),'specrail-cockpit-repo-'));
-  run(process.execPath,['dist/src/cli.js','install'],{cwd:root,env:{...process.env,AI_FLOW_HOME:home}});
+  run(process.execPath,['dist/src/cli.js','install','--no-pi'],{cwd:root,env:{...process.env,AI_FLOW_HOME:home}});
   const bin=path.join(home,'.local','bin','specrail');
   run(bin,['init','--root',repo]);
   const created=JSON.parse(run(bin,['create','Cockpit smoke test','--root',repo,'--json']));
@@ -85,6 +120,7 @@ test('published package explicitly includes the trust model for host/session gua
 test('Pi adapter source is publishable JavaScript and exposes the first-class host bridge',()=>{
   const source=readFileSync(path.join(root,'extensions','specrail.js'),'utf8');
   assert.equal(spawnSync(process.execPath,['--check','extensions/specrail.js'],{cwd:root,encoding:'utf8'}).status,0);
+  assert.equal(spawnSync(process.execPath,['--check','extensions/specrail-ponytail-bridge.js'],{cwd:root,encoding:'utf8'}).status,0);
   assert.match(source,/before_agent_start/);
   assert.match(source,/name: 'specrail_cli'/);
   assert.match(source,/name: 'specrail_host_context'/);

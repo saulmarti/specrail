@@ -52,11 +52,13 @@ test('source archive command excludes local caches and macOS metadata',()=>{
   for(const excluded of [".codegraph","._*",".DS_Store"]) assert.ok(archive.includes(excluded),`source tar must exclude ${excluded}`);
 });
 
-test('README and publishing docs use the canonical scoped package and specrail CLI',()=>{
+test('README and publishing docs use the canonical scoped package and chat-first review contract',()=>{
   const readme=text('README.md');
   assert.match(readme,/npm install -g @saulmarti\/specrail@beta/);
   assert.match(readme,/npx --package=@saulmarti\/specrail@beta specrail install/);
-  assert.match(readme,/Review Cockpit — beta/);
+  assert.match(readme,/Review Cockpit — manual legacy utility/);
+  assert.match(readme,/not generated, opened, offered, or required by the normal specification\/final approval flow/i);
+  assert.match(readme,/Decision Capsule in chat first/i);
   assert.match(readme,/specrail review cockpit TASK-0001/);
   assert.match(readme,/`specrail cockpit`[^\n]*compatibility alias/i);
   const publishing=text('docs/PUBLISHING.md');

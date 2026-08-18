@@ -42,6 +42,7 @@ jobs:
       - name: Syntax checks
         run: |
           node --check scripts/install.mjs
+          node --check extensions/specrail-ponytail-bridge.js
           node --check extensions/specrail.js
           node --check extensions/specrail-runtime-gates.js
       - name: Package dry run

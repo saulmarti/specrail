@@ -77,24 +77,25 @@ test('Review Cockpit inline runtime is syntactically valid JavaScript',()=>{
   assert.equal(checked.status,0,checked.stderr||checked.stdout);
 });
 
-test('approval presentation attaches the interactive Cockpit before Review Details and evidence',()=>{
+test('normal approval presentation excludes Cockpit and exposes Review Details plus inline evidence',()=>{
   const root=repo(),id=preparedSpec(root);
   const interaction=interactionForTask(root,id,'spec-approval');
-  assert.equal(interaction.presentation.attachments[0].kind,'review-cockpit');
-  assert.equal(interaction.presentation.attachments[0].mediaType,'text/html');
-  assert.equal(interaction.presentation.attachments[0].display,'inline');
-  assert.equal(interaction.presentation.attachments[1].kind,'review-bundle');
-  assert.equal(interaction.presentation.attachments[1].display,'attachment');
+  assert.equal(interaction.presentation.attachments.some(item=>item.kind==='review-cockpit'),false);
+  assert.equal(interaction.presentation.attachments[0].kind,'review-bundle');
+  assert.equal(interaction.presentation.attachments[0].mediaType,'text/markdown');
+  assert.equal(interaction.presentation.attachments[0].display,'attachment');
+  assert.ok(interaction.presentation.attachments.filter(item=>item.requiredVisible).every(item=>item.display==='inline'));
+  assert.ok(interaction.actions.every(action=>action.type==='present-image'));
   assert.match(interaction.presentation.markdown,/READY FOR SPEC APPROVAL/i);
   assert.match(interaction.presentation.markdown,/\*\*Outcome:\*\*/i);
   assert.match(interaction.presentation.markdown,/\*\*Scope:\*\*/i);
   assert.match(interaction.presentation.markdown,/Review Details/i);
-  const bundleText=readFileSync(interaction.presentation.attachments[1].path,'utf8').trim();
+  const bundleText=readFileSync(interaction.presentation.attachments[0].path,'utf8').trim();
   assert.equal(interaction.presentation.markdown.includes(bundleText),false,'compact approval must not dump Review Details inline');
   assert.doesNotMatch(interaction.presentation.markdown,/interactive Review Cockpit\.html —/i);
 });
 
-test('Cockpit generation never claims host presentation succeeded',()=>{
+test('explicit manual Cockpit generation never claims host presentation succeeded',()=>{
   const root=repo(),id=preparedSpec(root);
   const cockpit=writeReviewCockpit(root,id,'spec');
   assert.equal(cockpit.hostPresentation,'unverified');
