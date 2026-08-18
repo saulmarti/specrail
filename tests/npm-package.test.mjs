@@ -15,7 +15,7 @@ function run(command,args,options={}){
   return result.stdout.trim();
 }
 
-test('npm metadata exposes the SpecRail brand, backward-compatible alias, and one package version',()=>{
+test('npm metadata exposes the SpecRail brand, backward-compatible alias, bundled Ponytail, and one package version',()=>{
   assert.equal(pkg.name,'@saulmarti/specrail');
   assert.equal(pkg.bin.specrail,'scripts/specrail-fast.sh');
   assert.equal(pkg.bin['ai-flow'],'scripts/specrail-fast.sh');
@@ -32,26 +32,31 @@ test('npm metadata exposes the SpecRail brand, backward-compatible alias, and on
   assert.ok(pkg.files.includes('docs/PI.md'));
   assert.ok(pkg.files.includes('docs/VALIDATION-0.10.3-PI.md'));
   assert.ok(pkg.keywords.includes('pi-package'));
-  assert.deepEqual(pkg.pi,{extensions:['./extensions/specrail.js','./extensions/specrail-runtime-gates.js'],skills:['./skills']});
+  assert.deepEqual(pkg.pi,{extensions:['./node_modules/@dietrichgebert/ponytail/pi-extension/index.js','./extensions/specrail.js','./extensions/specrail-runtime-gates.js'],skills:['./node_modules/@dietrichgebert/ponytail/skills','./skills']});
+  assert.equal(pkg.dependencies['@dietrichgebert/ponytail'],'4.8.4');
   assert.equal(pkg.dependencies.typebox,'1.3.7');
   assert.equal(pkg.peerDependencies,undefined);
+  assert.ok(existsSync(path.join(root,'node_modules','@dietrichgebert','ponytail','package.json')));
+  assert.ok(existsSync(path.join(root,'node_modules','@dietrichgebert','ponytail','pi-extension','index.js')));
   assert.ok(existsSync(path.join(root,'extensions','specrail.js')));
   assert.ok(existsSync(path.join(root,'extensions','specrail-runtime-gates.js')));
 });
 
-test('the packaged CLI can install SpecRail through its public install command',()=>{
+test('the packaged CLI can install SpecRail through its public install command without silently enabling Pi',()=>{
   const home=mkdtempSync(path.join(tmpdir(),'specrail-npx-home-'));
   const output=run(process.execPath,['dist/src/cli.js','install'],{cwd:root,env:{...process.env,AI_FLOW_HOME:home}});
   assert.match(output,/SpecRail installed/i);
+  assert.match(output,/Pi integration skipped/i);
   assert.ok(existsSync(path.join(home,'.local','bin','specrail')));
   assert.ok(existsSync(path.join(home,'.local','bin','ai-flow')));
+  assert.ok(existsSync(path.join(home,'.ai-flow','node_modules','@dietrichgebert','ponytail','package.json')));
   assert.equal(run(path.join(home,'.local','bin','specrail'),['--version']),pkg.version);
 });
 
-test('the installed CLI generates a local Review Cockpit without a server or external database',()=>{
+test('the installed CLI keeps the legacy local Review Cockpit available only as an explicit manual command',()=>{
   const home=mkdtempSync(path.join(tmpdir(),'specrail-cockpit-home-'));
   const repo=mkdtempSync(path.join(tmpdir(),'specrail-cockpit-repo-'));
-  run(process.execPath,['dist/src/cli.js','install'],{cwd:root,env:{...process.env,AI_FLOW_HOME:home}});
+  run(process.execPath,['dist/src/cli.js','install','--no-pi'],{cwd:root,env:{...process.env,AI_FLOW_HOME:home}});
   const bin=path.join(home,'.local','bin','specrail');
   run(bin,['init','--root',repo]);
   const created=JSON.parse(run(bin,['create','Cockpit smoke test','--root',repo,'--json']));
