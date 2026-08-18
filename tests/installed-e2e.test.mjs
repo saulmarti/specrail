@@ -207,8 +207,15 @@ description: Official Taste Skill ${name}.
     json(bin, ['evidence', 'add', id, '--kind', 'ui-proposal-review', '--path', good, '--source', 'visual-proposal-review', '--label', 'Proposal review', '--tool', 'Taste Skill + Codex vision', '--root', repo]);
     json(bin, ['phase', 'complete', id, '--root', repo]);
     const review = json(bin, ['interaction', id, '--kind', 'spec-approval', '--root', repo]);
-    assert.match(review.presentation.markdown, /## UI Target/);
-    assert.match(review.presentation.markdown, /section#home-spotlight/);
+    assert.match(review.presentation.markdown, /READY FOR SPEC APPROVAL/);
+    assert.match(review.presentation.markdown, /Review Details/i);
+    assert.doesNotMatch(review.presentation.markdown, /## UI Target/);
+    const bundleAttachment = review.presentation.attachments.find(item => item.kind === 'review-bundle');
+    assert.ok(bundleAttachment);
+    const bundleText = readFileSync(bundleAttachment.path, 'utf8');
+    assert.match(bundleText, /## UI Target/);
+    assert.match(bundleText, /section#home-spotlight/);
+    assert.equal(review.presentation.markdown.includes(bundleText.trim()), false);
     assert.equal(review.presentation.previewUrl, 'http://127.0.0.1:4173/');
     assert.deepEqual(review.presentation.attachments.map(x => x.kind), ['review-cockpit', 'review-bundle', 'frontend-before', 'frontend-proposal', 'ui-design-brief', 'ui-proposal-review']);
 });

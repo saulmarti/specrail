@@ -63,7 +63,6 @@ test('Pi adapter executes packaged SpecRail through its Bash shebang and throws 
   await assert.rejects(()=>cli.execute('call-2',{args:['status','TASK-9999','--root',cwd]},undefined,undefined,context(cwd)),/SpecRail project not initialized|No \.ai project found|not found|Could not find|Expected/i);
 });
 
-
 test('Pi native package can load every deterministic specialist without a managed .agents path',async()=>{
   const {tools}=await loadAdapter();const skill=tools.get('specrail_skill');assert.ok(skill);
   const orchestrator=await skill.execute('skill-0',{name:'ai-flow'});
@@ -80,24 +79,38 @@ test('Pi adapter marks CodeGraph transport failures as tool failures and leaves 
   await assert.rejects(()=>graph.execute('cg-1',{query:'impact of UserService'},undefined,undefined,context(cwd)),/index unavailable/);
 });
 
+test('Pi entry gate asks once, recognizes explicit routes, supports free text, and fails closed headlessly',async()=>{
+  const {tools}=await loadAdapter();const gate=tools.get('specrail_entry_gate');assert.equal(gate.executionMode,'sequential');
+  const cwd=mkdtempSync(path.join(tmpdir(),'specrail-pi-cwd-'));let seen=[];
+  const direct=await gate.execute('entry-1',{prompt:'Implement login'},undefined,undefined,context(cwd,{select:async(title,options)=>{seen.push({title,options});return options[1];}}));
+  assert.equal(direct.details.route,'direct');assert.equal(seen.length,1);assert.equal(seen[0].options.length,4);assert.match(seen[0].options[3],/Other/);
+  const explicit=await gate.execute('entry-2',{prompt:'SpecRail Fast: cambia el copy'},undefined,undefined,context(cwd));
+  assert.equal(explicit.details.route,'specrail');assert.equal(explicit.details.workflowMode,'fast');
+  const other=await gate.execute('entry-3',{prompt:'Implement profile'},undefined,undefined,context(cwd,{select:async(_title,options)=>options.at(-1),input:async()=> 'solo analiza primero'}));
+  assert.equal(other.details.route,null);assert.equal(other.details.freeText,'solo analiza primero');
+  await assert.rejects(()=>gate.execute('entry-4',{prompt:'Implement login'},undefined,undefined,context(cwd,{hasUI:false,mode:'print'})),/PROCESS_ROUTE_REQUIRED/);
+});
+
 test('Pi human gate is sequential, uses native UI exactly, and fails closed headlessly',async()=>{
   const {tools}=await loadAdapter();const ask=tools.get('request_user_input');assert.equal(ask.executionMode,'sequential');
   const cwd=mkdtempSync(path.join(tmpdir(),'specrail-pi-cwd-'));let seen=[];
   const ctx=context(cwd,{select:async(title,options)=>{seen.push({title,options});return options[1];}});
   const result=await ask.execute('q-1',{questions:[{id:'decision',header:'Approval',question:'Choose',options:[{label:'Approve'},{label:'Revise',description:'Return to spec'}],isOther:false}]},undefined,undefined,ctx);
   assert.deepEqual(result.details.answers,[{id:'decision',label:'Revise'}]);assert.equal(seen.length,1);assert.match(seen[0].options[1],/^2\. Revise/);
-  await assert.rejects(()=>ask.execute('q-2',{questions:[{id:'decision',question:'Choose',options:[{label:'Approve'}]}]},undefined,undefined,context(cwd,{hasUI:false,mode:'print'})),/requires an interactive Pi UI/);
+  await assert.rejects(()=>ask.execute('q-2',{questions:[{id:'decision',question:'Choose',options:[{label:'Approve'},{label:'Revise'}]}]},undefined,undefined,context(cwd,{hasUI:false,mode:'print'})),/requires an interactive Pi UI/);
 });
 
-test('Pi activation honors delivery, continuation, fast, bypass, and managed-context deduplication',async()=>{
+test('Pi activation routes delivery, continuation, fast, direct prefixes, and managed-context deduplication',async()=>{
   const {events}=await loadAdapter();const before=events.get('before_agent_start');assert.ok(before);
   const base={systemPrompt:'base',systemPromptOptions:{contextFiles:[]}};
   assert.equal(await before({...base,prompt:'Explain this function'}),undefined);
-  assert.equal(await before({...base,prompt:'Sin SpecRail: fix this bug'}),undefined);
+  const direct=await before({...base,prompt:'Sin SpecRail: fix this bug'});assert.match(direct.systemPrompt,/SpecRail Pi adapter is active/);assert.match(direct.systemPrompt,/Direct route/i);
   const delivery=await before({...base,prompt:'Implement login'});
   assert.match(delivery.systemPrompt,/SpecRail Pi adapter is active/);
-  assert.match(delivery.systemPrompt,/specrail_skill.*ai-flow/i);
+  assert.match(delivery.systemPrompt,/specrail_entry_gate/i);
+  assert.match(delivery.systemPrompt,/Only after the user selects SpecRail/i);
   assert.match((await before({...base,prompt:'SpecRail Fast: cambia el copy'})).systemPrompt,/SpecRail Pi adapter is active/);
+  assert.match((await before({...base,prompt:'Directo + verificar: cambia el copy'})).systemPrompt,/SpecRail Pi adapter is active/);
   assert.match((await before({...base,prompt:'Continue TASK-0007'})).systemPrompt,/SpecRail Pi adapter is active/);
   const managed={...base,systemPromptOptions:{contextFiles:[{content:'<!-- AI-FLOW:PI-BEGIN --> managed'}]}};
   assert.equal(await before({...managed,prompt:'Implement login'}),undefined);
@@ -106,7 +119,7 @@ test('Pi activation honors delivery, continuation, fast, bypass, and managed-con
 test('Pi host context returns the real session and fresh handoff replaces the session with Continue TASK',async()=>{
   const {tools,commands}=await loadAdapter();const cwd=mkdtempSync(path.join(tmpdir(),'specrail-pi-cwd-'));
   const host=await tools.get('specrail_host_context').execute('h-1',{},undefined,undefined,context(cwd,{sessionId:'pi-real-session'}));
-  assert.equal(host.details.sessionId,'pi-real-session');assert.equal(host.details.host,'pi');
+  assert.equal(host.details.sessionId,'pi-real-session');assert.equal(host.details.host,'pi');assert.equal(host.details.ponytail,'host-capability-required-full');
   let sent=null,optionsSeen=null;
   const cmdCtx={...context(cwd),newSession:async options=>{optionsSeen=options;await options.withSession({sendUserMessage:async message=>{sent=message;}});return{cancelled:false};}};
   await commands.get('specrail-handoff').handler('TASK-0042',cmdCtx);

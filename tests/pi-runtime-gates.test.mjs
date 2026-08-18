@@ -1,0 +1,221 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { cpSync, mkdirSync, mkdtempSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const repoRoot = process.cwd();
+
+function typeboxStub(root) {
+  const dir = path.join(root, 'node_modules', 'typebox');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'typebox', version: '0.0.0-test', type: 'module', exports: './index.js' }));
+  writeFileSync(path.join(dir, 'index.js'), `const schema=(type,extra={})=>({type,...extra});\nexport const Type={String:(o={})=>schema('string',o),Integer:(o={})=>schema('integer',o),Boolean:(o={})=>schema('boolean',o),Optional:(v)=>v,Array:(items,o={})=>schema('array',{items,...o}),Object:(properties,o={})=>schema('object',{properties,...o})};\n`);
+}
+
+async function loadRuntime() {
+  const pkgRoot = mkdtempSync(path.join(tmpdir(), 'specrail-pi-gates-'));
+  mkdirSync(path.join(pkgRoot, 'extensions'), { recursive: true });
+  cpSync(path.join(repoRoot, 'extensions', 'specrail-runtime-gates.js'), path.join(pkgRoot, 'extensions', 'specrail-runtime-gates.js'));
+  typeboxStub(pkgRoot);
+  const tools = new Map();
+  const events = new Map();
+  const appended = [];
+  const pi = {
+    on(name, handler) { events.set(name, handler); },
+    registerTool(def) { tools.set(def.name, def); },
+    appendEntry(customType, data) { appended.push({ type: 'custom', customType, data }); },
+    sendMessage() {},
+    async exec(command, args) {
+      if (command === 'git' && args[0] === 'rev-parse') return { code: 0, killed: false, stdout: 'true\n', stderr: '' };
+      if (command === 'git' && args[0] === 'ls-files') return { code: 0, killed: false, stdout: '', stderr: '' };
+      return { code: 0, killed: false, stdout: 'ok\n', stderr: '' };
+    },
+  };
+  const mod = await import(`${pathToFileURL(path.join(pkgRoot, 'extensions', 'specrail-runtime-gates.js')).href}?t=${Date.now()}-${Math.random()}`);
+  mod.installSpecRailRuntimeGates(pi);
+  return { tools, events, appended, mod };
+}
+
+function realExecPi() {
+  return {
+    async exec(command, args, options = {}) {
+      const result = spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8' });
+      return {
+        code: result.status ?? 1,
+        killed: Boolean(result.signal),
+        stdout: String(result.stdout || ''),
+        stderr: String(result.stderr || result.error?.message || ''),
+      };
+    },
+  };
+}
+
+function context({ sessionId = 'pi-gate-session', entries = [], hasUI = true, cwd = repoRoot } = {}) {
+  return {
+    cwd,
+    hasUI,
+    mode: hasUI ? 'tui' : 'print',
+    sessionManager: {
+      getSessionId: () => sessionId,
+      getBranch: () => entries,
+      getEntries: () => entries,
+    },
+    ui: { notify() {} },
+  };
+}
+
+const fullEntry = () => ({ type: 'custom', customType: 'ponytail-mode', data: { mode: 'full' } });
+
+test('Pi runtime requires explicit route, native full Ponytail state, and an audited uncertainty gate', async () => {
+  const { tools, events } = await loadRuntime();
+  const entries = [fullEntry()];
+  const ctx = context({ entries });
+  const toolCall = events.get('tool_call');
+
+  assert.match((await toolCall({ toolName: 'edit', toolCallId: 'edit-0', input: {} }, ctx)).reason, /PROCESS_ROUTE_REQUIRED/);
+  const before = await events.get('before_agent_start')({ prompt: 'Directo + verificar: corrige login', systemPrompt: 'base' }, ctx);
+  assert.match(before.systemPrompt, /route=direct_verify/);
+  assert.doesNotMatch(before.systemPrompt, /full or ultra/i);
+  const loaded = await tools.get('specrail_ponytail').execute('pony-1', { action: 'load' }, undefined, undefined, ctx);
+  assert.equal(loaded.details.mode, 'full');
+  assert.equal(loaded.details.source, 'pi-session:ponytail-mode');
+
+  await assert.rejects(
+    () => tools.get('specrail_mutation_gate').execute('gate-empty', { reviewed: true, decisions: [] }, undefined, undefined, ctx),
+    /NO_ASSUMPTION_AUDIT_REQUIRED/,
+  );
+  await tools.get('specrail_mutation_gate').execute('gate-ok', {
+    reviewed: true,
+    decisions: [],
+    noMaterialDecisionsReason: 'The requested edit is fully explicit.',
+  }, undefined, undefined, ctx);
+  assert.equal(await toolCall({ toolName: 'edit', toolCallId: 'edit-1', input: {} }, ctx), undefined);
+});
+
+test('Pi runtime fails closed when Ponytail is missing, lite, ultra, or turned off after attestation', async () => {
+  const { tools, events } = await loadRuntime();
+  const missing = context({ entries: [] });
+  await events.get('before_agent_start')({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, missing);
+  await assert.rejects(() => tools.get('specrail_ponytail').execute('missing', { action: 'load' }, undefined, undefined, missing), /PONYTAIL_REQUIRED/);
+
+  const lite = context({ sessionId: 'lite', entries: [{ type: 'custom', customType: 'ponytail-mode', data: { mode: 'lite' } }] });
+  await events.get('before_agent_start')({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, lite);
+  await assert.rejects(() => tools.get('specrail_ponytail').execute('lite', { action: 'load' }, undefined, undefined, lite), /PONYTAIL_REQUIRED/);
+
+  const ultra = context({ sessionId: 'ultra', entries: [{ type: 'custom', customType: 'ponytail-mode', data: { mode: 'ultra' } }] });
+  await events.get('before_agent_start')({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, ultra);
+  await assert.rejects(() => tools.get('specrail_ponytail').execute('ultra', { action: 'load' }, undefined, undefined, ultra), /PONYTAIL_REQUIRED/);
+
+  const entries = [fullEntry()];
+  const ctx = context({ sessionId: 'downgrade', entries });
+  await events.get('before_agent_start')({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, ctx);
+  await tools.get('specrail_ponytail').execute('full', { action: 'load' }, undefined, undefined, ctx);
+  await tools.get('specrail_mutation_gate').execute('gate', { reviewed: true, decisions: [], noMaterialDecisionsReason: 'The requested edit is fully explicit.' }, undefined, undefined, ctx);
+  entries.push({ type: 'custom', customType: 'ponytail-mode', data: { mode: 'off' } });
+  assert.match((await events.get('tool_call')({ toolName: 'edit', toolCallId: 'edit-off', input: {} }, ctx)).reason, /PONYTAIL_REQUIRED/);
+  assert.equal(tools.has('specrail_ponytail_override'), false, 'there is no internal Ponytail bypass tool');
+});
+
+test('Pi runtime fails closed on unknown custom tools while allowing explicit read-only tools', async () => {
+  const { events } = await loadRuntime();
+  const ctx = context({ entries: [fullEntry()] });
+  const toolCall = events.get('tool_call');
+
+  assert.equal(await toolCall({ toolName: 'read', toolCallId: 'read-1', input: { path: 'README.md' } }, ctx), undefined);
+  assert.equal(await toolCall({ toolName: 'grep', toolCallId: 'grep-1', input: { pattern: 'SpecRail' } }, ctx), undefined);
+  const blocked = await toolCall({ toolName: 'mystery_custom_tool', toolCallId: 'unknown-1', input: {} }, ctx);
+  assert.match(blocked.reason, /UNATTESTED_TOOL_CAPABILITY/);
+});
+
+test('Direct routes persist only Pi routing metadata and restore without stale mutation authority', async () => {
+  const direct = await loadRuntime();
+  const directEntries = [fullEntry()];
+  const directCtx = context({ sessionId: 'direct', entries: directEntries });
+  await direct.events.get('before_agent_start')({ prompt: 'Sin SpecRail: fix it', systemPrompt: 'base' }, directCtx);
+  const directState = direct.appended.find((entry) => entry.customType === direct.mod.STATE_TYPE);
+  assert.equal(directState?.data?.route, 'direct');
+  assert.equal(directState?.data?.mutationAuthorized, false);
+
+  const restored = await loadRuntime();
+  const restoredEntries = [fullEntry(), ...direct.appended];
+  const restoredCtx = context({ sessionId: 'direct', entries: restoredEntries });
+  await restored.events.get('session_start')({}, restoredCtx);
+  const restoredPrompt = await restored.events.get('before_agent_start')({ prompt: 'continua', systemPrompt: 'base' }, restoredCtx);
+  assert.match(restoredPrompt.systemPrompt, /route=direct/);
+  const blockedMutation = await restored.events.get('tool_call')({ toolName: 'edit', toolCallId: 'restored-edit', input: {} }, restoredCtx);
+  assert.match(blockedMutation.reason, /MUTATION_GATE_REQUIRED/);
+
+  const directVerify = await loadRuntime();
+  const directVerifyEntries = [fullEntry()];
+  await directVerify.events.get('before_agent_start')({ prompt: 'Directo + verificar: fix it', systemPrompt: 'base' }, context({ sessionId: 'direct-verify', entries: directVerifyEntries }));
+  const directVerifyState = directVerify.appended.find((entry) => entry.customType === directVerify.mod.STATE_TYPE);
+  assert.equal(directVerifyState?.data?.route, 'direct_verify');
+  assert.equal(directVerifyState?.data?.verificationRequired, true);
+
+  const governed = await loadRuntime();
+  const governedEntries = [fullEntry()];
+  const governedCtx = context({ sessionId: 'governed', entries: governedEntries });
+  await governed.events.get('before_agent_start')({ prompt: 'SpecRail Fast: fix it', systemPrompt: 'base' }, governedCtx);
+  assert.ok(governed.appended.some((entry) => entry.customType === governed.mod.STATE_TYPE));
+});
+
+test('Direct Verify fingerprint works in a fresh Git repository without HEAD', async () => {
+  const { mod } = await loadRuntime();
+  const fresh = mkdtempSync(path.join(tmpdir(), 'specrail-fresh-git-'));
+  execFileSync('git', ['init', '-q'], { cwd: fresh });
+  writeFileSync(path.join(fresh, 'new-file.txt'), 'first contents\n');
+
+  const first = await mod.repositoryFingerprint(realExecPi(), context({ cwd: fresh }), undefined);
+  assert.match(first, /^[a-f0-9]{64}$/);
+
+  writeFileSync(path.join(fresh, 'new-file.txt'), 'second contents\n');
+  const second = await mod.repositoryFingerprint(realExecPi(), context({ cwd: fresh }), undefined);
+  assert.notEqual(second, first, 'Git-visible untracked content must affect the snapshot even before the first commit');
+});
+
+test('Direct Verify fingerprints a symlink identity without following an external target', async () => {
+  const { mod } = await loadRuntime();
+  const fresh = mkdtempSync(path.join(tmpdir(), 'specrail-symlink-git-'));
+  const external = mkdtempSync(path.join(tmpdir(), 'specrail-symlink-target-'));
+  execFileSync('git', ['init', '-q'], { cwd: fresh });
+  const targetA = path.join(external, 'outside-a.txt');
+  const targetB = path.join(external, 'outside-b.txt');
+  writeFileSync(targetA, 'outside one\n');
+  writeFileSync(targetB, 'outside two\n');
+  const link = path.join(fresh, 'external-link');
+  symlinkSync(targetA, link);
+
+  const first = await mod.repositoryFingerprint(realExecPi(), context({ cwd: fresh }), undefined);
+  writeFileSync(targetA, 'changed outside bytes must not be followed\n');
+  const afterTargetMutation = await mod.repositoryFingerprint(realExecPi(), context({ cwd: fresh }), undefined);
+  assert.equal(afterTargetMutation, first, 'external target bytes must not enter the repository fingerprint');
+
+  unlinkSync(link);
+  symlinkSync(targetB, link);
+  const afterLinkMutation = await mod.repositoryFingerprint(realExecPi(), context({ cwd: fresh }), undefined);
+  assert.notEqual(afterLinkMutation, first, 'changing the symlink target identity must change the repository fingerprint');
+});
+
+test('Direct Verify rejects shell and interpreter wrappers instead of trusting an indirect read-only claim', async () => {
+  const { mod } = await loadRuntime();
+  const unsafe = [
+    ['bash', ['-c', 'git status']],
+    ['sh', ['-c', 'git status']],
+    ['zsh', ['-c', 'git status']],
+    ['node', ['-e', 'console.log(1)']],
+    ['python', ['-c', 'print(1)']],
+    ['python3', ['-c', 'print(1)']],
+    ['powershell', ['-Command', 'Get-ChildItem']],
+    ['pwsh', ['-Command', 'Get-ChildItem']],
+    ['cmd', ['/c', 'dir']],
+    ['sed', ['-i', 's/a/b/', 'file.txt']],
+  ];
+  for (const [command, args] of unsafe) {
+    assert.equal(mod.verificationCommandAllowed(command, args), false, `${command} wrapper must fail closed`);
+  }
+  assert.equal(mod.verificationCommandAllowed('git', ['status', '--short']), true);
+  assert.equal(mod.verificationCommandAllowed('node', ['--check', 'src/example.js']), true);
+});

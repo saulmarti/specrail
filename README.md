@@ -42,6 +42,7 @@ SpecRail adds **rails**, not another project-management system. Markdown remains
 - [CodeGraph](https://github.com/colbymchenry/codegraph) available as a CLI; Codex normally uses `codegraph serve --mcp`, while the Pi adapter uses CodeGraph `explore` directly so no extra Pi MCP bridge is required
 - For UI work: compatible [Taste Skills](https://github.com/Leonxlnx/taste-skill)
 - Optional on Codex: the Visualize plugin/skill for native interactive review surfaces; Pi uses canonical inline evidence + Review Cockpit unless a compatible visualization capability is available
+- For production-code mutation: official [`@dietrichgebert/ponytail`](https://github.com/DietrichGebert/ponytail) enabled in literal `full` mode
 
 ### Install the beta
 
@@ -62,7 +63,7 @@ This installs the shared skills, the `specrail`/`ai-flow` launchers, Codex activ
 pi install npm:@saulmarti/specrail@beta
 ```
 
-Pi loads the package's declared `extensions/specrail.js` and `skills/` resources. The adapter exposes `specrail_cli`, which executes the bundled deterministic CLI directly, `specrail_skill` for deterministic specialist loading, trusted Pi session bridging, CodeGraph structural context, and native human-input presentation. Mutating SpecRail calls and human gates are marked sequential because Pi executes tool batches in parallel by default; non-zero CLI exits throw so Pi records a real tool error rather than a successful-looking result. Use `pi install -l npm:@saulmarti/specrail@beta` for project-local Pi settings. If you also want the `specrail` command in a normal terminal, use the managed npm route above instead of installing both copies into Pi.
+Pi loads both declared package extensions (`extensions/specrail.js` and `extensions/specrail-runtime-gates.js`) plus `skills/`. The adapter exposes `specrail_cli`, which executes the bundled deterministic CLI directly, `specrail_skill` for deterministic specialist loading, trusted Pi session bridging, CodeGraph structural context, native human-input presentation, and the mutation/verification gates. Mutating SpecRail calls and human gates are marked sequential because Pi executes tool batches in parallel by default; non-zero CLI exits throw so Pi records a real tool error rather than a successful-looking result. Use `pi install -l npm:@saulmarti/specrail@beta` for project-local Pi settings. If you also want the `specrail` command in a normal terminal, use the managed npm route above instead of installing both copies into Pi.
 
 The current public channel is `beta`; stable releases will later use the default `latest` tag. The exact source-tree release number is canonical in `package.json`; the README intentionally follows the dist-tag instead of hard-coding a version that can drift.
 
@@ -88,9 +89,9 @@ Corrige el bug que duplica favoritos al pulsar dos veces.
 Design the architecture for moving search indexing out of the request path.
 ```
 
-You do not need to create tasks manually, mention SpecRail, invoke a skill, or remember an ID.
+You do not need to create tasks manually or remember an ID. For every **new delivery work item**, the host first asks which process route you want: **SpecRail**, **Directo**, or **Directo + verificar**, with free-text/Other available. The route is separate from SpecRail's later `micro | light | standard | rigorous` Control Profile. Explicit `SpecRail Fast:`, `Sin/No SpecRail:`, and `Directo + verificar:` prefixes count as the route choice and suppress only that redundant question.
 
-Pi maps the same workflow onto Pi-native primitives: real `sessionManager` identity for `--session`, `ctx.ui` for exact `request_user_input`, `specrail_codegraph` for the high-signal CodeGraph `explore` context path, `/specrail-handoff TASK-####` for fresh-session boundaries, and serial concurrency fallback until the host truthfully attests subagent capability. See [`docs/PI.md`](docs/PI.md).
+Pi maps the same workflow onto Pi-native primitives: real `sessionManager` identity for `--session`, `ctx.ui` for exact structured questions, `specrail_codegraph` for the high-signal CodeGraph `explore` context path, `/specrail-handoff TASK-####` for fresh-session boundaries, and serial concurrency fallback until the host truthfully attests subagent capability. Direct/Direct+Verify continuity may be stored as Pi session metadata but must not create repository-local SpecRail workflow state merely to remember the bypass. See [`docs/PI.md`](docs/PI.md) and [`docs/ENTRY-GOVERNANCE.md`](docs/ENTRY-GOVERNANCE.md).
 
 ### Verify or repair the installation
 
@@ -117,29 +118,32 @@ codegraph index PROJECT --force --quiet  # explicit Doctor rebuild only
 
 The validated CodeGraph CLI contract is cached against the actual binary identity, so unchanged binaries are not re-probed with repeated `--help` processes. A healthy state inside the TTL launches no CodeGraph subprocesses. Full reindex is never an automatic fallback for a normal task. Local timing records are written to `.ai/runtime/codegraph-metrics.jsonl`.
 
-The canonical `specrail` launcher transparently keeps the TypeScript CLI resident behind a repository-local Unix socket. The same TypeScript argv parser executes every normal workflow command, so references and behavior are identical to the direct CLI while repeated Node/module cold starts disappear. Each request carries its invocation CWD plus only the SpecRail-relevant environment keys, so relative paths and session/CodeGraph environment changes retain normal CLI semantics. `next`, `readiness`, and `interaction` remain separate operations and separate contracts. Package bootstrap/update/version commands stay direct; long external work still dominates its own runtime regardless of transport. The resident launcher currently targets macOS/Linux explicitly; package metadata reflects that support boundary instead of silently degrading on Windows.
+The canonical `specrail` launcher transparently keeps the TypeScript CLI resident behind a repository-local runtime record and a short private Unix socket. The same TypeScript argv parser executes every normal workflow command, so references and behavior are identical to the direct CLI while repeated Node/module cold starts disappear. Each request carries its invocation CWD plus only the SpecRail-relevant environment keys, so relative paths and session/CodeGraph environment changes retain normal CLI semantics. `next`, `readiness`, and `interaction` remain separate operations and separate contracts. Package bootstrap/update/version commands stay direct; long external work still dominates its own runtime regardless of transport. The resident launcher currently targets macOS/Linux explicitly; package metadata reflects that support boundary instead of silently degrading on Windows.
 
 ## What happens after a request
 
 ```mermaid
 flowchart LR
-    A[Your request] --> B[Repository + CodeGraph preflight]
+    A[New delivery request] --> R{Choose route}
+    R -->|Direct| DX[Direct host execution]
+    R -->|Direct + verify| DV[Direct execution + bounded verification]
+    R -->|SpecRail| B[Repository + CodeGraph preflight]
     B --> PO[Project Product Owner review]
     PO --> C[Product specification]
     C --> D{Material decisions?}
-    D -->|Yes| E[Native host questions]
+    D -->|Yes| E[Native structured questions]
     E --> C
     D -->|No| F[Spec lint + QA mission + AC IDs + blast radius]
-    F --> G[Review Bundle]
+    F --> G[Decision Capsule + Review Details]
     G --> H{You approve?}
     H -->|Changes| C
     H -->|Approve| I[Locked spec hash]
-    I --> J[Isolated implementation]
+    I --> J[Isolated implementation + Ponytail full]
     J --> K[Technical review]
     K --> L[QA against immutable mission]
     L --> M[Target Audience validation]
     M --> FPO[Final Product Owner outcome review]
-    FPO --> N[Coverage + Scope Guard + Final Review Bundle]
+    FPO --> N[Coverage + Scope Guard + Decision Capsule]
     N --> O{You approve?}
     O -->|Return| J
     O -->|Approve| P[Merge / external delivery / keep open]
@@ -156,18 +160,31 @@ The workflow adapts by surface, size, risk, and the governed task content. SpecR
 
 A request such as `Change the primary button from blue to green` can therefore avoid Product Owner/Target Audience passes, UX proposal/ImageGen, independent Technical Review, a separate QA agent, Final Customer, and mandatory durable learning while still requiring Scope Guard, the real implemented target, layout validation, AC coverage, and final approval. A shared design token is at least `light`; responsive/layout judgment is `light`; a redesign or behavior change is `standard`; auth/security/data/API/migration/performance/concurrency signals are `rigorous`.
 
-
 ### Choose how much SpecRail you want
 
-You normally do not need a mode prefix: the deterministic control profile automatically makes proven `micro`/`light` work cheaper. For an intentionally shorter governed pass, prefix the request with `SpecRail Fast:`. Fast is allowed only while the sealed profile remains `micro`/`light`; material behavior, redesign, auth/security/data/API/migration/performance/concurrency, or broader Acceptance Criteria automatically restore normal governance. Fast keeps Scope Guard, stable ACs/spec integrity, real evidence, Acceptance Coverage, and final approval, while omitting project-wide CodeGraph/Product Owner bootstrap, separate pre-implementation approval, boundary/worktree, UX/ImageGen, independent reviewer/QA/customer passes, and durable learning.
-
-For a one-request total escape hatch, use `Sin SpecRail:` or `No SpecRail:`. That prefix is intercepted before SpecRail: no task, CLI call, CodeGraph preflight, gate, evidence state, or learning is created for that request. It is intentionally different from Fast, which remains governed.
+For an ordinary new delivery request, the host asks once:
 
 ```text
-Cambia el color de este botón a verde.              # automatic micro
-SpecRail Fast: cambia el padding de esta card.      # ultra-light governed
-Sin SpecRail: corrige este typo.                     # total bypass
+SpecRail
+Directo
+Directo + verificar
+Other…
 ```
+
+`SpecRail` enters governed intake and only then chooses the deterministic `micro | light | standard | rigorous` Control Profile. `Directo` creates no SpecRail task/CodeGraph-preflight/evidence/trace/learning workflow state. `Directo + verificar` uses the same direct route and then requires the smallest meaningful **read-only** verification. Direct routes still obey host safety, the No-Assumption gate, and Ponytail `full` for production-code writes.
+
+For an intentionally shorter governed pass, prefix the request with `SpecRail Fast:`. Fast is allowed only while the sealed profile remains `micro`/`light`; material behavior, redesign, auth/security/data/API/migration/performance/concurrency, or broader Acceptance Criteria automatically restore normal governance. Fast keeps Scope Guard, stable ACs/spec integrity, real evidence, Acceptance Coverage, and final approval, while omitting project-wide CodeGraph/Product Owner bootstrap, separate pre-implementation approval, boundary/worktree, UX/ImageGen, independent reviewer/QA/customer passes, and durable learning.
+
+For a one-request total SpecRail-workflow bypass, use `Sin SpecRail:` or `No SpecRail:`. That prefix resolves the route as Direct before SpecRail workflow state is created. It is intentionally different from Fast, which remains governed.
+
+```text
+Cambia el color de este botón a verde.              # asks route once
+SpecRail Fast: cambia el padding de esta card.      # explicit governed Fast route
+Sin SpecRail: corrige este typo.                     # explicit Direct route
+Directo + verificar: corrige este typo.              # explicit Direct + read-only verification
+```
+
+If a material requirement is still ambiguous after the route choice, SpecRail never resolves it from model confidence. It uses runtime-backed user/repository/tool provenance and otherwise asks with 2–4 choices plus free text. See [`docs/ENTRY-GOVERNANCE.md`](docs/ENTRY-GOVERNANCE.md).
 
 ## A concrete UI example
 
@@ -177,7 +194,7 @@ You ask:
 Fix the Home Spotlight heading. It is too dominant on mobile.
 ```
 
-SpecRail requires the active coding host to:
+After you choose the SpecRail route, SpecRail requires the active coding host to:
 
 1. identify the exact route and section;
 2. launch the real application;
@@ -185,11 +202,12 @@ SpecRail requires the active coding host to:
 4. select the appropriate Taste Skills by their installed frontmatter names;
 5. classify this mobile hierarchy adjustment as `light` when refinement confirms it is a bounded responsive/layout change;
 6. capture a focused real-app Before without manufacturing an ImageGen proposal;
-7. show the specification and required focused evidence, then wait for approval;
-8. implement the bounded change;
+7. show the specification Decision Capsule, Review Details and required evidence, then wait for approval;
+8. implement the bounded change under Ponytail `full`;
 9. capture the same target in the real application;
 10. run focused Before → After DOM/layout validation;
-11. request final approval and delivery.
+11. run the official Ponytail review before reporting code-writing completion;
+12. request final approval and delivery.
 
 If refinement instead reveals a material redesign, the profile escalates to `standard` and the full Taste Skill + ImageGen proposal/review path becomes applicable before approval.
 
@@ -325,7 +343,9 @@ Multi-Agent Concurrency does not equate a graph of independent tasks with real p
 
 ### Reviews are mobile-friendly
 
-At specification and final gates, SpecRail generates a durable local **Review Cockpit** and the authoritative Review Bundle, then marks canonical visual attachments as `requiredVisible`. A local path or generated HTML file is audit metadata, not proof that the user saw the evidence. Visual gates are now mechanically two-step: `next` first returns `interaction.tool=host_actions`; every canonical visual gets a blocking `present-image` action for the conversation and the Cockpit gets a non-blocking `open-url` action. Each real outcome is acknowledged against the exact task, gate, session, action ID and `presentationDigest`. Until the current digest is acknowledged, direct approve/change/reject commands are blocked and the native approval selector is not emitted. Changed evidence, another session, or a corrupt/stale acknowledgment returns the gate to presentation. If a required image cannot be presented in-conversation, approval stays blocked rather than degrading to paths. When the installed `visualize` skill is available, SpecRail can prepare and validate an interactive `$visualize` artifact plus native reference, but those states remain `hostPresentation: unverified` until the host exposes a trustworthy presentation signal.
+At specification and final gates, the default host-visible text is **Decision Capsule first**: outcome, scope delta, proof, risk/blocker, and primary evidence. The complete authoritative Review Bundle remains available as **Review Details** instead of being repeated inline by default. Canonical visual attachments remain `requiredVisible`; a local path or generated HTML file is audit metadata, not proof that the user saw the evidence.
+
+Visual gates remain mechanically two-step: `next` first returns `interaction.tool=host_actions`; every canonical visual gets a blocking `present-image` action for the conversation and the Cockpit gets a non-blocking `open-url` action. Each real outcome is acknowledged against the exact task, gate, session, action ID and `presentationDigest`. Until the current digest is acknowledged, direct approve/change/reject commands are blocked and the native approval selector is not emitted. Changed evidence, another session, or a corrupt/stale acknowledgment returns the gate to presentation. If a required image cannot be presented in-conversation, approval stays blocked rather than degrading to paths. When the installed `visualize` skill is available, SpecRail can prepare and validate an interactive `$visualize` artifact plus native reference, but those states remain `hostPresentation: unverified` until the host exposes a trustworthy presentation signal.
 
 ## Autonomy Levels
 
@@ -470,25 +490,26 @@ Slice 3: Another visitor opens the shared route.
 
 Each slice contains its frontend/backend/data needs, acceptance criteria, evidence and dependencies. The dependency DAG is validated before child tasks are materialized.
 
-
 ## Review Cockpit — beta
 
-Review Cockpit is implemented in `0.5.0-beta.2`. It turns the current task, Review Bundle, evidence, metrics, repair state, context budget, and signed trace into one generated, local, mobile-friendly HTML decision surface.
+Review Cockpit is a generated, local, mobile-friendly read-only decision surface derived from the current task, Review Details, evidence, metrics, repair state, context budget, and signed trace.
 
-Generate it manually:
+Generate it manually with the canonical command (the shorter `specrail cockpit` form remains a compatibility alias):
 
 ```bash
-specrail cockpit TASK-0001
-specrail cockpit TASK-0001 --stage spec
-specrail cockpit TASK-0001 --stage final
+specrail review cockpit TASK-0001
+specrail review cockpit TASK-0001 --stage spec
+specrail review cockpit TASK-0001 --stage final
 ```
 
-At specification and final approval gates the local fallback is generated automatically. `$visualize` may prepare an interactive in-conversation review reference, but SpecRail never equates that with verified host display. The authoritative fallback always includes the complete Review Bundle, direct conversation presentation of every required canonical visual, and an explicit **Open Review Cockpit** browser action using the generated Cockpit `openUrl`. Visual gates expose those operations through `host_actions`; SpecRail records `presented`, `opened`, `offered`, `failed`, or `unavailable` against the current session and digest, and only emits the native approval interaction after all blocking presentation actions succeed. The Cockpit includes:
+At specification and final approval gates the host shows the compact **Decision Capsule** first and keeps the complete Review Bundle attached as **Review Details**. The local Cockpit fallback is generated automatically. `$visualize` may prepare an interactive in-conversation review reference, but SpecRail never equates preparation with verified host display. Required canonical visuals still have blocking `present-image` actions and the Cockpit has a non-blocking `open-url` action using its real `openUrl`. SpecRail records `presented`, `opened`, `offered`, `failed`, or `unavailable` against the current session/digest and emits the native approval interaction only after blocking presentation actions succeed.
 
-- overview of need, scope, out-of-scope boundaries and QA mission;
+The Cockpit includes:
+
+- compact decision-critical outcome, scope, proof, risk and blockers above the fold;
 - stage-specific readiness checks and exact blocker explanations;
 - Visual Comparator v2 with simultaneous side-by-side review, slider/overlay modes, viewport + route/target + capture-scope filtering, and explicit missing-evidence states;
-- evidence inventory, repair budget, context usage, metrics and signed trace history;
+- full Review Details, evidence inventory, repair budget, context usage, metrics and signed trace history behind progressive disclosure;
 - the latest Harness experiment, exact reported token usage, and adaptive recommendation when enough history exists;
 - the available decision paths.
 
@@ -507,7 +528,6 @@ CI proves automated checks passed on a specific commit; it does not replace spec
 ## Public roadmap
 
 The current 0.9.1 integration of Autonomy Levels, Product Intelligence, and Multi-Agent Concurrency is validated in [`docs/VALIDATION-0.9.1-AUTONOMY-CONCURRENCY-PRODUCT-INTELLIGENCE.md`](docs/VALIDATION-0.9.1-AUTONOMY-CONCURRENCY-PRODUCT-INTELLIGENCE.md).
-
 
 ### Readiness / Why blocked
 
@@ -629,6 +649,7 @@ specrail concurrency heartbeat PARENT-TASK CHILD-TASK --session LANE-SESSION
 specrail capability host status --session HOST-SESSION
 specrail spec lint TASK-0001 --json
 specrail review bundle TASK-0001 --stage final --json
+specrail review cockpit TASK-0001
 specrail metrics TASK-0001 --json
 specrail trace TASK-0001 --json
 specrail trace validate TASK-0001 --json
@@ -693,7 +714,7 @@ For the managed/global route, also remove the block between `<!-- AI-FLOW:PI-BEG
 
 ## Publishing and contributing
 
-See [`ROADMAP.md`](ROADMAP.md), [`AGENTS.md`](AGENTS.md), and [`docs/PUBLISHING.md`](docs/PUBLISHING.md) for the public plan, repository rules, npm release checklist, and trusted publishing setup.
+See [`ROADMAP.md`](ROADMAP.md), [`AGENTS.md`](AGENTS.md), [`docs/ENTRY-GOVERNANCE.md`](docs/ENTRY-GOVERNANCE.md), and [`docs/PUBLISHING.md`](docs/PUBLISHING.md) for the public plan, repository rules, entry/mutation governance, npm release checklist, and trusted publishing setup.
 
 Before publishing:
 
@@ -715,7 +736,11 @@ No. The coding host reasons and uses tools; SpecRail controls state, gates, evid
 
 ### Does it make every task slower?
 
-Small tasks use a lighter route. Deterministic checks are cheap. The goal is lower **total time to accepted delivery**, not maximum code-generation speed.
+No route is selected automatically for a new work item. If you choose SpecRail, small tasks can still use a lighter Control Profile; if you choose Direct, the SpecRail workflow is bypassed. Deterministic checks are cheap. The goal is lower **total time to accepted delivery**, not maximum code-generation speed.
+
+### Is Ponytail optional for code writes?
+
+Not under the current production-code mutation contract. SpecRail requires the official Ponytail host state in literal `full` mode and rechecks it at mutation time; missing/off/lite/ultra state blocks the write.
 
 ### Is Prime Intellect code included?
 
@@ -723,7 +748,7 @@ No. SpecRail applies the taskset/harness/runtime/trace separation as an architec
 
 ### Is Visualize required?
 
-No. It is a supplementary host capability with Markdown and attachment fallback.
+No. It is a supplementary host capability with Decision Capsule, Review Details, canonical evidence and Review Cockpit fallback.
 
 ### Is this an official OpenAI product?
 

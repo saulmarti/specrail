@@ -1,0 +1,48 @@
+name: SpecRail validation
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+      - 'fix/**'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  release-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Pi adapter smoke test
+        run: node scripts/test-pi-adapter.mjs
+      - name: Pi runtime gate regression test
+        run: node scripts/test-pi-runtime-gates.mjs
+      - name: Build
+        run: npm run build
+      - name: Version sync
+        run: npm run version:check
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Installed E2E tests
+        run: npm run test:e2e
+      - name: Syntax checks
+        run: |
+          node --check scripts/install.mjs
+          node --check extensions/specrail.js
+          node --check extensions/specrail-runtime-gates.js
+      - name: Package dry run
+        run: npm pack --dry-run

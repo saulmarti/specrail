@@ -25,7 +25,7 @@ test('public metadata matches the maintainer and release channel',()=>{
 });
 
 test('public roadmap and agent rules are canonical and packaged',()=>{
-  for(const file of ['ROADMAP.md','AGENTS.md','docs/REVIEW-COCKPIT.md','docs/GITHUB-DELIVERY.md','docs/BRANDING.md','docs/prototypes/review-cockpit.html','docs/EXPERIMENTS.md','docs/ADAPTIVE-POLICY.md']){
+  for(const file of ['ROADMAP.md','AGENTS.md','docs/ENTRY-GOVERNANCE.md','docs/REVIEW-COCKPIT.md','docs/GITHUB-DELIVERY.md','docs/BRANDING.md','docs/prototypes/review-cockpit.html','docs/EXPERIMENTS.md','docs/ADAPTIVE-POLICY.md']){
     assert.ok(existsSync(path.join(root,file)),file);
     assert.ok(pkg.files.includes(file),`${file} must be included in npm package files`);
   }
@@ -53,10 +53,12 @@ test('source archive command excludes local caches and macOS metadata',()=>{
 });
 
 test('README and publishing docs use the canonical scoped package and specrail CLI',()=>{
-  assert.match(text('README.md'),/npm install -g @saulmarti\/specrail@beta/);
-  assert.match(text('README.md'),/npx --package=@saulmarti\/specrail@beta specrail install/);
-  assert.match(text('README.md'),/Review Cockpit — beta/);
-  assert.match(text('README.md'),/specrail cockpit TASK-0001/);
+  const readme=text('README.md');
+  assert.match(readme,/npm install -g @saulmarti\/specrail@beta/);
+  assert.match(readme,/npx --package=@saulmarti\/specrail@beta specrail install/);
+  assert.match(readme,/Review Cockpit — beta/);
+  assert.match(readme,/specrail review cockpit TASK-0001/);
+  assert.match(readme,/`specrail cockpit`[^\n]*compatibility alias/i);
   const publishing=text('docs/PUBLISHING.md');
   assert.match(publishing,/@saulmarti\/specrail/);
   assert.match(publishing,/npm publish --access public --tag beta/);

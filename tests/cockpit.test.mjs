@@ -77,15 +77,20 @@ test('Review Cockpit inline runtime is syntactically valid JavaScript',()=>{
   assert.equal(checked.status,0,checked.stderr||checked.stdout);
 });
 
-test('approval presentation attaches the interactive Cockpit before Markdown and evidence',()=>{
+test('approval presentation attaches the interactive Cockpit before Review Details and evidence',()=>{
   const root=repo(),id=preparedSpec(root);
   const interaction=interactionForTask(root,id,'spec-approval');
   assert.equal(interaction.presentation.attachments[0].kind,'review-cockpit');
   assert.equal(interaction.presentation.attachments[0].mediaType,'text/html');
   assert.equal(interaction.presentation.attachments[0].display,'inline');
-  assert.match(interaction.presentation.markdown,/SpecRail genera además un Review Cockpit/i);
-  assert.match(interaction.presentation.markdown,/su generación no prueba que el host lo haya abierto o mostrado/i);
-  assert.match(interaction.presentation.markdown,/Review Bundle completo.*autoritativo/i);
+  assert.equal(interaction.presentation.attachments[1].kind,'review-bundle');
+  assert.equal(interaction.presentation.attachments[1].display,'attachment');
+  assert.match(interaction.presentation.markdown,/READY FOR SPEC APPROVAL/i);
+  assert.match(interaction.presentation.markdown,/\*\*Outcome:\*\*/i);
+  assert.match(interaction.presentation.markdown,/\*\*Scope:\*\*/i);
+  assert.match(interaction.presentation.markdown,/Review Details/i);
+  const bundleText=readFileSync(interaction.presentation.attachments[1].path,'utf8').trim();
+  assert.equal(interaction.presentation.markdown.includes(bundleText),false,'compact approval must not dump Review Details inline');
   assert.doesNotMatch(interaction.presentation.markdown,/interactive Review Cockpit\.html —/i);
 });
 
@@ -129,7 +134,6 @@ test('Cockpit keeps only the latest canonical visual per role/viewport/target an
   assert.equal(visuals.filter(item=>item.group==='proposal').length,1);
   assert.ok(visuals.find(item=>item.group==='proposal').uri.startsWith('data:image/png;base64,'));
 });
-
 
 test('Cockpit excludes stale visual contexts that are no longer declared by the approved UI Target',()=>{
   const root=repo(),id=preparedSpec(root),dir=path.join(root,'.ai','evidence',id,'frontend');mkdirSync(dir,{recursive:true});

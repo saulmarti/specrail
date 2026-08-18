@@ -20,6 +20,7 @@
     "LICENSE",
     "CHANGELOG.md",
     "docs/PUBLISHING.md",
+    "docs/ENTRY-GOVERNANCE.md",
     "docs/REVIEW-COCKPIT.md",
     "docs/GITHUB-DELIVERY.md",
     "docs/BRANDING.md",
@@ -100,6 +101,9 @@
     "tag": "beta",
     "registry": "https://registry.npmjs.org/"
   },
+  "dependencies": {
+    "typebox": "1.3.7"
+  },
   "devDependencies": {
     "typescript": "5.8.3"
   },
@@ -117,13 +121,11 @@
   "homepage": "https://github.com/saulmarti/specrail#readme",
   "pi": {
     "extensions": [
-      "./extensions/specrail.js"
+      "./extensions/specrail.js",
+      "./extensions/specrail-runtime-gates.js"
     ],
     "skills": [
       "./skills"
     ]
-  },
-  "peerDependencies": {
-    "typebox": "*"
   }
 }

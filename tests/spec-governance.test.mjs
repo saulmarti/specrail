@@ -54,7 +54,6 @@ test('frontend UI Target requires an exact pixel viewport so visual evidence con
     assert.equal(lint.valid,false);assert.ok(lint.errors.some(error=>/exact pixel viewport/i.test(error)));
 });
 
-
 test('frontend UI Target rejects ambiguous multi-target ordering instead of pairing a viewport with the previous target', () => {
     const root=repo();const task=createTask(root,{title:'Two targets out of order',type:'task',surfaces:['frontend']});let loaded=loadTask(findTask(root,task.meta.id));
     const uiTarget="- Route: `/`\n- Viewport: `1440x1000`\n- Target: `section#hero`\n- Route: `/`\n- Target: `section#features`\n- Viewport: `390x844`\n- Capture: focused section";
@@ -91,14 +90,19 @@ test('workflow log changes do not invalidate an approved specification', () => {
     task = loadTask(findTask(root, task.meta.id));
     assert.equal(specificationHash(task), hash);
 });
-test('specification presentation creates a compact review bundle and attaches it before approval', () => {
+test('specification presentation is capsule-first and attaches complete Review Details before approval', () => {
     const root = repo();
     const task = completeBackendSpec(root);
     const presentation = specificationPresentation(root, task.meta.id);
     const bundle = presentation.attachments.find(x => x.kind === 'review-bundle');
     assert.ok(bundle);
-    assert.match(presentation.markdown, /Specification lint|Validación de especificación/i);
-    assert.match(readFileSync(bundle.path, 'utf8'), /Create health endpoint/);
+    assert.match(presentation.markdown, /READY FOR SPEC APPROVAL/i);
+    assert.match(presentation.markdown, /\*\*Outcome:\*\*/i);
+    assert.match(presentation.markdown, /\*\*Proof:\*\*/i);
+    assert.match(presentation.markdown, /Review Details/i);
+    const bundleText = readFileSync(bundle.path, 'utf8');
+    assert.equal(presentation.markdown.includes(bundleText.trim()), false);
+    assert.match(bundleText, /Create health endpoint/);
     assert.match(bundle.path, /\.ai\/reviews\/TASK-0001-spec-review\.md$/);
 });
 test('final review bundle consolidates user-facing evidence and independent verdicts', () => {
