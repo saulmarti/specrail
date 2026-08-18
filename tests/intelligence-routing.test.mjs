@@ -33,11 +33,22 @@ test('normal specification defaults to executor instead of spending frontier tok
   assert.match(result.reason, /does not by itself justify frontier planning/i);
 });
 
-test('material architecture specification uses frontier only for the decision envelope', () => {
-  const result = intelligenceRecommendation(task({ type: 'architecture', architecture: true }), { actor: 'ai-flow-product-specifier', action: 'continue', recommendedSkill: 'ai-flow-product-specifier' });
-  assert.equal(result.tier, 'frontier');
-  assert.equal(result.frontierOutput.mode, 'decision-only');
-  assert.ok(result.frontierOutput.forbidden.includes('step-by-step implementation plan'));
+test('architecture work gathers specification facts on executor and spends frontier in the dedicated architecture phase', () => {
+  const source = task({ type: 'architecture', architecture: true });
+  const specifier = intelligenceRecommendation(source, { actor: 'ai-flow-product-specifier', action: 'continue', recommendedSkill: 'ai-flow-product-specifier' });
+  assert.equal(specifier.tier, 'executor');
+  source.meta.phase = 'technical-architecture';
+  const architect = intelligenceRecommendation(source, { actor: 'ai-flow-technical-reviewer', action: 'continue', recommendedSkill: 'ai-flow-technical-reviewer' });
+  assert.equal(architect.tier, 'frontier');
+  assert.equal(architect.frontierOutput.mode, 'decision-only');
+  assert.ok(architect.frontierOutput.forbidden.includes('step-by-step implementation plan'));
+});
+
+test('Product Intelligence bootstrap stays executor-owned while explicit Product Owner judgment is frontier', () => {
+  const bootstrap = intelligenceRecommendation(task(), { actor: 'ai-flow-product-owner', action: 'bootstrap-product-intelligence-context', recommendedSkill: 'ai-flow-product-owner' });
+  assert.equal(bootstrap.tier, 'executor');
+  const owner = intelligenceRecommendation(task(), { actor: 'ai-flow-product-owner', action: 'product-owner-review', recommendedSkill: 'ai-flow-product-owner' });
+  assert.equal(owner.tier, 'frontier');
 });
 
 test('builder stays executor-owned even for rigorous high-risk work', () => {
@@ -47,11 +58,11 @@ test('builder stays executor-owned even for rigorous high-risk work', () => {
   assert.ok(result.escalation.triggers.some(item => /architecture|contract|security/i.test(item)));
 });
 
-test('explicit Product Owner judgment is frontier while human/deterministic gates use no model tier', () => {
-  const owner = intelligenceRecommendation(task(), { actor: 'ai-flow-product-owner', action: 'product-owner-review', recommendedSkill: 'ai-flow-product-owner' });
-  assert.equal(owner.tier, 'frontier');
+test('human and deterministic gates use no model tier', () => {
   const human = intelligenceRecommendation(task(), { actor: 'user', action: 'approve-or-refine-specification', recommendedSkill: null });
   assert.equal(human.tier, 'none');
+  const system = intelligenceRecommendation(task(), { actor: 'system', action: 'autonomy-advance', recommendedSkill: null });
+  assert.equal(system.tier, 'none');
 });
 
 test('token summary measures frontier share without double-counting cached or reasoning tokens', () => {
