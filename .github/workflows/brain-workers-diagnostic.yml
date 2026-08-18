@@ -25,23 +25,22 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build
         run: npm run build
-      - name: Brain Workers routing
+      - name: Routing baseline
         run: node --test --test-force-exit tests/intelligence-routing.test.mjs
-      - name: Worker runtime
-        run: node --test --test-force-exit tests/worker-runtime.test.mjs
-      - name: Brain Workers install
-        run: node --test --test-force-exit tests/brain-workers-install.test.mjs
-      - name: Skills contracts
-        run: node --test --test-force-exit tests/skills.test.mjs
-      - name: Entry and Ponytail
-        run: node --test --test-force-exit tests/entry-clarity-ponytail.test.mjs
-      - name: Pi adapter runtime
-        run: node --test --test-force-exit tests/pi-adapter-runtime.test.mjs
-      - name: Pi compatibility
-        run: node --test --test-force-exit tests/pi-compatibility.test.mjs
-      - name: Pi runtime gates
-        run: node --test --test-force-exit tests/pi-runtime-gates.test.mjs
-      - name: Package contract
-        run: node --test --test-force-exit tests/npm-package.test.mjs
-      - name: Core routing
-        run: node --test --test-force-exit tests/core.test.mjs tests/control-profile.test.mjs tests/context-budget.test.mjs
+      - name: Worker dirty baseline
+        run: node --test --test-force-exit --test-name-pattern="state-only worker ignores unchanged pre-existing dirty production files" tests/worker-runtime.test.mjs
+      - name: Worker state-only mutation
+        if: always()
+        run: node --test --test-force-exit --test-name-pattern="state-only worker fails when it actually mutates production code" tests/worker-runtime.test.mjs
+      - name: Worker Builder scope
+        if: always()
+        run: node --test --test-force-exit --test-name-pattern="Builder worker permits sealed allowed files and blocks outside/protected scope" tests/worker-runtime.test.mjs
+      - name: Worker Luna unavailable fallback
+        if: always()
+        run: node --test --test-force-exit --test-name-pattern="worker falls back Luna to Terra only when Luna is unavailable" tests/worker-runtime.test.mjs
+      - name: Worker ordinary failure no promotion
+        if: always()
+        run: node --test --test-force-exit --test-name-pattern="ordinary Luna failure does not retry Terra or Brain" tests/worker-runtime.test.mjs
+      - name: Worker Brain-side validation
+        if: always()
+        run: node --test --test-force-exit --test-name-pattern="Brain-side loader validates result binding/model attestation and converts usage safely" tests/worker-runtime.test.mjs
