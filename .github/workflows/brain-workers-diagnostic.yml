@@ -25,44 +25,36 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build
         run: npm run build
-      - name: Routing baseline
+      - name: Brain Workers routing
+        if: always()
         run: node --test --test-force-exit tests/intelligence-routing.test.mjs
-      - name: Dirty baseline
+      - name: Worker runtime
         if: always()
-        run: node --test --test-force-exit --test-name-pattern="state-only worker ignores unchanged pre-existing dirty production files" tests/worker-runtime.test.mjs
-      - name: State-only delta attribution
+        run: node --test --test-force-exit tests/worker-runtime.test.mjs
+      - name: Brain Workers install
         if: always()
-        run: node --test --test-force-exit --test-name-pattern="state-only mutation is attributed to app.txt" tests/worker-runtime.test.mjs
-      - name: State-only forbidden classification
+        run: node --test --test-force-exit tests/brain-workers-install.test.mjs
+      - name: Skills contracts
         if: always()
-        run: node --test --test-force-exit --test-name-pattern="state-only mutation is classified as forbidden production" tests/worker-runtime.test.mjs
-      - name: State-only result classification
+        run: node --test --test-force-exit tests/skills.test.mjs
+      - name: Entry and Ponytail
         if: always()
-        run: node --test --test-force-exit --test-name-pattern="state-only mutation makes Worker result failed" tests/worker-runtime.test.mjs
-      - name: State-only exit code
+        run: node --test --test-force-exit tests/entry-clarity-ponytail.test.mjs
+      - name: Pi adapter runtime
         if: always()
-        run: node --test --test-force-exit --test-name-pattern="state-only mutation exits with governance failure code" tests/worker-runtime.test.mjs
-      - name: Builder allowed delta attribution
+        run: node --test --test-force-exit tests/pi-adapter-runtime.test.mjs
+      - name: Pi compatibility
         if: always()
-        run: node --test --test-force-exit --test-name-pattern="Builder allowed-file mutation is attributed to app.txt" tests/worker-runtime.test.mjs
-      - name: Builder allowed scope
+        run: node --test --test-force-exit tests/pi-compatibility.test.mjs
+      - name: Pi runtime gates
         if: always()
-        run: node --test --test-force-exit --test-name-pattern="Builder allowed-file mutation has no scope violation" tests/worker-runtime.test.mjs
-      - name: Builder outside delta attribution
+        run: node --test --test-force-exit tests/pi-runtime-gates.test.mjs
+      - name: Package contract
         if: always()
-        run: node --test --test-force-exit --test-name-pattern="Builder outside-file mutation is attributed to other.txt" tests/worker-runtime.test.mjs
-      - name: Builder outside classification
+        run: node --test --test-force-exit tests/npm-package.test.mjs
+      - name: Managed install regressions
         if: always()
-        run: node --test --test-force-exit --test-name-pattern="Builder outside-file mutation is classified as unexpected scope" tests/worker-runtime.test.mjs
-      - name: Builder outside exit code
+        run: node --test --test-force-exit tests/managed-installation.test.mjs
+      - name: Core routing
         if: always()
-        run: node --test --test-force-exit --test-name-pattern="Builder outside-file mutation fails with governance exit code" tests/worker-runtime.test.mjs
-      - name: Luna unavailable fallback
-        if: always()
-        run: node --test --test-force-exit --test-name-pattern="worker falls back Luna to Terra only when Luna is unavailable" tests/worker-runtime.test.mjs
-      - name: Ordinary failure no promotion
-        if: always()
-        run: node --test --test-force-exit --test-name-pattern="ordinary Luna failure does not retry Terra or Brain" tests/worker-runtime.test.mjs
-      - name: Brain-side validation
-        if: always()
-        run: node --test --test-force-exit --test-name-pattern="Brain-side loader validates result binding/model attestation and converts usage safely" tests/worker-runtime.test.mjs
+        run: node --test --test-force-exit tests/core.test.mjs tests/control-profile.test.mjs tests/context-budget.test.mjs
