@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -52,6 +52,29 @@ test('the packaged CLI can install SpecRail through its public install command w
   assert.ok(existsSync(path.join(home,'.local','bin','ai-flow')));
   assert.ok(existsSync(path.join(home,'.ai-flow','node_modules','@dietrichgebert','ponytail','package.json')));
   assert.equal(run(path.join(home,'.local','bin','specrail'),['--version']),pkg.version);
+});
+
+test('public specrail install forwards explicit --pi and --no-pi choices to the managed installer',()=>{
+  const piHome=mkdtempSync(path.join(tmpdir(),'specrail-public-pi-home-'));
+  const piOutput=run(process.execPath,['dist/src/cli.js','install','--pi'],{cwd:root,env:{...process.env,AI_FLOW_HOME:piHome}});
+  assert.match(piOutput,/Pi integration installed/i);
+  const piSettings=JSON.parse(readFileSync(path.join(piHome,'.pi','agent','settings.json'),'utf8'));
+  assert.ok(piSettings.packages.includes(path.join(piHome,'.ai-flow')));
+  assert.match(readFileSync(path.join(piHome,'.pi','agent','AGENTS.md'),'utf8'),/official.*Ponytail/i);
+
+  const noPiHome=mkdtempSync(path.join(tmpdir(),'specrail-public-no-pi-home-'));
+  const piRoot=path.join(noPiHome,'.pi','agent');
+  mkdirSync(piRoot,{recursive:true});
+  const agentsFile=path.join(piRoot,'AGENTS.md');
+  const settingsFile=path.join(piRoot,'settings.json');
+  const agentsBefore='# Existing Pi rules\n\nDo not mutate.\n';
+  const settingsBefore=`${JSON.stringify({theme:'dark',packages:['npm:other/pi-package'],custom:{keep:true}},null,2)}\n`;
+  writeFileSync(agentsFile,agentsBefore);
+  writeFileSync(settingsFile,settingsBefore);
+  const noPiOutput=run(process.execPath,['dist/src/cli.js','install','--no-pi'],{cwd:root,env:{...process.env,AI_FLOW_HOME:noPiHome}});
+  assert.match(noPiOutput,/Pi integration skipped/i);
+  assert.equal(readFileSync(agentsFile,'utf8'),agentsBefore);
+  assert.equal(readFileSync(settingsFile,'utf8'),settingsBefore);
 });
 
 test('the installed CLI keeps the legacy local Review Cockpit available only as an explicit manual command',()=>{
