@@ -25,33 +25,24 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build
         run: npm run build
-      - name: Brain Workers routing
+      - name: Unit group A-H
         if: always()
-        run: node --test --test-force-exit tests/intelligence-routing.test.mjs
-      - name: Worker runtime
+        shell: bash
+        run: |
+          files=(tests/[a-h]*.test.mjs)
+          node --test --test-force-exit "${files[@]}"
+      - name: Unit group I-P
         if: always()
-        run: node --test --test-force-exit tests/worker-runtime.test.mjs
-      - name: Brain Workers install
+        shell: bash
+        run: |
+          files=()
+          for f in tests/[i-p]*.test.mjs; do
+            [[ "$f" == "tests/installed-e2e.test.mjs" ]] || files+=("$f")
+          done
+          node --test --test-force-exit "${files[@]}"
+      - name: Unit group Q-Z
         if: always()
-        run: node --test --test-force-exit tests/brain-workers-install.test.mjs
-      - name: Skills contracts
-        if: always()
-        run: node --test --test-force-exit tests/skills.test.mjs
-      - name: Entry and Ponytail
-        if: always()
-        run: node --test --test-force-exit tests/entry-clarity-ponytail.test.mjs
-      - name: Pi adapter runtime
-        if: always()
-        run: node --test --test-force-exit tests/pi-adapter-runtime.test.mjs
-      - name: Pi compatibility
-        if: always()
-        run: node --test --test-force-exit tests/pi-compatibility.test.mjs
-      - name: Pi runtime gates
-        if: always()
-        run: node --test --test-force-exit tests/pi-runtime-gates.test.mjs
-      - name: Package contract
-        if: always()
-        run: node --test --test-force-exit tests/npm-package.test.mjs
-      - name: Core routing
-        if: always()
-        run: node --test --test-force-exit tests/core.test.mjs tests/control-profile.test.mjs tests/context-budget.test.mjs
+        shell: bash
+        run: |
+          files=(tests/[q-z]*.test.mjs)
+          node --test --test-force-exit "${files[@]}"
