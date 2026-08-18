@@ -6,6 +6,7 @@ export const ACTIVATION_START='<!-- AI-FLOW:BEGIN -->';
 export const ACTIVATION_END='<!-- AI-FLOW:END -->';
 export const PI_ACTIVATION_START='<!-- AI-FLOW:PI-BEGIN -->';
 export const PI_ACTIVATION_END='<!-- AI-FLOW:PI-END -->';
+// Managed review contract: Generated Cockpit HTML is not proof of display. The complete Review Bundle stays available as Review Details. Local paths never count as shown evidence; use presentation.previewUrl for served previews. `$visualize` remains optional and its full semantics are delegated to ai-flow/SKILL.md.
 export const ACTIVATION_BODY=[
   '# SpecRail delivery router',
   '',
