@@ -12,16 +12,25 @@ SpecRail keeps workflow state, hashes, gates, evidence, Scope Guard, revisions, 
 pi install npm:@saulmarti/specrail@beta
 ```
 
-The package exposes `./extensions/specrail.js` and `./skills`; no global SpecRail CLI is required inside Pi. Project-local install remains available with `pi install -l`.
+The SpecRail Pi Package exposes its own extensions/skills **and loads the bundled official `@dietrichgebert/ponytail` Pi extension and skills**. Ponytail is a declared SpecRail runtime dependency; it is not a separate prerequisite the user must install first. No global SpecRail CLI is required inside Pi. Project-local install remains available with `pi install -l`.
 
-### Managed Codex + Pi installation
+### Managed Codex installation with optional Pi integration
 
 ```bash
 npm install -g @saulmarti/specrail@beta
 specrail install
 ```
 
-The managed installer registers `~/.ai-flow` as a local Pi Package, preserves unrelated Pi settings, installs the managed activation block, and keeps the shared SpecRail skills/launchers current.
+In an interactive terminal, `specrail install` explicitly asks whether Pi should also be configured. The deterministic forms are:
+
+```bash
+specrail install --pi
+specrail install --no-pi
+```
+
+`--pi` registers the managed `~/.ai-flow` package with Pi while preserving unrelated Pi settings. `--no-pi` does not modify `~/.pi`. In non-interactive installation, Pi is skipped unless `--pi` was explicitly supplied.
+
+Both routes keep the shared SpecRail launchers/skills current and install the bundled official Ponytail runtime/skills. Re-running the installer is idempotent for the managed assets.
 
 ## Process route: always explicit for new delivery work
 
@@ -57,13 +66,13 @@ Model confidence is never authority. If two plausible material interpretations r
 
 Every clarification uses 2–4 concrete choices, at most one recommendation, and `Other`/free text. Up to four independent questions may be batched. Dependent questions are asked sequentially.
 
-When the host exposes an attested richer `ask_user_question` capability (for example a compatible `@juicesharp/rpiv-ask-user-question` installation), SpecRail may prefer it. Otherwise the built-in Pi adapter uses `ctx.ui.select()` / `ctx.ui.input()` with the same semantics. The fallback is first-class; SpecRail does not silently install a third-party question package.
+When the host exposes an attested richer `ask_user_question` capability (for example a compatible `@juicesharp/rpiv-ask-user-question` installation), SpecRail may prefer it. Otherwise the built-in Pi adapter uses `ctx.ui.select()` / `ctx.ui.input()` with the same semantics. The fallback is first-class; SpecRail does not silently install unrelated question packages.
 
 ## Ponytail contract
 
-Every production-code mutation route—SpecRail, Direct, or Direct+Verify—requires the **official Ponytail** skill/plugin in `full` mode unless the user explicitly disables Ponytail for the current work item.
+Every production-code mutation route—SpecRail, Direct, or Direct+Verify—requires the **official Ponytail** capability in literal `full` mode.
 
-SpecRail does not copy or impersonate Ponytail and never installs third-party code silently. If the host cannot attest the required capability, mutation stops and asks the user to enable/install official Ponytail or explicitly continue without it.
+SpecRail declares and installs official `@dietrichgebert/ponytail` as part of its own runtime. Managed Codex installation copies the official Ponytail skills into the managed skill locations; the Pi Package loads the bundled official Ponytail extension and skill directory. If the host cannot attest Ponytail after installation, that is a broken/incomplete SpecRail installation: reload the host or repair/reinstall SpecRail. Do not tell the user to install a separate Ponytail prerequisite and do not substitute an imitation.
 
 Before a mutation phase is completed, the official `ponytail-review` semantics review the current diff for unnecessary code/abstractions. Minimalism never overrides explicit user requirements, security/privacy, accessibility, data-loss protection, approved scope, acceptance criteria, or evidence requirements.
 
@@ -79,7 +88,7 @@ Before a mutation phase is completed, the official `ponytail-review` semantics r
 | Human gate | richer attested question capability when available, otherwise `request_user_input` → `ctx.ui.select()` / `ctx.ui.input()` |
 | Fresh-session phase boundary | `/specrail-handoff TASK-####` → `ctx.newSession({ withSession })` |
 | Model/reasoning | Pi-owned; SpecRail never selects it |
-| Visual review | canonical inline evidence + compact Review Cockpit/openUrl fallback |
+| Visual review | Decision Capsule in chat + required canonical inline evidence; Review Details on demand |
 | Parallel subagents | `unattested` by default; deterministic serial fallback |
 
 ## Runtime safety
@@ -93,6 +102,8 @@ Direct and Direct+Verify still receive the No-Assumption and Ponytail host polic
 ## Human decisions
 
 Core-governed interactions remain exact. For `interaction.tool === "request_user_input"`, the adapter preserves IDs, labels, descriptions, and free-text behavior; it never turns a recommendation into consent.
+
+For approval interactions, the exact native question begins with the complete compact Decision Capsule and only then presents the decision selector. This ordering does not depend on the host rendering optional presentation metadata.
 
 No interactive UI means no fabricated answer. Autonomous/Headless policy may mechanically advance only decisions already owned by that policy; unresolved human judgment remains blocked.
 
@@ -110,15 +121,17 @@ The new session still enters the sealed SpecRail boundary before implementation/
 
 Approval surfaces are decision-first:
 
-1. compact Decision Capsule;
-2. mandatory primary visual/behavior evidence;
-3. native decision prompt.
+1. concise Decision Capsule in chat;
+2. mandatory canonical visual/behavior evidence when applicable;
+3. native decision selector.
 
-Specification, acceptance/NFR detail, files, evidence inventory, checks, trace, repair history, experiments, and amendments remain available under Review Details/tabs instead of being repeated by default. Review Cockpit remains read-only. A generated HTML file is not proof that Pi displayed it; canonical inline evidence and actual host-open outcomes remain authoritative.
+Specification, acceptance/NFR detail, files, evidence inventory, checks, trace, repair history, experiments, and amendments remain available through the Review Bundle / Review Details instead of being repeated by default.
+
+**Review Cockpit is no longer part of the normal approval path.** SpecRail does not generate, open, offer, or require Cockpit for approval. The legacy manual command/artifact may remain for explicit manual use only.
 
 ## Taste / visuals / browser
 
-Taste accepts Pi as a supported host. Codex `$visualize` and `codex://` links are never prerequisites for Pi. A compatible Pi visualization/browser provider counts only when its actual capability/result is truthfully attested; otherwise canonical evidence and the Cockpit fallback apply.
+Taste accepts Pi as a supported host. Codex `$visualize` and `codex://` links are never prerequisites for Pi. A compatible Pi visualization/browser provider counts only when its actual capability/result is truthfully attested; otherwise the canonical inline evidence contract applies.
 
 ## Concurrency
 
@@ -134,8 +147,8 @@ Repository tests cover:
 - session-ID bridging and fresh handoff;
 - deterministic packaged specialist loading;
 - CodeGraph failure semantics;
-- Ponytail/no-assumption host contracts;
-- compact approval presentation;
-- managed Pi-package installation.
+- bundled official Ponytail and no-assumption host contracts;
+- summary-first compact approval presentation with no normal Cockpit dependency;
+- managed Pi opt-in and `--no-pi` non-mutation behavior.
 
 `npm run release:check` remains the release-level validation gate.
