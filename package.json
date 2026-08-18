@@ -74,20 +74,53 @@
     "test:e2e": "npm run build && node scripts/run-tests.mjs --tier e2e",
     "test:full": "npm run build && node scripts/run-tests.mjs --tier full"
   },
-  "engines": { "node": ">=22.0.0" },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "license": "MIT",
-  "keywords": ["codex","coding-agent","agent-workflow","spec-driven","human-in-the-loop","software-delivery","tdd","ui-ux","codegraph","agent-plugin","pi","pi-coding-agent","pi-package"],
-  "os": ["darwin","linux"],
+  "keywords": [
+    "codex",
+    "coding-agent",
+    "agent-workflow",
+    "spec-driven",
+    "human-in-the-loop",
+    "software-delivery",
+    "tdd",
+    "ui-ux",
+    "codegraph",
+    "agent-plugin",
+    "pi",
+    "pi-coding-agent",
+    "pi-package"
+  ],
+  "os": [
+    "darwin",
+    "linux"
+  ],
   "preferGlobal": true,
-  "publishConfig": { "access": "public", "tag": "beta", "registry": "https://registry.npmjs.org/" },
+  "publishConfig": {
+    "access": "public",
+    "tag": "beta",
+    "registry": "https://registry.npmjs.org/"
+  },
   "dependencies": {
     "@dietrichgebert/ponytail": "4.8.4",
     "typebox": "1.3.7"
   },
-  "devDependencies": { "typescript": "5.8.3" },
-  "author": { "name": "Saúl Martí", "email": "me@saulmarti.dev" },
-  "repository": { "type": "git", "url": "git+https://github.com/saulmarti/specrail.git" },
-  "bugs": { "url": "https://github.com/saulmarti/specrail/issues" },
+  "devDependencies": {
+    "typescript": "5.8.3"
+  },
+  "author": {
+    "name": "Saúl Martí",
+    "email": "me@saulmarti.dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saulmarti/specrail.git"
+  },
+  "bugs": {
+    "url": "https://github.com/saulmarti/specrail/issues"
+  },
   "homepage": "https://github.com/saulmarti/specrail#readme",
   "pi": {
     "extensions": [
