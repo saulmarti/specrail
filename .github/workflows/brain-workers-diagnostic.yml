@@ -12,9 +12,31 @@ permissions:
   contents: read
 
 jobs:
-  isolate:
+  discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    outputs:
+      files: ${{ steps.files.outputs.files }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: files
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import glob, json
+          files=sorted(set(glob.glob('tests/in*.test.mjs')+glob.glob('tests/v*.test.mjs'))-{'tests/installed-e2e.test.mjs'})
+          print('files='+json.dumps(files,separators=(',',':')))
+          PY
+
+  per-file:
+    needs: discover
+    if: ${{ needs.discover.outputs.files != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJSON(needs.discover.outputs.files) }}
+    name: unit ${{ matrix.file }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -25,39 +47,5 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build
         run: npm run build
-      - name: Unit prefix im
-        if: always()
-        shell: bash
-        run: |
-          shopt -s nullglob
-          files=(tests/im*.test.mjs)
-          ((${#files[@]}==0)) || node --test --test-force-exit "${files[@]}"
-      - name: Unit prefix in
-        if: always()
-        shell: bash
-        run: |
-          shopt -s nullglob
-          files=(tests/in*.test.mjs)
-          for i in "${!files[@]}"; do [[ "${files[$i]}" == "tests/installed-e2e.test.mjs" ]] && unset 'files[i]'; done
-          ((${#files[@]}==0)) || node --test --test-force-exit "${files[@]}"
-      - name: Unit prefix io-iz
-        if: always()
-        shell: bash
-        run: |
-          shopt -s nullglob
-          files=(tests/i[o-z]*.test.mjs)
-          ((${#files[@]}==0)) || node --test --test-force-exit "${files[@]}"
-      - name: Unit prefix u
-        if: always()
-        shell: bash
-        run: |
-          shopt -s nullglob
-          files=(tests/u*.test.mjs)
-          ((${#files[@]}==0)) || node --test --test-force-exit "${files[@]}"
-      - name: Unit prefix v
-        if: always()
-        shell: bash
-        run: |
-          shopt -s nullglob
-          files=(tests/v*.test.mjs)
-          ((${#files[@]}==0)) || node --test --test-force-exit "${files[@]}"
+      - name: Run
+        run: node --test --test-force-exit "${{ matrix.file }}"
