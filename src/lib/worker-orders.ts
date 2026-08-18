@@ -7,7 +7,7 @@ import { scopeGuardStatus } from './scope-guard.js';
 import { brainWorkerRecommendation, type BrainWorkerRecommendation, type WorkRoutingInput } from './brain-workers.js';
 
 export interface WorkerOrder {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   taskId: string;
   phase: string;
@@ -17,7 +17,8 @@ export interface WorkerOrder {
   kind: NonNullable<BrainWorkerRecommendation['worker']>['kind'];
   requestedModels: string[];
   reasoningEffort: 'low'|'medium';
-  access: 'read-only'|'workspace-write';
+  access: 'workspace-write';
+  mutationAuthority: 'specrail-state-only'|'production-with-scope';
   cwd: string;
   authority: {
     specificationHash: string | null;
@@ -55,11 +56,13 @@ function atomicJson(file:string,value:unknown){mkdirSync(path.dirname(file),{rec
 function bounded(value:string,maxWords:number){const parts=String(value||'').trim().split(/\s+/).filter(Boolean);return parts.length<=maxWords?parts.join(' '):`${parts.slice(0,maxWords).join(' ')} …`;}
 
 export function validateWorkerOrder(order: WorkerOrder): void {
-  if(order.schemaVersion!==1)throw new Error('Unsupported worker-order schema');
+  if(order.schemaVersion!==2)throw new Error('Unsupported worker-order schema');
   if(!/^WO-[A-F0-9]{12}$/.test(order.id))throw new Error('Invalid worker-order id');
   if(!order.taskId||!order.actor||!order.action)throw new Error('Worker order is missing identity fields');
   if(!order.requestedModels.length)throw new Error('Worker order requires at least one explicit worker model');
   if(order.requestedModels.some(model=>!String(model).trim()))throw new Error('Worker order contains an empty model id');
+  if(!['specrail-state-only','production-with-scope'].includes(order.mutationAuthority))throw new Error('Worker order has invalid mutation authority');
+  if(order.mutationAuthority==='production-with-scope'&&!order.capsule.allowedFiles.length)throw new Error('Production worker order requires a sealed allowed-file scope');
   if(order.orderDigest!==digest(payload(order)))throw new Error(`Worker-order integrity check failed for ${order.id}`);
 }
 
@@ -71,18 +74,21 @@ export function ensureWorkerOrder(root:string,reference:string,input:WorkRouting
   const projectRoot=path.resolve(root),task=loadTask(findTask(projectRoot,reference));
   const routing=brainWorkerRecommendation(task,input);if(routing.owner!=='worker'||!routing.worker)return null;
   const scope=scopeGuardStatus(projectRoot,task.meta.id),context=contextStatus(projectRoot,task.meta.id);
+  const productionMutation=task.meta.phase==='builder';
+  if(productionMutation&&(!scope.valid||!scope.sealed||!scope.sealIntegrityValid))throw new Error('Builder worker requires a valid sealed Scope Guard before production mutation');
   const workspace=task.meta.worktree_path&&existsSync(task.meta.worktree_path)?path.resolve(task.meta.worktree_path):projectRoot;
   const source={
     taskId:task.meta.id,phase:task.meta.phase,actor:input.actor,action:input.action,recommendedSkill:input.recommendedSkill??null,
     spec:task.meta.spec_effective_hash||task.meta.spec_approval_hash||null,qa:task.meta.qa_mission_hash||null,scopeHash:task.meta.scope_guard_hash||null,
     need:getSection(task.body,'Need'),scope:getSection(task.body,'Scope'),out:getSection(task.body,'Out of Scope'),acceptance:getSection(task.body,'Acceptance Criteria'),decisions:getSection(task.body,'Decisions'),
-    allowed:scope.allowedFiles,protected:scope.protectedFiles,contextFiles:context.files,contextSymbols:context.symbols,worker:routing.worker
+    allowed:scope.allowedFiles,protected:scope.protectedFiles,contextFiles:context.files,contextSymbols:context.symbols,worker:routing.worker,
+    mutationAuthority:productionMutation?'production-with-scope':'specrail-state-only'
   };
   const sourceDigest=digest(source),id=`WO-${sourceDigest.slice(0,12).toUpperCase()}`;
   const base:Omit<WorkerOrder,'orderDigest'>={
-    schemaVersion:1,id,taskId:task.meta.id,phase:task.meta.phase,actor:input.actor,action:input.action,recommendedSkill:input.recommendedSkill??null,
+    schemaVersion:2,id,taskId:task.meta.id,phase:task.meta.phase,actor:input.actor,action:input.action,recommendedSkill:input.recommendedSkill??null,
     kind:routing.worker.kind,requestedModels:[...routing.worker.preferredModels],reasoningEffort:routing.worker.reasoningEffort,
-    access:task.meta.phase==='builder'?'workspace-write':'read-only',cwd:workspace,
+    access:'workspace-write',mutationAuthority:productionMutation?'production-with-scope':'specrail-state-only',cwd:workspace,
     authority:{specificationHash:task.meta.spec_effective_hash||task.meta.spec_approval_hash||null,qaMissionHash:task.meta.qa_mission_hash||null,scopeGuardHash:task.meta.scope_guard_hash||null,decisions:bounded(getSection(task.body,'Decisions'),220)},
     capsule:{goal:bounded(getSection(task.body,'Need')||task.meta.title,180),scope:bounded(getSection(task.body,'Scope'),220),outOfScope:bounded(getSection(task.body,'Out of Scope'),160),acceptanceCriteria:bounded(getSection(task.body,'Acceptance Criteria'),360),allowedFiles:[...scope.allowedFiles].slice(0,40),protectedFiles:[...scope.protectedFiles].slice(0,30),contextFiles:[...context.files].slice(0,24),contextSymbols:[...context.symbols].slice(0,40),stopIf:[...routing.worker.stopIf]},
     sourceDigest,createdAt:new Date().toISOString()
