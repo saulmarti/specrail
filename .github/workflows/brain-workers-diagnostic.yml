@@ -25,30 +25,30 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build
         run: npm run build
-      - name: Unit group I-L
+      - name: Unit prefix I
         if: always()
         shell: bash
         run: |
           files=()
-          for f in tests/[i-l]*.test.mjs; do
+          for f in tests/i*.test.mjs; do
             [[ "$f" == "tests/installed-e2e.test.mjs" ]] || files+=("$f")
           done
           node --test --test-force-exit "${files[@]}"
-      - name: Unit group M-P
+      - name: Unit prefixes J-L
         if: always()
         shell: bash
         run: |
-          files=(tests/[m-p]*.test.mjs)
+          files=(tests/[j-l]*.test.mjs)
           node --test --test-force-exit "${files[@]}"
-      - name: Unit group Q-T
+      - name: Unit prefixes U-V
         if: always()
         shell: bash
         run: |
-          files=(tests/[q-t]*.test.mjs)
+          files=(tests/[u-v]*.test.mjs)
           node --test --test-force-exit "${files[@]}"
-      - name: Unit group U-Z
+      - name: Unit prefixes W-Z
         if: always()
         shell: bash
         run: |
-          files=(tests/[u-z]*.test.mjs)
+          files=(tests/[w-z]*.test.mjs)
           node --test --test-force-exit "${files[@]}"
