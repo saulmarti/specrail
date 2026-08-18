@@ -32,12 +32,13 @@ test('npm metadata exposes the SpecRail brand, backward-compatible alias, bundle
   assert.ok(pkg.files.includes('docs/PI.md'));
   assert.ok(pkg.files.includes('docs/VALIDATION-0.10.3-PI.md'));
   assert.ok(pkg.keywords.includes('pi-package'));
-  assert.deepEqual(pkg.pi,{extensions:['./node_modules/@dietrichgebert/ponytail/pi-extension/index.js','./extensions/specrail.js','./extensions/specrail-runtime-gates.js'],skills:['./node_modules/@dietrichgebert/ponytail/skills','./skills']});
+  assert.deepEqual(pkg.pi,{extensions:['./node_modules/@dietrichgebert/ponytail/pi-extension/index.js','./extensions/specrail-ponytail-bridge.js','./extensions/specrail.js','./extensions/specrail-runtime-gates.js'],skills:['./node_modules/@dietrichgebert/ponytail/skills','./skills']});
   assert.equal(pkg.dependencies['@dietrichgebert/ponytail'],'4.8.4');
   assert.equal(pkg.dependencies.typebox,'1.3.7');
   assert.equal(pkg.peerDependencies,undefined);
   assert.ok(existsSync(path.join(root,'node_modules','@dietrichgebert','ponytail','package.json')));
   assert.ok(existsSync(path.join(root,'node_modules','@dietrichgebert','ponytail','pi-extension','index.js')));
+  assert.ok(existsSync(path.join(root,'extensions','specrail-ponytail-bridge.js')));
   assert.ok(existsSync(path.join(root,'extensions','specrail.js')));
   assert.ok(existsSync(path.join(root,'extensions','specrail-runtime-gates.js')));
 });
@@ -90,6 +91,7 @@ test('published package explicitly includes the trust model for host/session gua
 test('Pi adapter source is publishable JavaScript and exposes the first-class host bridge',()=>{
   const source=readFileSync(path.join(root,'extensions','specrail.js'),'utf8');
   assert.equal(spawnSync(process.execPath,['--check','extensions/specrail.js'],{cwd:root,encoding:'utf8'}).status,0);
+  assert.equal(spawnSync(process.execPath,['--check','extensions/specrail-ponytail-bridge.js'],{cwd:root,encoding:'utf8'}).status,0);
   assert.match(source,/before_agent_start/);
   assert.match(source,/name: 'specrail_cli'/);
   assert.match(source,/name: 'specrail_host_context'/);
