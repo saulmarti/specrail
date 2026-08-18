@@ -44,7 +44,7 @@ test('no-assumption resolver uses authority provenance and fails closed on mater
   assert.throws(()=>assertNoUnresolvedMaterialDecisions([{id:'auth',material:true,evidence:[]}]),/UNRESOLVED_MATERIAL_DECISION/);
 });
 
-test('Ponytail full is required for code-writing roles and fails closed when absent, off, lite, ultra, or imitated',()=>{
+test('Ponytail full remains a hard mutation invariant',()=>{
   assert.equal(PONYTAIL_DEFAULT_MODE,'full');
   assert.equal(ponytailRequiredForRole('builder'),true);
   assert.equal(ponytailRequiredForRole('qa-engineer'),false);
@@ -58,20 +58,32 @@ test('Ponytail full is required for code-writing roles and fails closed when abs
   assert.throws(()=>assertPonytailForMutation('builder',{available:false}),/PONYTAIL_REQUIRED/);
 });
 
-test('normal status and approval presentation are capsule-first rather than history-first',()=>{
-  const progress=conciseProgress({percent:81,changed:'entry gate',validated:'unit tests',next:'cockpit'});
+test('normal status and approval are concise chat-first and do not build a Cockpit',()=>{
+  const progress=conciseProgress({percent:81,changed:'entry gate',validated:'unit tests',next:'approval'});
   assert.ok(progress.split('\n').length<=5);assert.match(progress,/81%/);
   const capsule=renderDecisionCapsuleMarkdown({stage:'final',title:'T',outcome:'Done',scopeSummary:'2 files',proofSummary:['AC 3/3','Scope clean'],riskSummary:'low',detailSections:['Evidence']});
   assert.match(capsule,/READY FOR FINAL APPROVAL/);assert.match(capsule,/Review Details/);
-  const presentation=read('src/lib/presentation.ts');assert.match(presentation,/writeCompactReviewCockpit/);assert.match(presentation,/renderDecisionCapsuleMarkdown/);
-  const compact=read('src/lib/compact-cockpit.ts');assert.match(compact,/data-specrail-decision-capsule=.*v1/);assert.match(compact,/review-details/);
+  const presentation=read('src/lib/presentation.ts');
+  assert.doesNotMatch(presentation,/writeCompactReviewCockpit/);
+  assert.doesNotMatch(presentation,/REVIEW-COCKPIT/);
+  assert.match(presentation,/renderDecisionCapsuleMarkdown/);
+  const interactions=read('src/lib/interactions.ts');
+  assert.match(interactions,/`\$\{presentation\.markdown\}\\n\\n\$\{prompt\}`/);
+  assert.match(interactions,/action\.type==='present-image'/);
 });
 
-test('host contracts force route choice, free text, and official Ponytail without silent install or bypass',()=>{
+test('host contracts install official Ponytail through SpecRail and keep no-assumption routing strict',()=>{
   const skill=read('skills/ai-flow/SKILL.md'),builder=read('skills/ai-flow-builder/SKILL.md'),pi=read('extensions/specrail.js'),managed=read('src/lib/managed-installation.ts');
+  const pkg=JSON.parse(read('package.json'));
   for(const text of [skill,managed]){assert.match(text,/SpecRail.*Directo.*Directo \+ verificar.*Other/is);assert.match(text,/Never choose|Never select|Never.*route.*user/i);}
   assert.match(skill,/2–4 concrete choices|2-4 concrete choices/);assert.match(skill,/free text|free-text/i);
   assert.doesNotMatch(skill,/explicitly disable Ponytail|disable Ponytail for this work item/i);
-  assert.match(builder,/official `ponytail`/i);assert.match(builder,/ponytail-review/i);assert.match(builder,/Never install third-party code silently/i);
+  assert.match(skill,/installation includes the official Ponytail package and skills/i);
+  assert.match(builder,/official `ponytail`/i);assert.match(builder,/ponytail-review/i);
+  assert.equal(pkg.dependencies['@dietrichgebert/ponytail'],'4.8.4');
+  assert.ok(pkg.pi.extensions.includes('./node_modules/@dietrichgebert/ponytail/pi-extension/index.js'));
+  assert.ok(pkg.pi.skills.includes('./node_modules/@dietrichgebert/ponytail/skills'));
+  assert.match(managed,/installPonytailSkills/);
+  assert.match(managed,/installPi=options\.installPi!==false/);
   assert.match(pi,/name: 'specrail_entry_gate'/);assert.match(pi,/PROCESS_ROUTE_REQUIRED/);assert.match(pi,/Ponytail capability in full mode/i);
 });
