@@ -18,6 +18,7 @@ const quickFiles=[
   'core.test.mjs',
   'entry-clarity-ponytail.test.mjs',
   'intelligence-routing.test.mjs',
+  'worker-runtime.test.mjs',
   'pi-compatibility.test.mjs',
   'pi-adapter-runtime.test.mjs',
   'pi-runtime-gates.test.mjs',
