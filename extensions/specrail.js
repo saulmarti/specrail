@@ -14,6 +14,7 @@ const EXTENSION_PACKAGE_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const MANAGED_PACKAGE_ROOT = path.join(path.resolve(process.env.AI_FLOW_HOME || os.homedir()), '.ai-flow');
 const PACKAGE_ROOT = existsSync(path.join(EXTENSION_PACKAGE_ROOT, 'scripts', 'specrail-fast.sh')) ? EXTENSION_PACKAGE_ROOT : MANAGED_PACKAGE_ROOT;
 const DISPATCHER = path.join(PACKAGE_ROOT, 'scripts', 'specrail-fast.sh');
+const WORKER_LAUNCHER = path.join(PACKAGE_ROOT, 'scripts', 'specrail-worker.mjs');
 const SPEC_RAIL_SKILLS = new Set(['ai-flow','ai-flow-multi-agent','ai-flow-product-owner','ai-flow-product-specifier','ai-flow-ux-ui-designer','ai-flow-builder','ai-flow-technical-reviewer','ai-flow-qa-engineer','ai-flow-target-audience','ai-flow-final-customer']);
 const PROCESS_ROUTE_OPTIONS = [
   { label: 'SpecRail', description: 'Proceso gobernado, trazable y con gates.', route: 'specrail' },
@@ -31,18 +32,19 @@ function execFailure(label, result, stdout, stderr) {
 
 const PI_TURN_INSTRUCTIONS = [
   'SpecRail Pi adapter is active for this repository-delivery turn.',
-  'For a NEW delivery work item, choose the process route before any SpecRail task, CodeGraph preflight, evidence state, or workflow mutation. If the prompt has no explicit route prefix and is not an explicit Continue/Resume/Retoma TASK-####, call `specrail_entry_gate` with the exact prompt. SpecRail, Directo, and Directo + verificar are distinct from micro/light/standard/rigorous and from Guided/Autonomous/Headless. Never choose a route for the user.',
+  'For a NEW delivery work item, choose the process route before any SpecRail task, CodeGraph preflight, evidence state, or workflow mutation. If the prompt has no explicit route prefix and is not an explicit Continue/Resume/Retoma TASK-####, call `specrail_entry_gate` with the exact prompt. SpecRail, Directo, and Directo + verificar are distinct from micro/light/standard/rigorous, Guided/Autonomous/Headless, and Brain/Worker ownership. Never choose a route for the user.',
   '`SpecRail Fast:` is an explicit SpecRail route in fast mode. `Sin SpecRail:` / `No SpecRail:` is an explicit Direct route. `Directo + verificar:` / `Direct + Verify:` is an explicit Direct+Verify route. Direct routes create no SpecRail task/CodeGraph/gate/evidence/learning state.',
   'Only after the user selects SpecRail, call `specrail_skill` with exact name `ai-flow` and follow that packaged orchestrator contract. Read-only explanation/research stays outside the entry gate.',
-  'For every code-writing route, require the official Ponytail capability in full mode before mutation. Do not imitate Ponytail and claim it is active, and never install third-party code silently. If unavailable, stop before mutation and ask the user to enable/install official `@dietrichgebert/ponytail`; never offer or create an internal Ponytail bypass. Security, accessibility, data-loss protection, approved scope, and acceptance/evidence requirements outrank minimalism.',
+  'The model selected in the current Pi chat is the Brain and remains selected. After `specrail next`, obey `next.intelligence`: `brain` means this chat owns the governed judgment, `worker` means call `specrail_worker` with the exact task/actor/action/recommendedSkill so the heavy work runs in a separate explicitly model-pinned lower-cost Pi process, and `none` means no model-owned work. Never perform Worker work in Brain merely to avoid delegation and never claim a Worker model without the returned attestation.',
+  'For every code-writing route, require the official Ponytail capability in full mode before mutation. Do not imitate Ponytail and claim it is active, and never install third-party code silently. Missing bundled Ponytail is a broken SpecRail installation; repair/reinstall SpecRail rather than installing an unrelated substitute. Security, accessibility, data-loss protection, approved scope, and acceptance/evidence requirements outrank minimalism.',
   'Never fill a material unknown with model confidence. Resolve it from explicit user input, an approved decision, an authoritative repository contract, one unique established repository pattern, or current deterministic tool evidence. If still materially ambiguous, ask using 2–4 choices plus free text. Do not ask about facts the repository already resolves uniquely.',
   'On Pi, invoke SpecRail through the `specrail_cli` tool instead of assuming a global `specrail` executable. Pass argv as an array without a shell command string. When deterministic routing recommends a SpecRail specialist, load its packaged contract through `specrail_skill` rather than assuming a `.agents/skills` path.',
   'For structural repository context on Pi, use `specrail_codegraph`; it invokes CodeGraph `explore`, the documented CLI equivalent of `codegraph_explore`, without requiring Pi MCP configuration. Keep queries focused and trust returned graph/source unless CodeGraph reports staleness.',
-  'Call `specrail_host_context` when a SpecRail command needs `--session`; use its exact Pi sessionId and never invent one.',
+  'Call `specrail_host_context` when a Brain-owned SpecRail command needs `--session`; use its exact Pi sessionId and never invent one. Worker processes receive their own isolated Worker session identity.',
   'When SpecRail returns `interaction.tool=request_user_input`, prefer an attested host `ask_user_question` capability when present; otherwise call this adapter`s `request_user_input` with the exact questions/options. Every clarification keeps 2–4 choices and Other/free text. Never print the menu instead.',
-  'Pi owns model/thinking selection. SpecRail must never change it. A fresh-session boundary uses `/specrail-handoff TASK-####` (or `/new` followed by `Continue TASK-####`) instead of any Codex-only deep link.',
-  'Codex Visualize is optional and host-specific. On Pi, use canonical inline evidence plus the Review Cockpit/openUrl fallback unless a compatible visualization capability is actually discovered.',
-  'Do not attest Pi subagent or parallel capability merely because extensions can spawn processes; keep serial fallback until the current host capability is explicitly and truthfully attested.'
+  'A fresh-session boundary uses `/specrail-handoff TASK-####` (or `/new` followed by `Continue TASK-####`) instead of any Codex-only deep link. Target Audience keeps its existing fresh-session isolation until Worker session independence is explicitly supported for that role.',
+  'Codex Visualize is optional and host-specific. On Pi, use canonical inline evidence unless a compatible visualization capability is actually discovered.',
+  'Do not attest generic Pi parallel-subagent capability merely because the Brain/Worker adapter can spawn an isolated process; feature-level concurrency remains separately attested.'
 ].join(' ');
 
 function processRouteKind(prompt) {
@@ -119,16 +121,9 @@ export default function specrailPiExtension(pi) {
       'Do not wrap arguments in a shell command or use this tool for non-SpecRail executables.'
     ],
     executionMode: 'sequential',
-    parameters: Type.Object({
-      args: Type.Array(Type.String(), { minItems: 1, maxItems: 128 }),
-      timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: 600000 }))
-    }),
+    parameters: Type.Object({ args: Type.Array(Type.String(), { minItems: 1, maxItems: 128 }), timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: 600000 })) }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const result = await pi.exec('env', [`SPEC_RAIL_HOST=pi`, `SPEC_RAIL_PACKAGE_ROOT=${PACKAGE_ROOT}`, DISPATCHER, ...params.args], {
-        cwd: ctx.cwd,
-        signal,
-        timeout: params.timeoutMs ?? 120000
-      });
+      const result = await pi.exec('env', [`SPEC_RAIL_HOST=pi`, `SPEC_RAIL_PACKAGE_ROOT=${PACKAGE_ROOT}`, DISPATCHER, ...params.args], { cwd: ctx.cwd, signal, timeout: params.timeoutMs ?? 120000 });
       const stdout = String(result.stdout || '');
       const stderr = String(result.stderr || '');
       execFailure('SpecRail', result, stdout, stderr);
@@ -138,14 +133,41 @@ export default function specrailPiExtension(pi) {
   });
 
   pi.registerTool({
+    name: 'specrail_worker',
+    label: 'SpecRail Worker',
+    description: 'Execute one next.intelligence=worker step in a separate lower-cost model-pinned Pi process while the current chat remains the Brain.',
+    promptSnippet: 'Call only when specrail next returns intelligence.tier=worker. Pass the exact task, actor, action, and recommendedSkill from next; do not reinterpret routing.',
+    promptGuidelines: [
+      'Do not use for intelligence.tier=brain or none.',
+      'Worker failure/escalation is returned to the Brain as structured evidence; never rerun the same work in the Brain merely because the Worker failed.',
+      'Luna/Terra selection and fallback policy are sealed by SpecRail; do not pass or invent a model name here.'
+    ],
+    executionMode: 'sequential',
+    parameters: Type.Object({
+      task: Type.String({ minLength: 5, maxLength: 256 }),
+      actor: Type.String({ minLength: 1, maxLength: 128 }),
+      action: Type.String({ minLength: 1, maxLength: 128 }),
+      skill: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+      timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: 1800000 }))
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      if (!existsSync(WORKER_LAUNCHER)) throw new Error(`Packaged SpecRail Worker launcher is missing: ${WORKER_LAUNCHER}`);
+      const args = [WORKER_LAUNCHER, '--task', params.task, '--actor', params.actor, '--action', params.action, '--host', 'pi', '--root', ctx.cwd];
+      if (params.skill) args.push('--skill', params.skill);
+      const result = await pi.exec(process.execPath, args, { cwd: ctx.cwd, signal, timeout: params.timeoutMs ?? 900000 });
+      const stdout = String(result.stdout || '');
+      const stderr = String(result.stderr || '');
+      const summary = stdout.trim() || stderr.trim() || JSON.stringify({ code: result.code, killed: Boolean(result.killed) });
+      return { content: [{ type: 'text', text: summary }], details: { host: 'pi', transport: 'specrail-worker', task: params.task, actor: params.actor, action: params.action, skill: params.skill ?? null, code: result.code, killed: Boolean(result.killed), stdout, stderr } };
+    }
+  });
+
+  pi.registerTool({
     name: 'specrail_skill',
     label: 'SpecRail Skill',
     description: 'Load one packaged SpecRail specialist contract by exact skill name. This is the Pi-native equivalent of reading the managed .agents/skills copy.',
     promptSnippet: 'Use specrail_skill when SpecRail next recommends a specialist so native Pi package installs do not depend on Codex/global skill paths.',
-    promptGuidelines: [
-      'Pass only the exact recommended SpecRail skill name returned by deterministic routing.',
-      'Do not use this tool to read arbitrary files or non-SpecRail skills.'
-    ],
+    promptGuidelines: ['Pass only the exact recommended SpecRail skill name returned by deterministic routing.', 'Do not use this tool to read arbitrary files or non-SpecRail skills.'],
     parameters: Type.Object({ name: Type.String({ minLength: 1, maxLength: 128 }) }),
     async execute(_toolCallId, params) {
       const name = String(params.name || '').trim();
@@ -162,10 +184,7 @@ export default function specrailPiExtension(pi) {
     label: 'SpecRail CodeGraph',
     description: 'Get high-signal structural repository context through CodeGraph explore, the CLI equivalent of codegraph_explore. This avoids requiring Pi-specific MCP wiring.',
     promptSnippet: 'Use specrail_codegraph before grep/read loops for architecture, call flow, dependencies, impact, symbols, and targeted repository context.',
-    promptGuidelines: [
-      'Ask one focused structural question per call. Name the relevant file, symbol, flow, or feature when known.',
-      'Treat returned verbatim source, call paths, and blast radius as already inspected; do not repeat broad grep/read discovery unless CodeGraph reports missing/stale data or a concrete source detail still needs verification.'
-    ],
+    promptGuidelines: ['Ask one focused structural question per call. Name the relevant file, symbol, flow, or feature when known.', 'Treat returned verbatim source, call paths, and blast radius as already inspected; do not repeat broad grep/read discovery unless CodeGraph reports missing/stale data or a concrete source detail still needs verification.'],
     parameters: Type.Object({ query: Type.String({ minLength: 1, maxLength: 4000 }), timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: 600000 })) }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const command = process.env.AI_FLOW_CODEGRAPH_COMMAND || 'codegraph';
@@ -182,12 +201,12 @@ export default function specrailPiExtension(pi) {
     name: 'specrail_host_context',
     label: 'SpecRail Host Context',
     description: 'Return trusted Pi host/session context for SpecRail session-bound gates and phase ownership.',
-    promptSnippet: 'Get the real Pi session ID before invoking SpecRail commands that require --session.',
-    promptGuidelines: ['Use specrail_host_context for SpecRail --session values; never fabricate or reuse a session ID from another Pi session.'],
+    promptSnippet: 'Get the real Pi Brain session ID before invoking SpecRail commands that require --session.',
+    promptGuidelines: ['Use specrail_host_context for Brain-owned SpecRail --session values; never fabricate or reuse another session ID. Worker processes receive their own Worker session.'],
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       const sessionId = ctx.sessionManager.getSessionId();
-      const details = { host: 'pi', sessionId, mode: ctx.mode, hasUI: ctx.hasUI, cwd: ctx.cwd, modelSelection: 'host-owned', freshSessionCommand: '/specrail-handoff TASK-####', subagents: 'unattested', visualization: 'discover-or-fallback', structuredQuestions: 'specrail-native-fallback', ponytail: 'host-capability-required-full' };
+      const details = { host: 'pi', sessionId, mode: ctx.mode, hasUI: ctx.hasUI, cwd: ctx.cwd, modelSelection: 'host-owned-brain', workerTransport: existsSync(WORKER_LAUNCHER) ? 'specrail_worker' : 'unavailable', freshSessionCommand: '/specrail-handoff TASK-####', subagents: 'unattested', visualization: 'discover-or-fallback', structuredQuestions: 'specrail-native-fallback', ponytail: 'host-capability-required-full' };
       return { content: [{ type: 'text', text: JSON.stringify(details) }], details };
     }
   });
@@ -200,11 +219,7 @@ export default function specrailPiExtension(pi) {
     promptGuidelines: ['Use request_user_input only for the exact questions returned by a SpecRail interaction with tool=request_user_input; preserve question IDs, labels, and option meaning.'],
     executionMode: 'sequential',
     parameters: Type.Object({
-      questions: Type.Array(Type.Object({
-        id: Type.String(), header: Type.Optional(Type.String()), question: Type.String(),
-        options: Type.Array(Type.Object({ label: Type.String(), description: Type.Optional(Type.String()) }), { minItems: 2, maxItems: 4 }),
-        isOther: Type.Optional(Type.Boolean())
-      }), { minItems: 1, maxItems: 4 })
+      questions: Type.Array(Type.Object({ id: Type.String(), header: Type.Optional(Type.String()), question: Type.String(), options: Type.Array(Type.Object({ label: Type.String(), description: Type.Optional(Type.String()) }), { minItems: 2, maxItems: 4 }), isOther: Type.Optional(Type.Boolean()) }), { minItems: 1, maxItems: 4 })
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (!ctx.hasUI) throw new Error(`SpecRail human input requires an interactive Pi UI; current mode is ${ctx.mode}. Headless policy must stop or resolve the gate explicitly.`);
