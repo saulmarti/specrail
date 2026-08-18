@@ -54,15 +54,19 @@ test('the packaged CLI can install SpecRail through its public install command w
   assert.equal(run(path.join(home,'.local','bin','specrail'),['--version']),pkg.version);
 });
 
-test('public specrail install forwards explicit --pi and --no-pi choices to the managed installer',()=>{
+test('installed specrail forwards explicit --pi and --no-pi choices through the public dispatcher',()=>{
   const piHome=mkdtempSync(path.join(tmpdir(),'specrail-public-pi-home-'));
-  const piOutput=run(process.execPath,['dist/src/cli.js','install','--pi'],{cwd:root,env:{...process.env,AI_FLOW_HOME:piHome}});
+  const piEnv={...process.env,AI_FLOW_HOME:piHome};
+  run(process.execPath,['dist/src/cli.js','install','--no-pi'],{cwd:root,env:piEnv});
+  const piBin=path.join(piHome,'.local','bin','specrail');
+  const piOutput=run(piBin,['install','--pi'],{cwd:root,env:piEnv});
   assert.match(piOutput,/Pi integration installed/i);
   const piSettings=JSON.parse(readFileSync(path.join(piHome,'.pi','agent','settings.json'),'utf8'));
   assert.ok(piSettings.packages.includes(path.join(piHome,'.ai-flow')));
   assert.match(readFileSync(path.join(piHome,'.pi','agent','AGENTS.md'),'utf8'),/official.*Ponytail/i);
 
   const noPiHome=mkdtempSync(path.join(tmpdir(),'specrail-public-no-pi-home-'));
+  const noPiEnv={...process.env,AI_FLOW_HOME:noPiHome};
   const piRoot=path.join(noPiHome,'.pi','agent');
   mkdirSync(piRoot,{recursive:true});
   const agentsFile=path.join(piRoot,'AGENTS.md');
@@ -71,7 +75,9 @@ test('public specrail install forwards explicit --pi and --no-pi choices to the 
   const settingsBefore=`${JSON.stringify({theme:'dark',packages:['npm:other/pi-package'],custom:{keep:true}},null,2)}\n`;
   writeFileSync(agentsFile,agentsBefore);
   writeFileSync(settingsFile,settingsBefore);
-  const noPiOutput=run(process.execPath,['dist/src/cli.js','install','--no-pi'],{cwd:root,env:{...process.env,AI_FLOW_HOME:noPiHome}});
+  run(process.execPath,['dist/src/cli.js','install','--no-pi'],{cwd:root,env:noPiEnv});
+  const noPiBin=path.join(noPiHome,'.local','bin','specrail');
+  const noPiOutput=run(noPiBin,['install','--no-pi'],{cwd:root,env:noPiEnv});
   assert.match(noPiOutput,/Pi integration skipped/i);
   assert.equal(readFileSync(agentsFile,'utf8'),agentsBefore);
   assert.equal(readFileSync(settingsFile,'utf8'),settingsBefore);
