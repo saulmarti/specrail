@@ -38,8 +38,7 @@ export interface IntelligenceRecommendation {
 }
 
 const NO_MODEL_ACTORS = new Set(['user', 'system', 'host']);
-const PRODUCT_OWNER_ACTIONS = new Set([
-  'bootstrap-product-intelligence-context',
+const PRODUCT_OWNER_JUDGMENT_ACTIONS = new Set([
   'product-owner-review',
   'refresh-product-owner-review',
   'final-product-owner-review',
@@ -61,11 +60,6 @@ function highRisk(task: TaskDocument): boolean {
 
 function criticalRisk(task: TaskDocument): boolean {
   return normalized(task.meta.risk) === 'critical';
-}
-
-function architectureOrDataJudgment(task: TaskDocument): boolean {
-  const type = normalized(task.meta.type);
-  return Boolean(task.meta.route.architecture || task.meta.route.database || ['architecture', 'database'].includes(type));
 }
 
 function baseRecommendation(task: TaskDocument, tier: IntelligenceTier, reason: string): IntelligenceRecommendation {
@@ -124,12 +118,19 @@ export function intelligenceRecommendation(task: TaskDocument, input: Intelligen
     return baseRecommendation(task, 'none', 'The next step is deterministic or human-owned; no model capability upgrade is justified.');
   }
 
-  if (actor === 'ai-flow-product-owner' || PRODUCT_OWNER_ACTIONS.has(action) || skill === 'ai-flow-product-owner') {
+  // Product Intelligence bootstrap is fact extraction/synthesis, not product
+  // judgment. Keeping it on the executor prevents an expensive one-time repo
+  // summary from consuming frontier budget before any decision is required.
+  if (action === 'bootstrap-product-intelligence-context') {
+    return baseRecommendation(task, 'executor', 'Project Product Intelligence bootstrap is deterministic-fact synthesis; reserve frontier for the later Product Owner judgment.');
+  }
+
+  if (actor === 'ai-flow-product-owner' || PRODUCT_OWNER_JUDGMENT_ACTIONS.has(action) || skill === 'ai-flow-product-owner') {
     return baseRecommendation(task, 'frontier', 'This step is explicit product judgment; use the stronger tier for the compact decision, not for implementation planning.');
   }
 
   if (actor === 'ai-flow-technical-reviewer' && task.meta.phase === 'technical-architecture') {
-    return baseRecommendation(task, 'frontier', 'The routed phase owns a material architecture/data decision whose downstream error cost is high.');
+    return baseRecommendation(task, 'frontier', 'The routed phase owns the material architecture/data decision; concentrate stronger reasoning here instead of duplicating it in Product Specifier.');
   }
 
   if (ARCHITECTURE_ACTIONS.has(action)) {
@@ -140,10 +141,13 @@ export function intelligenceRecommendation(task: TaskDocument, input: Intelligen
     if (fastModeActive(task) || profile === 'micro' || profile === 'light') {
       return baseRecommendation(task, 'executor', 'Bounded low-control specification should be produced by the fast tier from deterministic facts and only escalate on a concrete material unknown.');
     }
-    if (architectureOrDataJudgment(task) || criticalRisk(task)) {
-      return baseRecommendation(task, 'frontier', 'Specification currently contains a material architecture/data or critical-risk judgment; spend frontier reasoning only on that decision envelope.');
-    }
-    return baseRecommendation(task, 'executor', 'A normal specification does not by itself justify frontier planning; keep it high-level and escalate only a concrete decision with evidence.');
+    // Even architecture/database work stays executor-owned here: Product
+    // Specifier gathers facts and seals product constraints, while the dedicated
+    // technical-architecture phase owns the frontier decision. This avoids paying
+    // twice for the same architectural reasoning.
+    return baseRecommendation(task, 'executor', criticalRisk(task)
+      ? 'Critical-risk specification still starts on executor for fact gathering; escalate only a concrete unresolved decision, while dedicated judgment phases remain frontier.'
+      : 'A normal specification does not by itself justify frontier planning; keep it high-level and escalate only a concrete decision with evidence.');
   }
 
   if (actor === 'ai-flow-ux-ui-designer' || skill === 'ai-flow-ux-ui-designer') {
