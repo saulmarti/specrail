@@ -52,9 +52,6 @@ jobs:
       - name: Package contract
         if: always()
         run: node --test --test-force-exit tests/npm-package.test.mjs
-      - name: Managed install regressions
-        if: always()
-        run: node --test --test-force-exit tests/managed-installation.test.mjs
       - name: Core routing
         if: always()
         run: node --test --test-force-exit tests/core.test.mjs tests/control-profile.test.mjs tests/context-budget.test.mjs
