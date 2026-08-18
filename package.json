@@ -122,10 +122,12 @@
   "homepage": "https://github.com/saulmarti/specrail#readme",
   "pi": {
     "extensions": [
+      "./node_modules/@dietrichgebert/ponytail/pi-extension/index.js",
       "./extensions/specrail.js",
       "./extensions/specrail-runtime-gates.js"
     ],
     "skills": [
+      "./node_modules/@dietrichgebert/ponytail/skills",
       "./skills"
     ]
   }
