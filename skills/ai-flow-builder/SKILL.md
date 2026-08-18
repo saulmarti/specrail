@@ -1,8 +1,16 @@
 ---
 name: ai-flow-builder
-description: Use when AI Flow routes an approved task, vertical slice, or bounded incremental revision to implementation. Build the smallest correct change with proportional controls, governed stable-work discipline, Ponytail full, and revision-delta discipline for exploratory refinements.
+description: Use when AI Flow routes an approved task, vertical slice, or bounded incremental revision to implementation. Build the smallest correct change with proportional controls, governed stable-work discipline, Ponytail full, sparse-intelligence executor ownership, and revision-delta discipline for exploratory refinements.
 ---
 # Builder
+
+## Sparse Intelligence contract
+
+Builder is **executor-owned by default, including standard/rigorous and high-risk tasks after their governed decisions are sealed**. `specrail next` may expose `intelligence.tier=executor`; treat that as the intended capability tier, not as proof that the host actually switched models. Codex/Pi/the host owns the real model/reasoning selector.
+
+The executor is not a dumb code writer. It owns local implementation reasoning: inspect the bounded code, choose local mechanics, edit, run tools/tests, debug ordinary failures, and iterate inside the approved product/architecture/contracts/Scope Guard. Do **not** request a frontier model to produce a step-by-step implementation plan before trying the bounded work.
+
+Escalate only with concrete evidence. A frontier decision is justified when deterministic repository facts are exhausted and one of these remains: a material product/architecture/contract/security/migration/UX decision is unsealed; two materially different governed interpretations remain; or failing tool/validation evidence proves the executor cannot repair safely inside existing authority. The escalation payload must be compact (target <= 900 words) and contain only the exact decision, governed constraints, observed facts/failures, the executor's recommendation/options, and the stop condition. Never replay the full chat or broad repository context.
 
 ## Mandatory pre-write checks
 
@@ -18,15 +26,15 @@ description: Use when AI Flow routes an approved task, vertical slice, or bounde
 7. For UI, obey the proportional visual contract. `micro`: exact cosmetic/copy delta + real served After + layout validation. `light`: bounded layout/responsive delta using focused Before + matching After/layout validation, without Image Gen. `standard/rigorous`: implement the approved Image Gen contract with `image-to-code`. A `REV-*` uses only the evidence kinds selected by its dependency graph. Always validate through served `http://`/`https://`, never raw `index.html`/`file://`.
 8. Run selected property tests, mutation tests, constitution checks, and operational instrumentation only when the route requires them.
 9. Capture real command outputs and failures. Never fabricate evidence.
-10. If the plan becomes impossible, scope changes, or a material problem appears, block and ask. Do not loop: each returned attempt consumes the deterministic repair budget.
-11. For large work, complete one vertical slice end to end before the next; keep slice file scopes independent when parallel subagents are used.
+10. If the plan becomes impossible, scope changes, or a material problem appears, block and ask or emit the smallest evidence-backed escalation capsule. Do not loop: each returned attempt consumes the deterministic repair budget. Difficulty, task size, or a desire for reassurance are not escalation evidence.
+11. For large work, complete one vertical slice end to end before the next; choose the first slice that produces a user-observable/tangible result as early as safely possible, and keep slice file scopes independent when parallel subagents are used.
 12. Before mutation-phase completion, invoke the official `ponytail-review` skill against the current diff. Apply only simplifications that preserve every governed requirement, test/evidence obligation, Scope Guard boundary, safety property, and readable intent. Then write a concise handoff: behavior delivered, files, tests, operational changes, evidence, risks, and blockers.
 
 Use `request_user_input` for material user decisions. Every clarification must provide 2–4 concrete choices, no more than one recommendation, and `Other`/free text. Never print option lists or multiple-choice questions as text when native input is available.
 
 ## Stop conditions
 
-Do not reinterpret approved scope, product intent, architecture, contracts, or visual direction and do not silently modify tests to make them pass. Local implementation choices are allowed only when they cannot change observable behavior or governed decisions. On an architectural/contract/UX contradiction, missing material decision, required protected-file change, impossible evidence requirement, missing required Ponytail capability, or exhausted repair budget, stop and return a structured blocker/Amendment instead of improvising.
+Do not reinterpret approved scope, product intent, architecture, contracts, or visual direction and do not silently modify tests to make them pass. Local implementation choices are allowed only when they cannot change observable behavior or governed decisions. On an architectural/contract/UX contradiction, missing material decision, required protected-file change, impossible evidence requirement, missing required Ponytail capability, or exhausted repair budget, stop and return a structured blocker/Amendment or evidence-backed frontier decision request instead of improvising.
 
 ## Acceptance coverage and Scope Guard
 
