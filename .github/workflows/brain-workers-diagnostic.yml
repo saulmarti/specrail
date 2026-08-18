@@ -1,0 +1,47 @@
+name: Brain Workers diagnostic
+
+on:
+  push:
+    branches:
+      - 'feat/brain-workers'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  isolate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Build
+        run: npm run build
+      - name: Brain Workers routing
+        run: node --test --test-force-exit tests/intelligence-routing.test.mjs
+      - name: Worker runtime
+        run: node --test --test-force-exit tests/worker-runtime.test.mjs
+      - name: Brain Workers install
+        run: node --test --test-force-exit tests/brain-workers-install.test.mjs
+      - name: Skills contracts
+        run: node --test --test-force-exit tests/skills.test.mjs
+      - name: Entry and Ponytail
+        run: node --test --test-force-exit tests/entry-clarity-ponytail.test.mjs
+      - name: Pi adapter runtime
+        run: node --test --test-force-exit tests/pi-adapter-runtime.test.mjs
+      - name: Pi compatibility
+        run: node --test --test-force-exit tests/pi-compatibility.test.mjs
+      - name: Pi runtime gates
+        run: node --test --test-force-exit tests/pi-runtime-gates.test.mjs
+      - name: Package contract
+        run: node --test --test-force-exit tests/npm-package.test.mjs
+      - name: Core routing
+        run: node --test --test-force-exit tests/core.test.mjs tests/control-profile.test.mjs tests/context-budget.test.mjs
