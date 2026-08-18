@@ -123,6 +123,7 @@
   "pi": {
     "extensions": [
       "./node_modules/@dietrichgebert/ponytail/pi-extension/index.js",
+      "./extensions/specrail-ponytail-bridge.js",
       "./extensions/specrail.js",
       "./extensions/specrail-runtime-gates.js"
     ],
