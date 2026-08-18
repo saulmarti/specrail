@@ -40,31 +40,32 @@ Direct routes do not create repository-local SpecRail task/CodeGraph/evidence/tr
 
 Production-code mutation requires an explicit material-uncertainty audit. Material decisions must bind to runtime-observed user input, exact repository contracts, unique established repository evidence, approved decisions, or trusted deterministic tool results; self-declared provenance cannot satisfy the gate. Clarifications use 2–4 choices plus free text/Other, while legacy generic open-answer questions remain compatible.
 
-Every code-writing route requires official `@dietrichgebert/ponytail` in literal `full` mode and rechecks the current host state immediately before mutation. There is no internal bypass or vendored imitation. After the final mutation, the official Ponytail review is fingerprint-bound so later repository changes make it stale. Direct + Verify additionally runs only a fail-closed allowlisted read-only verifier over Git-visible tracked/non-ignored-untracked content; the snapshot is rooted at the Git repository, works before the first commit, hashes symlinks without following external targets, and rejects shell/interpreter wrappers.
+Every code-writing route requires official `@dietrichgebert/ponytail` in literal `full` mode and rechecks the current host state immediately before mutation. SpecRail now bundles that exact official package, runtime extension, and skills rather than asking the user to install Ponytail separately; the Pi bridge materializes the official resolved default `full` state when no explicit mode record exists, while explicit `off`/`lite`/`ultra` remains authoritative and blocks mutation. After the final mutation, the official Ponytail review is fingerprint-bound so later repository changes make it stale. Direct + Verify additionally runs only a fail-closed allowlisted read-only verifier over Git-visible tracked/non-ignored-untracked content; the snapshot is rooted at the Git repository, works before the first commit, hashes symlinks without following external targets, and rejects shell/interpreter wrappers.
 
-**Success metric:** zero production-code writes without an explicit route, current Ponytail `full`, and an audited material-decision gate; zero Direct+Verify successes from a verifier that changed Git-visible repository content.
+Managed installation exposes an explicit host choice: `specrail install --pi` registers the managed local Pi package; `specrail install --no-pi` leaves existing `~/.pi` state untouched. Plain interactive installation asks once, while non-interactive installation skips Pi unless `--pi` is explicit.
+
+**Success metric:** zero production-code writes without an explicit route, current Ponytail `full`, and an audited material-decision gate; zero Direct+Verify successes from a verifier that changed Git-visible repository content; zero Pi mutations from a managed install that selected `--no-pi`.
 
 See [`docs/ENTRY-GOVERNANCE.md`](docs/ENTRY-GOVERNANCE.md).
 
 ### Review presentation contract
 
-**Status: Beta · Introduced: `0.8.2-beta.0`**
+**Status: Beta · Introduced: `0.8.2-beta.0`, hardened in current `0.10.x` development tree**
 
 Specification and final approval gates now carry one deterministic presentation contract from the CLI into the host:
 
-- `presentation.markdown` is **Decision Capsule-first**: the decision-critical delta, proof, risk/blocker, and primary evidence stay concise instead of reconstructing the complete Review Bundle inline;
-- the complete authoritative Review Bundle remains attached as **Review Details**, so details are available without forcing every approval turn to repeat full audit history;
+- the exact native approval question itself begins with the **Decision Capsule**, so a host cannot expose approval choices before the decision-critical specification/result summary;
+- the complete authoritative Review Bundle remains available as **Review Details**, so details are available without forcing every approval turn to repeat full audit history;
 - `phase complete` returns the newly reached `next.interaction` so the agent does not invent or paraphrase its own approval selector;
-- the orchestrator must show the Decision Capsule plus required visible evidence and keep Review Details available before forwarding the exact native questions returned by SpecRail;
-- generating Review Cockpit HTML never proves that the user has seen it; generated and host-visible states remain distinct;
-- in Codex, the installed `visualize` skill is invoked explicitly as `$visualize` when an interactive review materially helps; SpecRail never invents a `visualize.render` tool, asks the user to type `/visualize`, or calls private plugin scripts directly;
-- a Visualize `outcome: rendered` now means the task-owned HTML fragment and native `visualize...` reference were validated against the signed plan; it does not claim that the host UI displayed them; `artifactPrepared`, `referencePrepared`, `hostPresentation`, and `hostPresentationVerified` stay distinct;
+- the orchestrator shows exactly one concise Decision Capsule plus required visible evidence and keeps Review Details available before forwarding the exact native questions returned by SpecRail;
 - active canonical visual evidence is marked `requiredVisible` and maps to explicit blocking `present-image` conversation actions; visual gates first return `host_actions`, and a session/digest-bound acknowledgment must resolve those actions before SpecRail emits or accepts the native decision; local paths and generated HTML are audit metadata only, and inability to present a required image blocks approval instead of degrading to paths;
-- the generated Review Cockpit exposes an exact `file://` `openUrl` and the fallback maps it to a non-blocking `open-url` browser action; `opened` is recorded only after a real open and `offered` only after the actionable URL is exposed, so “Cockpit generated” never ends as only `/tmp/...html` or `.ai/...` text;
+- Review Cockpit is **not** generated, opened, offered, or required by the normal approval path; it remains an explicit manual legacy read-only utility only;
+- in Codex, the installed `visualize` skill may be invoked explicitly as `$visualize` when an interactive review materially helps; SpecRail never invents a `visualize.render` tool, asks the user to type `/visualize`, or calls private plugin scripts directly;
+- a Visualize `outcome: rendered` means the task-owned HTML fragment and native `visualize...` reference were validated against the signed plan; it does not claim that the host UI displayed them; `artifactPrepared`, `referencePrepared`, `hostPresentation`, and `hostPresentationVerified` stay distinct;
 - before/after frontend captures and the user-facing preview are tied to the served `http(s)` runtime that produced them; raw `index.html`, `file://`, and filesystem-path previews are invalid for approval, and the gate exposes the verified runtime as `presentation.previewUrl`;
-- Markdown and evidence remain authoritative; the direct fallback is required whenever Visualize/Cockpit host presentation is unverified, not only when Visualize is unavailable.
+- Markdown, canonical evidence, and the deterministic interaction remain authoritative; supplementary Visualize or manually generated Cockpit output can never substitute for them.
 
-**Success metric:** zero approval turns where SpecRail claims a review surface was displayed without host-visible evidence, while routine approval turns stay short enough to read without hiding governed details.
+**Success metric:** zero approval turns where choices are presented before the Decision Capsule or where SpecRail claims a review surface was displayed without host-visible evidence, while routine approval turns stay short enough to read without hiding governed details.
 
 See [`docs/REVIEW-COCKPIT.md`](docs/REVIEW-COCKPIT.md).
 
@@ -72,7 +73,7 @@ See [`docs/REVIEW-COCKPIT.md`](docs/REVIEW-COCKPIT.md).
 
 **Status: Beta · Introduced: `0.8.2-beta.0`**
 
-Frontend approval surfaces use one deterministic comparator contract across the generated Cockpit and `$visualize`:
+Frontend approval surfaces use one deterministic comparator contract across canonical evidence and optional `$visualize`/manual Cockpit surfaces:
 
 - Side by side keeps Before / Proposal / After simultaneously inspectable;
 - Slider compares the strongest available canonical pair without hiding which roles are being compared;
@@ -83,7 +84,7 @@ Frontend approval surfaces use one deterministic comparator contract across the 
 - missing required roles are rendered as explicit error states rather than blank frames or broken thumbnails;
 - `$visualize` must emit the v2 comparator structure, visible comparator-source/review-role markers, and route/target/viewport/capture-scope metadata in addition to embedding every canonical evidence ID; a static gallery or cross-context pair cannot be recorded as a successful comparator.
 
-At specification approval the required frontend roles are Before + Proposal. At final approval they are Before + Proposal + After. The generated Cockpit remains a self-contained HTML fallback; native Visualize presentation still requires the real `visualize...` content reference.
+At specification approval the required frontend roles are Before + Proposal. At final approval they are Before + Proposal + After. Canonical images are presented inline as the normal approval authority; manually generated Cockpit HTML and native Visualize remain supplementary surfaces.
 
 **Success metric:** users can verify approved intent and implementation visually without opening evidence files manually, and zero successful Visualize records are static galleries masquerading as the required comparator.
 
@@ -116,9 +117,11 @@ Automatic visible-thread creation may be added only when Codex exposes a stable 
 
 **Status: Implemented**
 
-Ship the same deterministic SpecRail core as a native Pi package rather than maintaining a Pi-specific workflow. The npm manifest exposes both package extensions plus skills; Pi-native installs execute the bundled Bash dispatcher through `specrail_cli`, load deterministic roles through `specrail_skill`, query structural context through `specrail_codegraph`/CodeGraph `explore` without extra Pi MCP wiring, bind gates to Pi's real session identity, render exact human decisions with Pi UI, enforce runtime mutation/verification gates, and create fresh phase sessions with `/specrail-handoff TASK-####`. Mutating CLI calls and human gates are explicitly sequential under Pi's parallel tool runtime, subprocess failures become real Pi tool failures, Taste accepts Pi, and the managed/global installer registers `~/.ai-flow` as a local Pi Package while preserving unrelated host settings/instructions and removing the obsolete loose-extension copy. Runtime compatibility tests cover the adapter rather than checking source strings only.
+Ship the same deterministic SpecRail core as a native Pi package rather than maintaining a Pi-specific workflow. The npm manifest loads the official bundled Ponytail extension/skills, the SpecRail Ponytail state bridge, and the SpecRail extensions/skills. Pi-native installs execute the bundled Bash dispatcher through `specrail_cli`, load deterministic roles through `specrail_skill`, query structural context through `specrail_codegraph`/CodeGraph `explore` without extra Pi MCP wiring, bind gates to Pi's real session identity, render exact human decisions with Pi UI, enforce runtime mutation/verification gates, and create fresh phase sessions with `/specrail-handoff TASK-####`. Mutating CLI calls and human gates are explicitly sequential under Pi's parallel tool runtime, subprocess failures become real Pi tool failures, Taste accepts Pi, and runtime compatibility tests exercise the adapter rather than checking source strings only.
 
-**Guardrails:** model/thinking choice remains host-owned; no Codex-only deep-link or Visualize contract is assumed on Pi; canonical evidence + Review Cockpit is the visual fallback; unverified parallel-subagent support remains `serial-fallback`.
+The managed/global route is explicitly opt-in for Pi: `specrail install --pi` registers `~/.ai-flow` as a local Pi Package while preserving unrelated host settings/instructions; `--no-pi` makes no Pi changes, and non-interactive installs default to that safe opt-out. The public installed dispatcher itself is covered so those flags cannot disappear between the npm CLI and managed installer.
+
+**Guardrails:** model/thinking choice remains host-owned; no Codex-only deep-link or Visualize contract is assumed on Pi; canonical inline evidence + Review Details is the normal visual review path; Review Cockpit remains manual legacy only; unverified parallel-subagent support remains `serial-fallback`.
 
 ### Release metadata integrity
 
@@ -139,7 +142,7 @@ Ship the same deterministic SpecRail core as a native Pi package rather than mai
 - Taste Skill and Image Gen routing for UI/UX work.
 - Review Bundles, local metrics, failure-to-eval candidates, project constitution, and vertical slices.
 - Signed taskset / harness / runtime / trace snapshots.
-- **Review Cockpit MVP:** generated local HTML with overview, before/proposal/after evidence, deterministic checks, blockers, metrics, repair budget, context usage, and signed trace history.
+- **Review Cockpit MVP:** generated local HTML with overview, before/proposal/after evidence, deterministic checks, blockers, metrics, repair budget, context usage, and signed trace history. This remains historical lineage; the current normal approval path is chat-first and Cockpit is manual-only.
 - npm packaging, public documentation, and backward-compatible `ai-flow` command alias.
 
 ### Exit criteria for beta
@@ -149,7 +152,7 @@ Ship the same deterministic SpecRail core as a native Pi package rather than mai
 - No unresolved corruption or silent-bypass bugs in approval, evidence, lease, or delivery gates.
 - Measured review and delivery metrics from real usage.
 - Stable migration path for `.ai/` project data.
-- Measured evidence that Review Cockpit reduces review time without increasing final rejection rates.
+- Measured evidence that the chat-first Decision Capsule + inline evidence + Review Details contract reduces review friction without increasing final rejection rates.
 
 ---
 
@@ -159,7 +162,7 @@ Ship the same deterministic SpecRail core as a native Pi package rather than mai
 
 **Status: Beta · Introduced: `0.6.0-beta.1`**
 
-One deterministic gate contract is shared by CLI, `next`, and Review Cockpit. It exposes passed, pending, failed, stale and non-applicable gates, blocker ownership, and the shortest safe next action.
+One deterministic gate contract is shared by CLI and `next`; manually generated Review Cockpit consumes the same state as a read-only legacy view. It exposes passed, pending, failed, stale and non-applicable gates, blocker ownership, and the shortest safe next action.
 
 **Success metric:** lower time-to-unblock and fewer clarification turns about task state.
 
@@ -453,7 +456,7 @@ For sufficiently large work, run lightweight non-human checkpoints after coheren
 
 ## Specification intelligence — priority P2
 
-These capabilities follow execution/runtime hardening because they strengthen the deterministic data consumed by Builder, QA, Cockpit, and the future Review Inbox. They extend existing specification, evidence, Scope Guard, Amendment, and Readiness contracts rather than creating a parallel workflow.
+These capabilities follow execution/runtime hardening because they strengthen the deterministic data consumed by Builder, QA, optional manual Cockpit views, and the future Review Inbox. They extend existing specification, evidence, Scope Guard, Amendment, and Readiness contracts rather than creating a parallel workflow.
 
 ### Requirement Source Ledger
 
@@ -485,7 +488,7 @@ Examples include performance budgets, accessibility requirements, reliability, s
 
 **Status: Planned**
 
-Classify why work needs to move backward or request human intervention, at minimum distinguishing implementation defects, contract defects, specification defects, evidence defects, scope violations, and production regressions. `readiness`, `next`, Review Cockpit, and the future Review Inbox should expose this classification and route to the narrowest safe recovery path.
+Classify why work needs to move backward or request human intervention, at minimum distinguishing implementation defects, contract defects, specification defects, evidence defects, scope violations, and production regressions. `readiness`, `next`, optional manual Cockpit views, and the future Review Inbox should expose this classification and route to the narrowest safe recovery path.
 
 **Success metric:** fewer generic “blocked” states and fewer unnecessary full-specification restarts.
 
@@ -514,7 +517,7 @@ The Blueprint is advisory project context until explicitly accepted into governe
 
 Improve SpecRail self-update/install behavior so managed assets are compared by content, unchanged files are left alone, customized files are identified before replacement, and recoverable backups are created before any managed overwrite. Existing `.ai/` project history remains untouched.
 
-**Beta foundation:** `specrail update` preserves the installed `beta`/`latest` channel by default, updates the global npm package, and refreshes managed Codex + Pi assets from the newly installed package. Content-aware diffing and customized-file conflict handling remain planned here.
+**Beta foundation:** `specrail update` preserves the installed `beta`/`latest` channel by default, updates the global npm package, refreshes the managed package/Codex assets from the newly installed package, and preserves an already opted-in Pi local-package registration without silently adding Pi to an installation that did not select it. Content-aware diffing and customized-file conflict handling remain planned here.
 
 ### Release, migration, and rollback contract
 
@@ -551,20 +554,16 @@ Orchestrate an approved `fast`/`standard`/`rigorous` comparison end-to-end witho
 
 ### Review Cockpit evolution
 
-**Status: Beta**
+**Status: Manual legacy utility / maintenance only**
 
-The local read-only MVP was implemented in `0.5.0-beta.2`; `0.8.2-beta.0` hardens how that review is actually presented inside Codex. Current behavior and future improvements are:
+The local read-only MVP was implemented in `0.5.0-beta.2`, but current normal approvals no longer generate or open it. Its current role is deliberately narrow:
 
-- **0.7.0-beta.1:** latest replay comparison, exact reported token metrics, and adaptive Harness recommendation are visible in the Cockpit experiment view;
-- **Current beta:** Decision Capsule-first host presentation keeps the normal approval turn concise while the complete authoritative Review Bundle remains attached as Review Details; generated Cockpit HTML is never treated as proof of display; `$visualize` is the explicit Codex skill path for a native interactive review surface when useful, with the native content reference required as render evidence; frontend evidence avoids unresolved local Markdown image links and final UI review opens the served `presentation.previewUrl` rather than a raw worktree `index.html`;
-- **0.8.2-beta.0 Visual Comparator v2:** Side by side / Slider / Overlay, viewport + route/target filters, explicit missing-role states, and structural validation that prevents a static `$visualize` gallery from masquerading as the comparator;
-- richer backend, architecture, contract-impact, NFR, and database evidence explorers;
-- clearer stale-evidence and requirement-provenance explanations;
-- accessibility audits and keyboard-navigation evals;
-- review-time metrics and qualitative rejection analysis;
-- additional host adapters only when they expose a verifiable presentation result; no hard-coded fictional tool names or private host implementation paths.
-
-The Cockpit remains read-only and derived from governed SpecRail state; native Codex gates own decisions. Visualize improves the review surface but never becomes a substitute for the complete Markdown/evidence contract.
+- manual commands `specrail review cockpit TASK` / `specrail cockpit TASK` remain available for users who explicitly want the historical local HTML view;
+- generated Cockpit HTML never satisfies presentation acknowledgment and never gates or enables approval;
+- normal specification/final review is **Decision Capsule in chat first + canonical inline evidence + Review Details + exact native decision selector**;
+- `$visualize` may still provide a supplementary native interactive surface when useful, with a real content reference required as render evidence;
+- Visual Comparator v2 remains reusable by optional/manual review surfaces, but canonical evidence stays authoritative;
+- future work here is maintenance/accessibility only unless real usage demonstrates a reason to promote Cockpit again.
 
 See [`docs/REVIEW-COCKPIT.md`](docs/REVIEW-COCKPIT.md).
 
@@ -608,7 +607,7 @@ Discover host plugins and MCPs, map them to evidence capabilities, and explain w
 
 **Status: Deferred · No target release**
 
-The design remains documented because it can be useful for teams, but SpecRail will not prioritize it until solo local delivery, Cockpit review, readiness, doctor repair, and replayable tasksets demonstrate value in real usage.
+The design remains documented because it can be useful for teams, but SpecRail will not prioritize it until solo local delivery, chat-first review, readiness, doctor repair, and replayable tasksets demonstrate value in real usage.
 
 If revisited, CI will remain evidence for a specific commit—not a replacement for specification or final product approval.
 
