@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { findTask, getSection, loadTask } from './task.js';
 import { listEvidence, matchesAnyExpectedVisualContext } from './evidence.js';
 import { writeReviewBundle } from './review.js';
-import { writeCompactReviewCockpit } from './compact-cockpit.js';
 import { loadProjectConfig } from './project.js';
 import { finalVisualization, specificationVisualization } from './visualization.js';
 import { getVisualizationRun } from './capabilities.js';
@@ -75,10 +74,8 @@ function build(root: string,id: string,kind: 'specification-review'|'final-resul
  if(specification)prepareSpecificationReviewState(root,id);
  const task=loadTask(findTask(root,id));
  const bundle=writeReviewBundle(root,id,specification?'spec':'final');
- const cockpit=writeCompactReviewCockpit(root,id,specification?'spec':'final');
- const cockpitDocument: Attachment={id:'REVIEW-COCKPIT',kind:'review-cockpit',label:`${task.meta.id} — compact Review Cockpit.html`,source:'specrail-review-cockpit',tool:'SpecRail',route:null,viewport:null,path:cockpit.path,mediaType:'text/html',display:'inline',sha256:cockpit.sourceDigest,openUrl:cockpit.openUrl};
  const bundleDocument: Attachment={id:'REVIEW-BUNDLE',kind:'review-bundle',label:`${task.meta.id} — ${specification?'specification':'final'} Review Details.md`,source:'specrail-review-bundle',tool:'SpecRail',route:null,viewport:null,path:bundle.path,mediaType:'text/markdown',display:'attachment',sha256:fileSha256(bundle.path)};
- const attachments=[cockpitDocument,bundleDocument,...evidenceForStage(root,id,specification?'specification':'final')];
+ const attachments=[bundleDocument,...evidenceForStage(root,id,specification?'specification':'final')];
  const markdown=decisionMarkdown(root,task,specification);
  const config=loadProjectConfig(root);
  const visualization=specification?specificationVisualization(root,config,task,attachments,sessionId):finalVisualization(root,config,task,attachments,sessionId);
@@ -86,16 +83,14 @@ function build(root: string,id: string,kind: 'specification-review'|'final-resul
  const run=getVisualizationRun(root,task.meta.id,gate,sessionId);
  const requiredAttachmentIds=attachments.filter(item=>item.requiredVisible&&item.id).map(item=>String(item.id));
  const requiredHostActions:PresentationHostAction[]=attachments.filter(item=>item.requiredVisible&&item.id).map(item=>({id:`present:${String(item.id)}`,type:'present-image',surface:'conversation',attachmentId:String(item.id),label:item.label,reviewRole:item.reviewRole||'supporting',mediaType:item.mediaType,blocking:true}));
- requiredHostActions.push({id:'cockpit:open-or-offer',type:'open-url',surface:'browser',attachmentId:'REVIEW-COCKPIT',label:'Abrir Review Cockpit',url:cockpit.openUrl,blocking:false});
  const presentationDigest=computePresentationDigest({taskId:task.meta.id,gate,actions:requiredHostActions,attachments});
  const acknowledgement=presentationAcknowledgementState(root,{taskId:task.meta.id,gate,sessionId:sessionId??null,presentationDigest,actions:requiredHostActions});
  const presentationContract={
    gate,sessionId:String(sessionId||'').trim()||'unspecified',presentationDigest,
    evidence:{inlineRequired:requiredAttachmentIds.length>0,requiredAttachmentIds,localPathsAreAuditOnly:true as const,requiredSurface:'conversation' as const,onUnavailable:'block-approval' as const},
-   visualize:{artifactPrepared:run?.artifactPrepared===true,referencePrepared:run?.referencePrepared===true,hostPresentation:'unverified' as const,hostPresentationVerified:false as const,fallbackRequired:true},
-   cockpit:{artifactPrepared:true,hostPresentation:'unverified' as const,hostPresentationVerified:false as const,openActionRequired:true as const,attachmentId:'REVIEW-COCKPIT' as const,openUrl:cockpit.openUrl},
+   visualize:{artifactPrepared:run?.artifactPrepared===true,referencePrepared:run?.referencePrepared===true,hostPresentation:'unverified' as const,hostPresentationVerified:false as const,fallbackRequired:requiredHostActions.length>0},
    acknowledgement,
-   fallback:{required:true,mode:'inline-evidence-and-cockpit-open-action' as const,requiredHostActions}
+   fallback:{required:requiredHostActions.length>0,mode:'inline-evidence-only' as const,requiredHostActions}
  };
  return{kind,requiredBeforeInput:true,title:`${task.meta.id} — ${task.meta.title}`,markdown,taskPath:task.path,taskRelativePath:taskRelativePath(root,task.path),previewUrl:previewUrlFor(attachments,specification),attachments,visualization,presentationContract};
 }
