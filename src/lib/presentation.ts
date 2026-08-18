@@ -85,13 +85,13 @@ function build(root: string,id: string,kind: 'specification-review'|'final-resul
  const requiredHostActions:PresentationHostAction[]=attachments.filter(item=>item.requiredVisible&&item.id).map(item=>({id:`present:${String(item.id)}`,type:'present-image',surface:'conversation',attachmentId:String(item.id),label:item.label,reviewRole:item.reviewRole||'supporting',mediaType:item.mediaType,blocking:true}));
  const presentationDigest=computePresentationDigest({taskId:task.meta.id,gate,actions:requiredHostActions,attachments});
  const acknowledgement=presentationAcknowledgementState(root,{taskId:task.meta.id,gate,sessionId:sessionId??null,presentationDigest,actions:requiredHostActions});
- const presentationContract={
+ const presentationContract=({
    gate,sessionId:String(sessionId||'').trim()||'unspecified',presentationDigest,
    evidence:{inlineRequired:requiredAttachmentIds.length>0,requiredAttachmentIds,localPathsAreAuditOnly:true as const,requiredSurface:'conversation' as const,onUnavailable:'block-approval' as const},
    visualize:{artifactPrepared:run?.artifactPrepared===true,referencePrepared:run?.referencePrepared===true,hostPresentation:'unverified' as const,hostPresentationVerified:false as const,fallbackRequired:requiredHostActions.length>0},
    acknowledgement,
    fallback:{required:requiredHostActions.length>0,mode:'inline-evidence-only' as const,requiredHostActions}
- };
+ }) as unknown as Presentation['presentationContract'];
  return{kind,requiredBeforeInput:true,title:`${task.meta.id} — ${task.meta.title}`,markdown,taskPath:task.path,taskRelativePath:taskRelativePath(root,task.path),previewUrl:previewUrlFor(attachments,specification),attachments,visualization,presentationContract};
 }
 export function specificationPresentation(root:string,id:string,sessionId?:string|null):Presentation{return build(root,id,'specification-review',sessionId);}
