@@ -15,26 +15,30 @@ jobs:
   discover:
     runs-on: ubuntu-latest
     outputs:
-      files: ${{ steps.files.outputs.files }}
+      cases: ${{ steps.cases.outputs.cases }}
     steps:
       - uses: actions/checkout@v6
-      - id: files
+      - id: cases
         shell: bash
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
-          import glob, json
-          files=sorted(set(glob.glob('tests/in*.test.mjs')+glob.glob('tests/v*.test.mjs'))-{'tests/installed-e2e.test.mjs'})
-          print('files='+json.dumps(files,separators=(',',':')))
+          import json,re
+          out=[]
+          for file in ['tests/installer.test.mjs','tests/visualization.test.mjs']:
+              text=open(file,encoding='utf-8').read()
+              for m in re.finditer(r"\btest\('([^']+)'",text):
+                  name=m.group(1)
+                  out.append({'file':file,'name':name,'pattern':'^'+re.escape(name)+'$'})
+          print('cases='+json.dumps(out,separators=(',',':')))
           PY
 
-  per-file:
+  per-test:
     needs: discover
-    if: ${{ needs.discover.outputs.files != '[]' }}
     strategy:
       fail-fast: false
       matrix:
-        file: ${{ fromJSON(needs.discover.outputs.files) }}
-    name: unit ${{ matrix.file }}
+        case: ${{ fromJSON(needs.discover.outputs.cases) }}
+    name: ${{ matrix.case.file }} :: ${{ matrix.case.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -47,5 +51,5 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build
         run: npm run build
-      - name: Run
-        run: node --test --test-force-exit "${{ matrix.file }}"
+      - name: Run one test
+        run: node --test --test-force-exit --test-name-pattern="${{ matrix.case.pattern }}" "${{ matrix.case.file }}"
