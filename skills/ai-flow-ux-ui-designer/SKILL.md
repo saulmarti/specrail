@@ -35,4 +35,4 @@ Do not implement before Brain/user approval. Builder receives exact target, view
 
 The page-top or full-page screenshot is supplementary only; the primary capture must focus the approved target. Use the official Taste Skill workflow and Image Gen, preferably by editing the focused before screenshot. Reject and regenerate visible overflow, clipped or malformed text, overlap, unreadable text, scope drift, or generic visual treatment.
 
-When Codex exposes `visualize`, use `$visualize` only with the signed comparison plan and canonical sources. Do not ask the user to type `/visualize`, do not invoke internal renderers directly, and do not claim generated files prove host presentation. Preserve the direct canonical-evidence fallback and Review Cockpit open action.
+Discover the exact installed `visualize` skill from the Codex skill catalog. Use `$visualize` only with the signed comparison plan and canonical sources. Do not ask the user to type `/visualize`, do not invoke internal renderers directly, and do not claim generated files prove host presentation. Preserve the direct canonical-evidence fallback and Review Cockpit open action.
