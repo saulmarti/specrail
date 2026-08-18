@@ -9,7 +9,7 @@ function task({ phase='product-specifier', type='feature', risk='medium', profil
   return {path:'/tmp/TASK-0001.md',body:'',meta:{id:'TASK-0001',title:'Brain worker test',type,status:'refining',phase,size:'medium',risk,execution_profile:'standard',workflow_mode:workflowMode,surfaces:['backend'],route:{design:false,architecture,database,implementation:true,technical_review:profile==='rigorous'?'full':'focused',qa:'focused',target_audience:false,final_customer:false,mutation_testing:false,property_testing:'none',observability:'none',control_profile:profile},spec_approval:'pending',spec_approval_hash:null,spec_approved_at:null,qa_mission_hash:null,delivery_strategy:'single',slice_ids:[],final_approval:'pending',waiting_for:'none',open_questions:0,learning_recorded:false,dependencies:[],resume_status:null,resume_phase:null,worktree_path:null,worktree_branch:null,worktree_base:null,delivery_status:'pending',created_at:new Date(0).toISOString(),updated_at:new Date(0).toISOString()}};
 }
 
-test('normal specification is delegated to a cheaper isolated worker',()=>{
+test('normal specification is delegated to a cheaper isolated worker with an exact host launch capsule',()=>{
   const result=intelligenceRecommendation(task(),{actor:'ai-flow-product-specifier',action:'bootstrap-project-and-refine',recommendedSkill:'ai-flow-product-specifier'});
   assert.equal(result.tier,'worker');
   assert.equal(result.orchestration,'brain-workers');
@@ -17,6 +17,10 @@ test('normal specification is delegated to a cheaper isolated worker',()=>{
   assert.equal(result.worker.allowBrainModelFallback,false);
   assert.equal(result.worker.requireModelAttestation,true);
   assert.equal(result.worker.isolatedContext,true);
+  assert.equal(result.workerLaunch.required,true);
+  assert.equal(result.workerLaunch.codex.command,'specrail-worker');
+  assert.deepEqual(result.workerLaunch.codex.args,['--task','TASK-0001','--actor','ai-flow-product-specifier','--action','bootstrap-project-and-refine','--skill','ai-flow-product-specifier','--host','codex']);
+  assert.deepEqual(result.workerLaunch.pi,{tool:'specrail_worker',args:{task:'TASK-0001',actor:'ai-flow-product-specifier',action:'bootstrap-project-and-refine',skill:'ai-flow-product-specifier'}});
 });
 
 test('architecture facts may be delegated but the material architecture decision stays Brain-owned',()=>{
@@ -25,6 +29,7 @@ test('architecture facts may be delegated but the material architecture decision
   source.meta.phase='technical-architecture';
   const architect=intelligenceRecommendation(source,{actor:'ai-flow-technical-reviewer',action:'continue',recommendedSkill:'ai-flow-technical-reviewer'});
   assert.equal(architect.tier,'brain');
+  assert.equal(architect.workerLaunch,null);
   assert.match(architect.reason,/architecture|data/i);
 });
 
@@ -34,6 +39,7 @@ test('Product Intelligence bootstrap is worker work while Product Owner judgment
   assert.equal(bootstrap.worker.kind,'project-bootstrap');
   const owner=intelligenceRecommendation(task(),{actor:'ai-flow-product-owner',action:'product-owner-review',recommendedSkill:'ai-flow-product-owner'});
   assert.equal(owner.tier,'brain');
+  assert.equal(owner.workerLaunch,null);
 });
 
 test('Builder is worker-owned even for rigorous high-risk implementation, with governed stop conditions',()=>{
@@ -45,8 +51,10 @@ test('Builder is worker-owned even for rigorous high-risk implementation, with g
 });
 
 test('human and deterministic gates invoke neither Brain nor Worker',()=>{
-  assert.equal(intelligenceRecommendation(task(),{actor:'user',action:'approve-or-refine-specification',recommendedSkill:null}).tier,'none');
-  assert.equal(intelligenceRecommendation(task(),{actor:'system',action:'autonomy-advance',recommendedSkill:null}).tier,'none');
+  const human=intelligenceRecommendation(task(),{actor:'user',action:'approve-or-refine-specification',recommendedSkill:null});
+  assert.equal(human.tier,'none');assert.equal(human.workerLaunch,null);
+  const system=intelligenceRecommendation(task(),{actor:'system',action:'autonomy-advance',recommendedSkill:null});
+  assert.equal(system.tier,'none');assert.equal(system.workerLaunch,null);
 });
 
 test('worker launcher pins models explicitly and forbids recursive agents and silent Brain fallback',()=>{
