@@ -10,7 +10,7 @@ const pkg=JSON.parse(readFileSync(path.join(root,'package.json'),'utf8'));
 const read=(file)=>readFileSync(path.join(root,file),'utf8');
 
 test('Pi is a declared package host, loads bundled Ponytail, and documentation keeps the adapter boundary explicit',()=>{
-  assert.deepEqual(pkg.pi?.extensions,['./node_modules/@dietrichgebert/ponytail/pi-extension/index.js','./extensions/specrail.js','./extensions/specrail-runtime-gates.js']);
+  assert.deepEqual(pkg.pi?.extensions,['./node_modules/@dietrichgebert/ponytail/pi-extension/index.js','./extensions/specrail-ponytail-bridge.js','./extensions/specrail.js','./extensions/specrail-runtime-gates.js']);
   assert.deepEqual(pkg.pi?.skills,['./node_modules/@dietrichgebert/ponytail/skills','./skills']);
   assert.equal(pkg.dependencies['@dietrichgebert/ponytail'],'4.8.4');
   assert.ok(pkg.files.includes('extensions'));
@@ -34,6 +34,15 @@ test('Pi is a declared package host, loads bundled Ponytail, and documentation k
   assert.match(skill,/specrail_codegraph/);
   assert.match(skill,/specrail_skill/);
   assert.match(docs,/codegraph explore <query>/i);
+});
+
+test('Pi Ponytail bridge derives the official default mode before SpecRail gates inspect it',()=>{
+  const source=read('extensions/specrail-ponytail-bridge.js');
+  assert.match(source,/readDefaultMode/);
+  assert.match(source,/resolveSessionMode/);
+  assert.match(source,/ponytail-mode/);
+  assert.match(source,/session_start/);
+  assert.match(source,/specrail-official-ponytail-default-bridge/);
 });
 
 test('Pi adapter preserves automatic activation, explicit bypass, native decisions, and host-owned model selection',()=>{
