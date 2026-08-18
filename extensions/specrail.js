@@ -206,7 +206,7 @@ export default function specrailPiExtension(pi) {
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       const sessionId = ctx.sessionManager.getSessionId();
-      const details = { host: 'pi', sessionId, mode: ctx.mode, hasUI: ctx.hasUI, cwd: ctx.cwd, modelSelection: 'host-owned-brain', workerTransport: existsSync(WORKER_LAUNCHER) ? 'specrail_worker' : 'unavailable', freshSessionCommand: '/specrail-handoff TASK-####', subagents: 'unattested', visualization: 'discover-or-fallback', structuredQuestions: 'specrail-native-fallback', ponytail: 'host-capability-required-full' };
+      const details = { host: 'pi', sessionId, mode: ctx.mode, hasUI: ctx.hasUI, cwd: ctx.cwd, modelSelection: 'host-owned', brainRole: 'selected-chat-model', workerTransport: existsSync(WORKER_LAUNCHER) ? 'specrail_worker' : 'unavailable', freshSessionCommand: '/specrail-handoff TASK-####', subagents: 'unattested', visualization: 'discover-or-fallback', structuredQuestions: 'specrail-native-fallback', ponytail: 'host-capability-required-full' };
       return { content: [{ type: 'text', text: JSON.stringify(details) }], details };
     }
   });
