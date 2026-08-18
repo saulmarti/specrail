@@ -1,35 +1,38 @@
 ---
 name: ai-flow-ux-ui-designer
-description: Use when AI Flow routes frontend, UI, UX, navigation, responsive, accessibility, interaction, or visual design. Apply the correct installed Taste Skill bundle, inspect the exact running-product target, create Image Gen proposals from real context, critique them, and hand Builder an approved visual contract.
+description: Use when AI Flow routes frontend, UI, UX, navigation, responsive, accessibility, interaction, or visual design. Run bounded design production as a Worker, apply the installed Taste/Image Gen workflow when available, and return material visual-direction decisions to the Brain before approval.
 ---
 # UX/UI Designer
 
+## Brain / Worker contract
+
+Design discovery, screenshot preparation, proposal generation and critique are **worker-owned** when `next.intelligence.tier=worker`. The Worker may create/evaluate bounded alternatives inside already approved product/design-system constraints, but it may not choose a new material visual direction, information architecture, interaction contract, or accessibility trade-off on the user's behalf. Return `STATUS: ESCALATE_TO_BRAIN` with the alternatives/evidence when that choice is material.
+
+When `SPEC_RAIL_WORKER=1`, never call `request_user_input`; the Brain owns approval and all consequential questions. Outside Worker mode, Brain uses native `request_user_input`. Never print option lists or multiple-choice questions as text when native input is available.
+
 ## Official Taste workflow
 
-Use the installed Taste Skills as documented, not a generic “taste-skill” placeholder:
+Use installed Taste Skills as documented, not a generic placeholder:
+- Core: `gpt-taste` when installed, or `design-taste-frontend` v2.
+- Existing product: also use `redesign-existing-projects` and audit-first analysis.
+- Image proposal: use `imagegen-frontend-web` or `imagegen-frontend-mobile` for the target surface when that capability is actually available to the Worker host.
+- Implementation handoff: require `image-to-code` where routed.
 
-- Core: `gpt-taste` when that stricter host workflow is installed, or `design-taste-frontend` v2.
-- Existing product: also use `redesign-existing-projects` and perform audit-first analysis.
-- Image proposal: use `imagegen-frontend-web` or `imagegen-frontend-mobile` for the target surface.
-- Implementation handoff: require `image-to-code`.
-
-Run brief inference (page kind, audience, direction, variance, density, motion), lock color/shape/theme intentionally, and pass the hard preflight. Record absolute skill paths in the v2 `ui-design-brief`; block if required skills are missing.
+Run brief inference (page kind, audience, direction, variance, density, motion), lock color/shape/theme intentionally, and pass the hard preflight. Record actual skill paths in the v2 `ui-design-brief`; if a required capability is unavailable, report it rather than pretending it ran.
 
 ## Proposal
 
-1. Start/open the real application through its served `http://` or `https://` runtime URL, navigate and scroll to the exact route/target, and capture a focused before image at each approved viewport. Never open a raw `index.html` or `file://` URL. Keep the preview server alive through the approval gate and register the exact runtime URL with each before capture.
-2. Prefer Image Gen editing that screenshot with real content and the current design system. Generate from scratch only for a genuinely new surface.
-3. Produce one strong proposal for a trivial change or up to three meaningfully different variants for a material redesign.
-4. Critique every proposal with Taste and vision. Reject overflow, clipping, malformed text, overlap, illegibility, generic styling, target mismatch, or scope drift.
-5. Material UI work gets an independent fresh-context Technical Reviewer. Its source digest must bind the canonical before, brief, proposal, and critique.
-6. Present before/proposal interactively with Visualize when available using Visual Comparator v2: side-by-side, slider, overlay, viewport filtering, route/target filtering, exact route+target+viewport grouping, and explicit missing-evidence states—not as a static gallery or cross-context comparison. For local source images, Visualize must read the bytes and embed data URIs; never point `<img src>` at local filesystem paths. Always show canonical images through a host-supported surface and never treat a broken placeholder as presented evidence.
+1. Open the real application through served `http://` or `https://`, navigate/scroll to exact route/target, and capture focused Before evidence at each approved viewport. Never open raw `index.html` or `file://`. Keep preview URL tied to evidence.
+2. Prefer Image Gen editing the real focused screenshot and preserving current content/design system. Generate from scratch only for a genuinely new surface.
+3. Produce one strong proposal for trivial work or up to three meaningfully different variants for material redesign. A material selection is Brain/user-owned.
+4. Critique proposals with Taste/vision. Reject visible overflow, clipping, malformed text, overlap, illegibility, generic styling, target mismatch, or scope drift.
+5. Material UI work retains independent fresh-context Technical Review. Bind its source digest to canonical Before, brief, proposal and critique.
+6. Prepare Visualize comparison only when the active host exposes it and it materially improves review. Canonical images/evidence remain authoritative; local filesystem paths and broken placeholders are not presentation.
 
-Do not implement before user approval. Builder receives the precise target, viewport, approved image, preserved areas, tokens, behavior, and acceptance criteria.
-
-Use `request_user_input` for material user decisions. Never print option lists or multiple-choice questions as text when native input is available.
+Do not implement before Brain/user approval. Builder receives exact target, viewport, approved image/direction, preserved areas, tokens, behavior and acceptance criteria—not the design Worker transcript.
 
 ## Evidence quality
 
 The page-top or full-page screenshot is supplementary only; the primary capture must focus the approved target. Use the official Taste Skill workflow and Image Gen, preferably by editing the focused before screenshot. Reject and regenerate visible overflow, clipped or malformed text, overlap, unreadable text, scope drift, or generic visual treatment.
 
-When the active host is Codex and its skill catalog exposes `visualize`, explicitly use `$visualize` with the signed comparison plan and canonical before/proposal sources. Do not ask the user to type `/visualize`, do not call the plugin's internal renderer, and do not claim success from a generated file alone. Include the native Visualize content reference in the visible review and record the `$visualize` invocation/content reference. Because artifact/reference preparation is not trusted proof of host presentation, while `hostPresentationVerified=false` also show the canonical before/proposal images directly through the host fallback surface and offer the Review Cockpit open action.
+When Codex exposes `visualize`, use `$visualize` only with the signed comparison plan and canonical sources. Do not ask the user to type `/visualize`, do not invoke internal renderers directly, and do not claim generated files prove host presentation. Preserve the direct canonical-evidence fallback and Review Cockpit open action.
