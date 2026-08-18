@@ -9,9 +9,10 @@ const root=process.cwd();
 const pkg=JSON.parse(readFileSync(path.join(root,'package.json'),'utf8'));
 const read=(file)=>readFileSync(path.join(root,file),'utf8');
 
-test('Pi is a declared package host and documentation keeps the adapter boundary explicit',()=>{
-  assert.deepEqual(pkg.pi?.extensions,['./extensions/specrail.js','./extensions/specrail-runtime-gates.js']);
-  assert.deepEqual(pkg.pi?.skills,['./skills']);
+test('Pi is a declared package host, loads bundled Ponytail, and documentation keeps the adapter boundary explicit',()=>{
+  assert.deepEqual(pkg.pi?.extensions,['./node_modules/@dietrichgebert/ponytail/pi-extension/index.js','./extensions/specrail.js','./extensions/specrail-runtime-gates.js']);
+  assert.deepEqual(pkg.pi?.skills,['./node_modules/@dietrichgebert/ponytail/skills','./skills']);
+  assert.equal(pkg.dependencies['@dietrichgebert/ponytail'],'4.8.4');
   assert.ok(pkg.files.includes('extensions'));
   assert.ok(pkg.keywords.includes('pi-package'));
   const readme=read('README.md');
@@ -19,9 +20,13 @@ test('Pi is a declared package host and documentation keeps the adapter boundary
   const skill=read('skills/ai-flow/SKILL.md');
   assert.match(readme,/pi install npm:@saulmarti\/specrail@beta/i);
   assert.match(readme,/no global SpecRail CLI required inside Pi/i);
+  assert.match(docs,/bundled official `@dietrichgebert\/ponytail`/i);
+  assert.match(docs,/specrail install --pi/i);
+  assert.match(docs,/specrail install --no-pi/i);
   assert.match(docs,/sessionManager\.getSessionId\(\)/);
   assert.match(docs,/\/specrail-handoff TASK-####/);
   assert.match(docs,/serial fallback/i);
+  assert.match(docs,/Review Cockpit is no longer part of the normal approval path/i);
   assert.match(skill,/## Host adapters/);
   assert.match(skill,/\*\*Pi:\*\*/);
   assert.match(skill,/specrail_cli/);
@@ -60,7 +65,6 @@ test('Pi adapter invokes only the packaged SpecRail dispatcher for CLI transport
   assert.match(source,/execFailure\('CodeGraph'/);
   assert.doesNotMatch(source,/exec\([^\n]*params\.command/);
 });
-
 
 test('Pi is a valid Taste host and can use skill contracts from Pi or shared skill roots',()=>{
   const home=mkdtempSync(path.join(tmpdir(),'specrail-pi-taste-'));const base=path.join(home,'.pi','agent','skills');
