@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
@@ -37,5 +37,7 @@ test('Codex state database failure is classified as environment blocked and neve
 test('Codex child inherits Desktop sqlite home when app-managed state_5 exists',()=>{const root=repo(),home=mkdtempSync(path.join(tmpdir(),'specrail-codex-home-')),sqlite=path.join(home,'.codex','sqlite');mkdirSync(sqlite,{recursive:true});writeFileSync(path.join(sqlite,'state_5.sqlite'),'test');const r=run(root,'require-sqlite-home',{}, {HOME:home,CODEX_HOME:path.join(home,'.codex'),CODEX_SQLITE_HOME:''});assert.equal(r.process.status,0,`stdout=${r.process.stdout}\nstderr=${r.process.stderr}`);});
 
 test('identical completed WorkerOrder reuses validated result instead of spawning again',()=>{const root=repo(),first=run(root,'');assert.equal(first.process.status,0,first.process.stderr);assert.equal(first.payload.cached,false);const second=run(root,'ordinary-failure');assert.equal(second.process.status,0,`stdout=${second.process.stdout}\nstderr=${second.process.stderr}`);assert.equal(second.payload.cached,true);assert.equal(second.payload.result.status,'completed');});
+
+test('fresh WorkerOrder lock prevents a duplicate same-phase child process',()=>{const root=repo(),orderFile=workerOrder(root),order=JSON.parse(readFileSync(orderFile,'utf8')),lockFile=path.join(root,`${order.id}.running.json`),fake=fakeCodex(root);writeFileSync(lockFile,`${JSON.stringify({schemaVersion:1,orderId:order.id,orderDigest:order.orderDigest,pid:99999,startedAt:new Date().toISOString(),staleAfterMs:120000})}\n`);const result=spawnSync(process.execPath,['scripts/specrail-worker.mjs','--order',orderFile,'--host','codex'],{cwd:process.cwd(),encoding:'utf8',env:{...process.env,SPEC_RAIL_CODEX_BIN:fake,FAKE_MODE:'ordinary-failure'}});assert.equal(result.status,6,`stdout=${result.stdout}\nstderr=${result.stderr}`);const payload=JSON.parse(result.stdout);assert.equal(payload.inFlight,true);assert.equal(payload.orderId,order.id);});
 
 test('Brain-side loader validates result binding/model attestation and converts usage safely',()=>{const r=run(repo(),'');assert.equal(r.process.status,0,r.process.stderr);const loaded=loadWorkerResult(r.payload.resultFile,r.order);assert.equal(loaded.result.status,'completed');assert.equal(loaded.result.effectiveModel,'gpt-5.6-luna');assert.equal(loaded.result.modelAttested,true);const usage=workerUsageRecord(loaded.result,loaded.order);assert.equal(usage.owner,'worker');assert.equal(usage.model,'gpt-5.6-luna');assert.equal(usage.modelAttested,true);assert.equal(usage.inputTokens,100);assert.equal(usage.cachedInputTokens,20);assert.equal(usage.outputTokens,10);});
