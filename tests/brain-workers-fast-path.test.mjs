@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { initProject } from '../dist/src/lib/project.js';
 import { createTask, findTask, loadTask, saveTask, setSection } from '../dist/src/lib/task.js';
+import { intakeTask } from '../dist/src/lib/automation.js';
 import { ensureRequestCapsule, requestWorkSummary } from '../dist/src/lib/request-capsule.js';
 import { ensureWorkerOrder } from '../dist/src/lib/worker-orders.js';
 
@@ -17,6 +18,12 @@ test('request capsule seals the original Need and stays immutable when specifica
   let current=loadTask(findTask(root,task.meta.id));current.body=setSection(current.body,'Need','A later materialized Need that must not replace original input.');saveTask(current);
   const again=ensureRequestCapsule(root,task.meta.id);assert.equal(again.requestDigest,first.requestDigest);assert.equal(again.requestText,first.requestText);
   assert.match(requestWorkSummary(again),/^TASK-\d{4}:/);
+});
+
+test('deferred intake returns a sealed Work Capsule without running CodeGraph preparation first',()=>{
+  const root=repo(),result=intakeTask(root,{title:'Fast visible intake',need:'Keep four explicit requested outcomes and do not alter unrelated behavior.'},{deferCodeGraph:true});
+  assert.equal(result.created,true);assert.ok(result.requestDigest);assert.match(result.workCapsule,/^TASK-\d{4}:/);assert.match(result.workCapsule,/four explicit requested outcomes/);assert.equal(result.task.meta.status,'refining');
+  const capsule=ensureRequestCapsule(root,result.task.meta.id);assert.equal(capsule.requestDigest,result.requestDigest);
 });
 
 test('title-only task fails closed before a worker can reconstruct the missing user prompt',()=>{
