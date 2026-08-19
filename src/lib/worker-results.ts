@@ -4,11 +4,11 @@ import path from 'node:path';
 import { loadWorkerOrder, type WorkerOrder } from './worker-orders.js';
 import type { IntelligenceUsageRecord } from './intelligence-metrics.js';
 
-export type WorkerResultStatus='completed'|'escalated'|'failed';
+export type WorkerResultStatus='completed'|'escalated'|'input_incomplete'|'environment_blocked'|'budget_exceeded'|'failed';
 export interface WorkerUsage { inputTokens:number; cachedInputTokens:number; outputTokens:number; cost?:number|null; }
 export interface WorkerAttempt { model:string; code:number; attestation:string; effectiveModel:string; sessionId?:string|null; stderr:string; }
 export interface WorkerResult {
-  schemaVersion:2;
+  schemaVersion:3;
   transport:'isolated-process';
   orderId:string;
   taskId:string;
@@ -39,13 +39,13 @@ function resultPayload(result:WorkerResult){const{resultDigest:_ignored,...paylo
 function nonNegativeInteger(value:unknown,label:string):number{const n=Number(value);if(!Number.isInteger(n)||n<0)throw new Error(`${label} must be a non-negative integer`);return n;}
 
 export function validateWorkerResult(result:WorkerResult,order:WorkerOrder):WorkerResult{
-  if(result.schemaVersion!==2||result.transport!=='isolated-process')throw new Error('Unsupported worker-result schema/transport');
+  if(result.schemaVersion!==3||result.transport!=='isolated-process')throw new Error('Unsupported worker-result schema/transport');
   if(result.resultDigest!==digest(resultPayload(result)))throw new Error(`Worker-result integrity check failed for ${result.orderId}`);
   if(result.orderId!==order.id||result.taskId!==order.taskId||result.startedFromOrderDigest!==order.orderDigest)throw new Error('Worker result is not bound to the expected WorkerOrder');
   if(result.brainModelFallbackUsed!==false)throw new Error('Worker result used forbidden Brain-model fallback');
   if(result.orderTampered)throw new Error('Worker result reports WorkerOrder tampering');
   if(result.forbiddenProductionChanges.length||result.unexpectedScopeChanges.length||result.protectedScopeChanges.length){if(result.status!=='failed')throw new Error('Worker scope/mutation violations must fail the run');}
-  if(result.status!=='failed'){
+  if(result.status==='completed'||result.status==='escalated'){
     if(!result.requestedModel||!result.effectiveModel||result.requestedModel!==result.effectiveModel||!result.modelAttested)throw new Error('Successful/escalated worker result requires exact model attestation');
     if(!order.requestedModels.includes(result.effectiveModel))throw new Error(`Worker used a model outside the sealed order: ${result.effectiveModel}`);
   }
@@ -58,11 +58,11 @@ export function loadWorkerResult(resultFile:string,orderFile:string):{result:Wor
 }
 
 export function workerUsageRecord(result:WorkerResult,order:WorkerOrder):IntelligenceUsageRecord|null{
-  const valid=validateWorkerResult(result,order);if(!valid.usage||!valid.effectiveModel||valid.status==='failed')return null;
+  const valid=validateWorkerResult(result,order);if(!valid.usage||!valid.effectiveModel||!['completed','escalated'].includes(valid.status))return null;
   return{source:'host-reported',owner:'worker',phase:order.phase,actor:order.actor,model:valid.effectiveModel,modelAttested:valid.modelAttested,modelAttestation:valid.modelAttestation,inputTokens:valid.usage.inputTokens,cachedInputTokens:valid.usage.cachedInputTokens,outputTokens:valid.usage.outputTokens};
 }
 
-export function compactWorkerResult(result:WorkerResult,maxWords=420):{status:WorkerResultStatus;model:string|null;changedFiles:string[];summary:string;elapsedMs:number|null}{
+export function compactWorkerResult(result:WorkerResult,maxWords=260):{status:WorkerResultStatus;model:string|null;changedFiles:string[];summary:string;elapsedMs:number|null}{
   const words=String(result.summary||'').trim().split(/\s+/).filter(Boolean);const summary=words.length<=maxWords?words.join(' '):`${words.slice(0,maxWords).join(' ')} …`;
   return{status:result.status,model:result.effectiveModel,changedFiles:[...result.changedFiles].slice(0,40),summary,elapsedMs:result.elapsedMs};
 }
