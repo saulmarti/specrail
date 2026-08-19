@@ -5,9 +5,10 @@ import { findTask, getSection, loadTask } from './task.js';
 import { contextStatus } from './context.js';
 import { scopeGuardStatus } from './scope-guard.js';
 import { brainWorkerRecommendation, type BrainWorkerRecommendation, type WorkRoutingInput } from './brain-workers.js';
+import { requireRequestCapsule } from './request-capsule.js';
 
 export interface WorkerOrder {
-  schemaVersion: 2;
+  schemaVersion: 3;
   id: string;
   taskId: string;
   phase: string;
@@ -17,9 +18,11 @@ export interface WorkerOrder {
   kind: NonNullable<BrainWorkerRecommendation['worker']>['kind'];
   requestedModels: string[];
   reasoningEffort: 'low'|'medium';
+  maxRuntimeMs: number;
   access: 'workspace-write';
   mutationAuthority: 'specrail-state-only'|'production-with-scope';
   cwd: string;
+  request: { digest:string; text:string };
   authority: {
     specificationHash: string | null;
     qaMissionHash: string | null;
@@ -54,13 +57,23 @@ function dir(root:string,taskId:string){return path.join(path.resolve(root),'.ai
 function fileFor(root:string,taskId:string,id:string){return path.join(dir(root,taskId),`${id}.json`);}
 function atomicJson(file:string,value:unknown){mkdirSync(path.dirname(file),{recursive:true});const tmp=`${file}.${process.pid}.${Date.now()}.tmp`;writeFileSync(tmp,`${JSON.stringify(value,null,2)}\n`);renameSync(tmp,file);}
 function bounded(value:string,maxWords:number){const parts=String(value||'').trim().split(/\s+/).filter(Boolean);return parts.length<=maxWords?parts.join(' '):`${parts.slice(0,maxWords).join(' ')} …`;}
+function runtimeBudget(kind:WorkerOrder['kind']):number{
+  if(kind==='spec-materialization'||kind==='project-bootstrap')return 90_000;
+  if(kind==='design-support')return 180_000;
+  if(kind==='implementation')return 900_000;
+  if(kind==='verification')return 600_000;
+  if(kind==='review-support')return 240_000;
+  return 120_000;
+}
 
 export function validateWorkerOrder(order: WorkerOrder): void {
-  if(order.schemaVersion!==2)throw new Error('Unsupported worker-order schema');
+  if(order.schemaVersion!==3)throw new Error('Unsupported worker-order schema');
   if(!/^WO-[A-F0-9]{12}$/.test(order.id))throw new Error('Invalid worker-order id');
   if(!order.taskId||!order.actor||!order.action)throw new Error('Worker order is missing identity fields');
+  if(!order.request?.digest||!order.request?.text?.trim())throw new Error('Worker order is missing its sealed original request');
   if(!order.requestedModels.length)throw new Error('Worker order requires at least one explicit worker model');
   if(order.requestedModels.some(model=>!String(model).trim()))throw new Error('Worker order contains an empty model id');
+  if(!Number.isInteger(order.maxRuntimeMs)||order.maxRuntimeMs<10_000)throw new Error('Worker order has invalid runtime budget');
   if(!['specrail-state-only','production-with-scope'].includes(order.mutationAuthority))throw new Error('Worker order has invalid mutation authority');
   if(order.mutationAuthority==='production-with-scope'&&!order.capsule.allowedFiles.length)throw new Error('Production worker order requires a sealed allowed-file scope');
   if(order.orderDigest!==digest(payload(order)))throw new Error(`Worker-order integrity check failed for ${order.id}`);
@@ -73,24 +86,33 @@ export function loadWorkerOrder(file:string):WorkerOrder{
 export function ensureWorkerOrder(root:string,reference:string,input:WorkRoutingInput):{order:WorkerOrder;path:string;relativePath:string}|null{
   const projectRoot=path.resolve(root),task=loadTask(findTask(projectRoot,reference));
   const routing=brainWorkerRecommendation(task,input);if(routing.owner!=='worker'||!routing.worker)return null;
+  const request=requireRequestCapsule(projectRoot,task.meta.id);
   const scope=scopeGuardStatus(projectRoot,task.meta.id),context=contextStatus(projectRoot,task.meta.id);
   const productionMutation=task.meta.phase==='builder';
   if(productionMutation&&(!scope.valid||!scope.sealed||!scope.sealIntegrityValid))throw new Error('Builder worker requires a valid sealed Scope Guard before production mutation');
   const workspace=task.meta.worktree_path&&existsSync(task.meta.worktree_path)?path.resolve(task.meta.worktree_path):projectRoot;
+  const kind=routing.worker.kind,isSpec=kind==='spec-materialization';
+  const decisions=bounded(getSection(task.body,'Decisions'),220);
+  // The order identity contains only immutable/user/Brain authority plus the
+  // execution generation. Product Specifier output (Scope/AC/etc.) is
+  // deliberately excluded so a Worker cannot invalidate its own order and
+  // trigger a duplicate materialization pass.
   const source={
     taskId:task.meta.id,phase:task.meta.phase,actor:input.actor,action:input.action,recommendedSkill:input.recommendedSkill??null,
+    kind,requestDigest:request.requestDigest,decisions,
     spec:task.meta.spec_effective_hash||task.meta.spec_approval_hash||null,qa:task.meta.qa_mission_hash||null,scopeHash:task.meta.scope_guard_hash||null,
-    need:getSection(task.body,'Need'),scope:getSection(task.body,'Scope'),out:getSection(task.body,'Out of Scope'),acceptance:getSection(task.body,'Acceptance Criteria'),decisions:getSection(task.body,'Decisions'),
-    allowed:scope.allowedFiles,protected:scope.protectedFiles,contextFiles:context.files,contextSymbols:context.symbols,worker:routing.worker,
-    mutationAuthority:productionMutation?'production-with-scope':'specrail-state-only'
+    revision:task.meta.active_revision_id||null,implementationGeneration:task.meta.implementation_generation_id||task.meta.implementation_generation||null,
+    worker:routing.worker,mutationAuthority:productionMutation?'production-with-scope':'specrail-state-only'
   };
   const sourceDigest=digest(source),id=`WO-${sourceDigest.slice(0,12).toUpperCase()}`;
+  const contextFileLimit=isSpec?6:24,contextSymbolLimit=isSpec?12:40;
   const base:Omit<WorkerOrder,'orderDigest'>={
-    schemaVersion:2,id,taskId:task.meta.id,phase:task.meta.phase,actor:input.actor,action:input.action,recommendedSkill:input.recommendedSkill??null,
-    kind:routing.worker.kind,requestedModels:[...routing.worker.preferredModels],reasoningEffort:routing.worker.reasoningEffort,
+    schemaVersion:3,id,taskId:task.meta.id,phase:task.meta.phase,actor:input.actor,action:input.action,recommendedSkill:input.recommendedSkill??null,
+    kind,requestedModels:[...routing.worker.preferredModels],reasoningEffort:routing.worker.reasoningEffort,maxRuntimeMs:runtimeBudget(kind),
     access:'workspace-write',mutationAuthority:productionMutation?'production-with-scope':'specrail-state-only',cwd:workspace,
-    authority:{specificationHash:task.meta.spec_effective_hash||task.meta.spec_approval_hash||null,qaMissionHash:task.meta.qa_mission_hash||null,scopeGuardHash:task.meta.scope_guard_hash||null,decisions:bounded(getSection(task.body,'Decisions'),220)},
-    capsule:{goal:bounded(getSection(task.body,'Need')||task.meta.title,180),scope:bounded(getSection(task.body,'Scope'),220),outOfScope:bounded(getSection(task.body,'Out of Scope'),160),acceptanceCriteria:bounded(getSection(task.body,'Acceptance Criteria'),360),allowedFiles:[...scope.allowedFiles].slice(0,40),protectedFiles:[...scope.protectedFiles].slice(0,30),contextFiles:[...context.files].slice(0,24),contextSymbols:[...context.symbols].slice(0,40),stopIf:[...routing.worker.stopIf]},
+    request:{digest:request.requestDigest,text:bounded(request.requestText,700)},
+    authority:{specificationHash:task.meta.spec_effective_hash||task.meta.spec_approval_hash||null,qaMissionHash:task.meta.qa_mission_hash||null,scopeGuardHash:task.meta.scope_guard_hash||null,decisions},
+    capsule:{goal:bounded(request.requestText,220),scope:bounded(getSection(task.body,'Scope'),220),outOfScope:bounded(getSection(task.body,'Out of Scope'),160),acceptanceCriteria:bounded(getSection(task.body,'Acceptance Criteria'),360),allowedFiles:[...scope.allowedFiles].slice(0,40),protectedFiles:[...scope.protectedFiles].slice(0,30),contextFiles:[...context.files].slice(0,contextFileLimit),contextSymbols:[...context.symbols].slice(0,contextSymbolLimit),stopIf:[...routing.worker.stopIf]},
     sourceDigest,createdAt:new Date().toISOString()
   };
   const order:WorkerOrder={...base,orderDigest:digest(base)};const file=fileFor(projectRoot,task.meta.id,id);
