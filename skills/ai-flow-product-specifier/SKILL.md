@@ -1,33 +1,41 @@
 ---
 name: ai-flow-product-specifier
-description: Use when AI Flow routes product discovery, refinement, scoping, acceptance criteria, decomposition, value assessment, or project bootstrap. Produce a decision-complete frontend, backend, architecture, database, bug, feature, or design specification before execution, using CodeGraph and native questions only for consequential unknowns.
+description: Use when AI Flow routes product discovery, refinement, scoping, acceptance criteria, decomposition, value assessment, or project bootstrap. Materialize a decision-complete approval contract from the immutable Request Capsule and Brain-owned decisions without doing Builder's implementation forensics.
 ---
 # Product Specifier
 
-Produce a specification the user can approve without completing your analysis for you.
+Produce the **smallest specification the user can safely approve**. Approval-critical contract first; implementation discovery later.
 
-1. In normal workflow require SpecRail's deterministic CodeGraph readiness, then use the active CodeGraph host transport before direct file reading (`codegraph_explore`/MCP on compatible hosts; `specrail_codegraph` on Pi). Stay inside the context budget. For active `workflow_mode: fast` micro/light, do not force CodeGraph or repository-wide Product Owner bootstrap; inspect only the files needed for the exact target/blast radius. If classification escalates, immediately return to normal CodeGraph/Product Intelligence rules.
-2. In normal workflow consume the current Project Product Owner review and treat it as product guidance, not as specification approval. On first use, complete architecture and runbook from repository facts and real product inspection; the Product Owner specialist owns product mission/owner/users context.
-3. Match specification depth to `route.control_profile`. `micro`: exact Need/target, Scope/Out of Scope, observable ACs and blast radius; do not expand Product Value/Users prose unless it changes a decision. `light`: add only context needed for the bounded layout/behavior judgment. `standard/rigorous`: define full user value, users, edge/failure cases, risks, route, and evidence.
-4. **No material assumptions.** Resolve facts only from explicit active user input, approved SpecRail decisions, authoritative repository contracts, one unique established repository pattern, or current deterministic tool evidence. Never use model confidence as authority. When two or more plausible material interpretations remain, stop refinement and ask. Do not ask what the repository proves uniquely.
-5. Every clarification question must use native structured input with 2–4 genuinely distinct choices, at most one clearly marked recommendation, and `Other`/free text. Batch up to four independent decisions in one interruption. Ask dependent decisions sequentially. Recommendations are advisory and must never be treated as defaults.
-6. Ensure an **immutable QA Mission** exists before approval. For `micro/light`, let SpecRail derive it from Need/target/ACs unless a material QA choice exists; do not spend a reasoning pass rewriting boilerplate. `standard/rigorous` write/verify the full mission explicitly.
-7. Select quality by risk. `micro/light` must not invent property/mutation/operational work disabled by the deterministic route. `standard/rigorous` retain the normal risk-selected policy.
-8. For a large feature, create at least two end-to-end vertical slices. Each slice must deliver a user-observable outcome, acceptance criteria, evidence, and dependencies; do not split only into frontend/backend/database layers.
-9. Record constitution impact only when the task can create/change a durable project invariant. A micro cosmetic/copy change should not manufacture constitution analysis.
-10. Respect `route.control_profile`: `micro` has no Before/Proposal; `light` uses focused Before but no ImageGen Proposal unless escalated; `standard/rigorous` retain the full routed design contract. Normal mode presents the compact Decision Capsule plus required primary evidence before specification approval; the full Review Bundle remains available on demand. Active Fast micro/light has no separate pre-implementation approval: completing Product Specifier seals spec/QA Mission/Scope Guard and routes directly onward; final approval remains mandatory.
+## Brain / Worker contract
 
-Do not write production code, silently broaden scope, or reject an idea on the user's behalf.
+Product Specifier is **worker-owned**. The Brain retains user/product/architecture/security/migration/public-contract/governed-UX decisions. Worker input starts with the immutable original Request Capsule plus sealed Brain decisions; never reconstruct missing requirements from chat or model confidence. If `WORKER_INPUT_INCOMPLETE`, stop so only the missing request/input can be repaired. Brain must not take over specification materialization.
 
-Use `request_user_input` for material user decisions. Never print option lists or multiple-choice questions as text when native input is available.
+The Worker translates authority into Need/Scope/Out of Scope/UI Target/ACs/QA Mission/blast radius and identifies only approval-blocking ambiguity. It must not choose between materially different product/architecture/contract/UX interpretations. If deterministic evidence cannot resolve one, return `STATUS: ESCALATE_TO_BRAIN` with the exact decision and smallest evidence capsule. When clarification is Brain-owned, use `request_user_input`; never print option lists or multiple-choice questions as text.
 
-## Context and UI target rules
+## Contract-first fast path
 
-Use the active CodeGraph host transport first (`codegraph_explore`/MCP on compatible hosts; `specrail_codegraph` on Pi); do not scan or copy the whole repository. Follow the active context policy and justify expansion. Never ask the user to run init, sync, or index manually.
-For UI work, complete `UI Target` with a concrete route plus exact selector or visible anchor. Never leave the target as “homepage”. Run the deterministic specification linter and define observable inputs, outputs, errors, evidence, and the context policy used.
+1. **Do not pre-solve Builder.** Before approval, exact implementation paths, hook internals, action wiring, call chains, component families, and file-by-file plans are out of scope unless strictly required to identify the UI Target or a safe blast radius. `Implementation Plan`, if useful at all, is 1–3 high-level outcomes/constraints.
+2. Start from the Request Capsule. If it already states observable outcomes, materialize those directly into stable `AC-*` criteria. Do not search the repository merely to restate explicit user requirements; **do not scan or copy the whole repository**.
+3. Repository evidence is bounded: use the **active CodeGraph host transport first** and supplied context seeds; normally allow **one deterministic structural lookup** and at most **four direct file reads** for UI Target/blast-radius confirmation. Expand only when approval would otherwise contain a material unknown; if expansion becomes broad implementation forensics, stop and defer it to Builder.
+4. Never scan action/router/sidebar/component families to discover *how* the change will be coded. Builder owns that after approval. Product Specifier should normally finish once the linter, QA Mission, Scope Guard/blast radius, and approval-critical sections are valid.
+5. If the specification already passes required deterministic checks, **do not rewrite it or start another materialization pass**. Complete refinement and return the compact result.
 
-## Acceptance and scope contract
+## Governed specification
 
-Before specification approval, every observable acceptance criterion must have a stable `AC-*` identifier. Use CodeGraph to propose the smallest credible blast radius: allowed files/globs, protected files, expected symbols, and a short reason. The user must see this boundary in the specification review. Evidence planning must state which `AC-*` each planned artifact will prove.
+6. Consume Project Product Owner output only as Brain-owned product guidance. Do not reinterpret product mission or priorities.
+7. Match depth to `route.control_profile`. `micro`: exact Need/target, Scope/Out of Scope, observable ACs and blast radius. `light`: add only context needed for bounded behavior/layout judgment. `standard/rigorous`: add user value, applicable users, material edge/failure cases, risks, route and evidence—still without ordinary implementation mechanics.
+8. **No material assumptions.** Authority comes only from explicit active user input, approved SpecRail decisions, authoritative repository contracts, one unique established repository pattern, or current deterministic evidence. When two material interpretations remain, Worker returns `ESCALATE_TO_BRAIN`; outside Worker mode Brain may ask the user.
+9. When `SPEC_RAIL_WORKER=1`, never call `request_user_input`; never print a substitute question. Outside Worker execution, clarification uses native `request_user_input` with 2–4 distinct choices, at most one recommendation, and `Other`/free text.
+10. Ensure an **immutable QA Mission** exists before approval. For `micro/light`, let SpecRail derive it from Need/target/ACs unless a material QA choice exists. `standard/rigorous` write only the outcome/evidence mission, not Builder mechanics. Define observable inputs, outputs, failure expectations, and the smallest evidence needed to prove each routed criterion.
+11. Select quality by deterministic risk. `micro/light` must not invent property/mutation/operational work disabled by routing. For a large feature, create vertical slices only when required, prioritizing the first user-observable outcome.
+12. Record constitution impact only for a real durable project invariant. Respect proportional visual routing; normal mode presents the concise Decision Capsule plus required primary evidence before approval, while Review Details remain on demand.
 
-After approval, do not rewrite governed scope to accommodate implementation discoveries. Create a Specification Amendment / Change Request describing the reason, exact additions, any new acceptance criteria, and blast-radius additions, then stop at the native user approval gate.
+Do not write production code, silently broaden scope, reject an idea on the user's behalf, acquire Brain decision authority, or spend the pre-approval budget proving implementation details the user did not need to approve.
+
+## Context, UI target, acceptance and scope
+
+Use active CodeGraph/structural evidence only inside the bounded fast path. **Never ask the user to run init, sync, or index manually.** Keep the context policy progressive and bounded. For UI, `UI Target` needs a concrete route plus exact selector or visible anchor; **never leave the target as “homepage”** when a specific surface is known. Finding the final implementation file is Builder work.
+
+Before approval, every observable criterion has a stable `AC-*`. Propose the smallest credible blast radius with allowed/protected boundaries and a short reason; exact code mechanics can remain unknown. Run the deterministic specification linter and complete refinement as soon as the approval contract is valid.
+
+After approval, do not rewrite governed scope to accommodate implementation discoveries. Use a Specification Amendment / Change Request and return the decision to Brain/user.

@@ -5,7 +5,8 @@
   "type": "module",
   "bin": {
     "specrail": "scripts/specrail-fast.sh",
-    "ai-flow": "scripts/specrail-fast.sh"
+    "ai-flow": "scripts/specrail-fast.sh",
+    "specrail-worker": "scripts/specrail-worker.mjs"
   },
   "files": [
     "dist",
@@ -39,6 +40,7 @@
     "docs/PRODUCT-INTELLIGENCE.md",
     "docs/AUTONOMY.md",
     "docs/MULTI-AGENT-CONCURRENCY.md",
+    "docs/BRAIN-WORKERS.md",
     "docs/TRUST-MODEL.md",
     "docs/PI.md",
     "docs/VALIDATION-0.10.3-PI.md",
@@ -50,12 +52,12 @@
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc -p tsconfig.json && node scripts/ensure-cli-executable.mjs && node scripts/write-build-id.mjs",
     "test": "npm run test:quick",
-    "check": "npm run build && npm run version:check && node scripts/run-tests.mjs --tier quick && node --check dist/src/cli.js && node --check dist/src/runtime-server.js",
+    "check": "npm run build && npm run version:check && node scripts/run-tests.mjs --tier quick && node --check dist/src/cli.js && node --check dist/src/runtime-server.js && node --check scripts/specrail-worker.mjs",
     "evals": "npm run build && node --test tests/visualization-evals.test.mjs",
     "pack:check": "npm run release:check",
     "prepublishOnly": "npm run check",
     "version": "npm run version:sync && npm run version:check",
-    "release:check": "npm run build && npm run version:check && node scripts/run-tests.mjs --tier full && node --check dist/src/cli.js && node --check dist/src/runtime-server.js && npm pack --dry-run",
+    "release:check": "npm run build && npm run version:check && node scripts/run-tests.mjs --tier full && node --check dist/src/cli.js && node --check dist/src/runtime-server.js && node --check scripts/specrail-worker.mjs && npm pack --dry-run",
     "release:major": "npm run release:check && npm version major && npm publish --access public --tag latest",
     "release:minor": "npm run release:check && npm version minor && npm publish --access public --tag latest",
     "release:patch": "npm run release:check && npm version patch && npm publish --access public --tag latest",

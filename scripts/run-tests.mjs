@@ -14,9 +14,13 @@ if(!supported.has(tier))throw new Error(`Unknown test tier: ${tier}. Use quick, 
 // replaying complete delivery workflows.
 const quickFiles=[
   'architecture-integrity.test.mjs',
+  'brain-workers-fast-path.test.mjs',
+  'brain-workers-install.test.mjs',
   'control-profile.test.mjs',
   'core.test.mjs',
   'entry-clarity-ponytail.test.mjs',
+  'intelligence-routing.test.mjs',
+  'worker-runtime.test.mjs',
   'pi-compatibility.test.mjs',
   'pi-adapter-runtime.test.mjs',
   'pi-runtime-gates.test.mjs',
